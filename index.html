@@ -1,653 +1,102 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitoring Peminjaman Alat Laboratorium Geomatika</title>
-    
-    <!-- Memuat Tailwind CSS untuk Desain -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Memuat FontAwesome untuk Ikon -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- MENGGUNAKAN CDNJS -->
-    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
-    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
-    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
-</head>
-<body class="bg-gray-100 font-sans">
-    
-    <div id="root">
-        <!-- Layar Loading Awal -->
-        <div class="flex flex-col items-center justify-center min-h-screen bg-gray-50">
-            <i class="fas fa-spinner fa-spin text-4xl text-blue-600 mb-4"></i>
-            <h2 class="text-xl font-bold text-gray-800">Memuat Aplikasi...</h2>
-        </div>
-    </div>
+function doGet() {
+  return ContentService
+    .createTextOutput(JSON.stringify(getData()))
+    .setMimeType(ContentService.MimeType.JSON);
+}
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+function getData() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Sheet1");
+  const data = sheet.getDataRange().getValues();
+  
+  const headers = data.shift();
 
-        // Data Awal Inventaris Lab Geomatika Sesuai Kategori
-        const initialInventory = [
-            { id: 'TS-001', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
-            { id: 'TS-002', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
-            { id: 'TS-003', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
-            { id: 'TS-004', category: 'Total Station', name: 'TOPCON OS-SERIES', total: 1, available: 1 },
-            { id: 'TS-005', category: 'Total Station', name: 'TOPCON ES-SERIES', total: 1, available: 1 },
-            { id: 'TS-006', category: 'Total Station', name: 'TOPCON OS-SERIES', total: 1, available: 1 },
-            { id: 'TS-007', category: 'Total Station', name: 'TOPCON GM-SERIES', total: 1, available: 1 },
-            { id: 'TS-008', category: 'Total Station', name: 'TOPCON GTS-235N', total: 1, available: 1 },
-            { id: 'TS-013', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
-            { id: 'TS-014', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
-            { id: 'TS-015', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
-            
-            { id: 'DT-001', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-            { id: 'DT-002', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-            { id: 'DT-003', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-            { id: 'DT-004', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-            { id: 'DT-005', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-            { id: 'DT-006', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-            { id: 'DT-007', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-            { id: 'DT-008', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-            
-            { id: 'AL-001', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
-            { id: 'AL-002', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
-            { id: 'AL-003', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
-            { id: 'AL-004', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
-            { id: 'AL-005', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-            { id: 'AL-006', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-            { id: 'AL-007', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-            { id: 'AL-008', category: 'Leveling', name: 'LEICA', total: 1, available: 1 },
-            { id: 'AL-009', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-            { id: 'AL-010', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-            { id: 'AL-011', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-            { id: 'AL-012', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-            { id: 'AL-013', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-            { id: 'AL-014', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-            { id: 'AL-015', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-            
-            { id: 'G-001', category: 'GNSS', name: 'TOPCON HIPER II', total: 1, available: 1 },
-            { id: 'G-002', category: 'GNSS', name: 'LEICA GS14', total: 1, available: 1 },
-            { id: 'G-003', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
-            { id: 'G-004', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
-            { id: 'G-005', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
-            { id: 'G-006', category: 'Laser Scanner', name: 'LEICA BLK360', total: 1, available: 1 },
-            
-            { id: 'HL-001-100', category: 'Safety', name: 'Helm', total: 100, available: 100 },
-            { id: 'RM-001-100', category: 'Safety', name: 'Rompi', total: 100, available: 100 },
-            
-            { id: 'JL-001-020', category: 'Aksesoris', name: 'Jalon', total: 14, available: 14 },
-            { id: 'RB-001-030', category: 'Aksesoris', name: 'Rambu Ukur (3 m)', total: 30, available: 30 },
-            { id: 'RB-001-010', category: 'Aksesoris', name: 'Rambu Ukur (4 m)', total: 10, available: 10 },
-            { id: 'RB-001-009', category: 'Aksesoris', name: 'Rambu Ukur (5 m)', total: 9, available: 9 },
-            { id: 'TM-001-035', category: 'Aksesoris', name: 'Tripod / Statip', total: 35, available: 35 },
-            
-            { id: 'F-0001', category: 'Hidrografi', name: 'Fish Finder', total: 1, available: 1 },
-            { id: 'PL-001-029', category: 'Hidrografi', name: 'Pelampung', total: 29, available: 29 }
-        ];
+  return data.map(row => {
+    let obj = {};
+    headers.forEach((h, i) => obj[h] = row[i]);
+    return obj;
+  });
+}
 
-        function App() {
-            const [isAppLoading, setIsAppLoading] = useState(true);
-            const [activeTab, setActiveTab] = useState('dashboard');
-            const [inventory, setInventory] = useState(initialInventory);
-            const [transactions, setTransactions] = useState([]);
-            const [filterCategory, setFilterCategory] = useState('Semua');
-            const [isAdmin, setIsAdmin] = useState(false);
-            
-            const [showAddForm, setShowAddForm] = useState(false);
-            const [newItemForm, setNewItemForm] = useState({ id: '', category: '', name: '', total: 1 });
+function doPost(e) {
+  const data = JSON.parse(e.postData.contents);
 
-            const fileInputRef = useRef(null);
+  if (data.action === "create") {
+    return createData(data);
+  }
 
-            // ==========================================
-            // URL GOOGLE APPS SCRIPT TERBARU ANDA
-            // ==========================================
-            const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxsGZbjvsZo23CvLj80IzFPDZL6nCrw9JKqFpJGiT8Uzv4cszi228xzysxAyUks50Vo/exec'; 
+  if (data.action === "updateStatus") {
+    return updateStatus(data);
+  }
 
-            const [borrowForm, setBorrowForm] = useState({
-                borrowerName: '', 
-                nim: '',
-                keperluan: 'Praktikum',
-                borrowDate: new Date().toISOString().split('T')[0],
-                borrowTime: '08:00',
-                returnDateEst: '',
-                returnTimeEst: '16:00',
-                items: [{ itemId: '', quantity: 1 }],
-                approvalFileName: '',
-                fileBase64: '', 
-                mimeType: ''    
-            });
+  if (data.action === "delete") {
+    return deleteData(data);
+  }
+}
 
-            const [notification, setNotification] = useState(null);
-            const [isSubmitting, setIsSubmitting] = useState(false);
+function createData(data) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Sheet1");
 
-            const showNotification = (message, type = 'success') => {
-                setNotification({ message, type });
-                setTimeout(() => setNotification(null), 3000);
-            };
+  let fileUrl = "";
 
-            // FETCH DATA SAAT WEB DIBUKA
-            useEffect(() => {
-                const fetchDatabase = async () => {
-                    try {
-                        const response = await fetch(GOOGLE_SCRIPT_URL);
-                        const rawData = await response.json();
-                        
-                        const formattedData = rawData.map(trx => ({
-                            ...trx,
-                            borrowDateFormatted: new Date(trx.borrowDate).toLocaleDateString('id-ID')
-                        }));
+  // ===============================
+  // HANDLE FILE (BASE64 → DRIVE)
+  // ===============================
+  if (data.file && data.fileName) {
+    const blob = Utilities.newBlob(
+      Utilities.base64Decode(data.file),
+      data.mimeType || "application/pdf",
+      data.fileName
+    );
 
-                        setTransactions(formattedData);
+    const folder = DriveApp.getFolderById("PASTE_FOLDER_ID_DI_SINI");
+    const file = folder.createFile(blob);
 
-                        let currentInventory = JSON.parse(JSON.stringify(initialInventory));
-                        formattedData.forEach(trx => {
-                            if (trx.status === 'active' && trx.items) {
-                                trx.items.forEach(bItem => {
-                                    const match = bItem.name.match(/\[(.*?)\]/);
-                                    if (match && match[1]) {
-                                        const itemId = match[1];
-                                        const invIndex = currentInventory.findIndex(i => i.id === itemId);
-                                        if (invIndex !== -1) currentInventory[invIndex].available -= parseInt(bItem.quantity);
-                                    }
-                                });
-                            }
-                        });
-                        setInventory(currentInventory);
-                    } catch (error) {
-                        console.error("Gagal terhubung ke Spreadsheet:", error);
-                    } finally {
-                        setIsAppLoading(false);
-                    }
-                };
+    fileUrl = file.getUrl();
+  }
 
-                fetchDatabase();
-            }, []);
+  sheet.appendRow([
+    data.id,
+    data.borrowerName,
+    data.nim,
+    data.jenis,
+    data.borrowDate,
+    data.borrowTime,
+    data.returnDateEst,
+    data.returnTime,
+    "active",
+    fileUrl,
+    JSON.stringify(data.items)
+  ]);
 
-            const handleShareLink = () => {
-                const url = window.location.href; 
-                navigator.clipboard.writeText(url).then(() => {
-                    showNotification('Tautan aplikasi berhasil disalin!', 'success');
-                }).catch(err => {
-                    const textArea = document.createElement("textarea");
-                    textArea.value = url; document.body.appendChild(textArea); textArea.select();
-                    document.execCommand("copy"); document.body.removeChild(textArea);
-                    showNotification('Tautan aplikasi berhasil disalin!', 'success');
-                });
-            };
+  return ContentService.createTextOutput(
+    JSON.stringify({ status: "success" })
+  ).setMimeType(ContentService.MimeType.JSON);
+}
 
-            const handleAddBorrowItem = () => setBorrowForm({...borrowForm, items: [...borrowForm.items, { itemId: '', quantity: 1 }]});
-            const handleRemoveBorrowItem = (index) => {
-                const newItems = [...borrowForm.items];
-                newItems.splice(index, 1); setBorrowForm({ ...borrowForm, items: newItems });
-            };
-            const handleBorrowItemChange = (index, field, value) => {
-                const newItems = [...borrowForm.items];
-                newItems[index][field] = value; setBorrowForm({ ...borrowForm, items: newItems });
-            };
+function updateStatus(data) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Sheet1");
+  const rows = sheet.getDataRange().getValues();
 
-            // FUNGSI UPLOAD FILE BARU (Pengecekan Maksimal 3MB dan Convert ke Base64)
-            const handleFileChange = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    if (file.size > 3 * 1024 * 1024) { // Maksimal 3MB
-                        showNotification('Ukuran file terlalu besar! Maksimal 3MB.', 'error');
-                        e.target.value = ''; 
-                        setBorrowForm(prev => ({...prev, approvalFileName: '', fileBase64: '', mimeType: ''}));
-                        return;
-                    }
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        setBorrowForm(prev => ({
-                            ...prev, 
-                            approvalFileName: file.name,
-                            fileBase64: reader.result, 
-                            mimeType: file.type
-                        }));
-                    };
-                    reader.readAsDataURL(file);
-                } else {
-                    setBorrowForm(prev => ({...prev, approvalFileName: '', fileBase64: '', mimeType: ''}));
-                }
-            };
-
-            const submitBorrow = async (e) => {
-                e.preventDefault();
-                
-                if (!borrowForm.borrowerName || !borrowForm.nim || borrowForm.items.length === 0 || !borrowForm.fileBase64) {
-                    showNotification('Mohon lengkapi data dan unggah surat izin', 'error'); return;
-                }
-
-                for (let item of borrowForm.items) {
-                    if (!item.itemId) return showNotification('Ada baris alat yang belum dipilih', 'error');
-                    if (item.quantity <= 0) return showNotification('Jumlah alat tidak valid', 'error');
-                    
-                    const inventoryItem = inventory.find(i => i.id === item.itemId);
-                    if (item.quantity > inventoryItem.available) {
-                        return showNotification(`Stok ${inventoryItem.name} tidak mencukupi!`, 'error');
-                    }
-                }
-
-                setIsSubmitting(true);
-                const newTransactionId = 'TRX-' + Math.floor(Math.random() * 1000000);
-                
-                const alatLengkap = borrowForm.items.map(item => {
-                    const invItem = inventory.find(i => i.id === item.itemId);
-                    return { name: `[${invItem.id}] ${invItem.name}`, quantity: item.quantity };
-                });
-
-                const payload = {
-                    action: "create",
-                    id: newTransactionId,
-                    borrowerName: borrowForm.borrowerName,
-                    nim: borrowForm.nim,
-                    keperluan: borrowForm.keperluan,
-                    borrowDate: borrowForm.borrowDate,
-                    borrowTime: borrowForm.borrowTime,
-                    returnDateEst: borrowForm.returnDateEst,
-                    returnTimeEst: borrowForm.returnTimeEst,
-                    approvalFileName: borrowForm.approvalFileName,
-                    fileBase64: borrowForm.fileBase64, // Kirim Base64
-                    mimeType: borrowForm.mimeType,     // Kirim tipe file
-                    items: alatLengkap
-                };
-
-                try {
-                    await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify(payload)
-                    });
-                } catch (error) { console.error('Fetch Error:', error); }
-
-                const newInventory = [...inventory];
-                borrowForm.items.forEach(bItem => {
-                    const invIndex = newInventory.findIndex(i => i.id === bItem.itemId);
-                    newInventory[invIndex].available -= parseInt(bItem.quantity);
-                });
-
-                const newTransaction = {
-                    ...payload, status: 'active',
-                    borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID'),
-                };
-
-                setInventory(newInventory);
-                setTransactions([newTransaction, ...transactions]);
-                showNotification('Peminjaman berhasil dicatat & Surat Izin dikirim!');
-                
-                setBorrowForm({
-                    borrowerName: '', nim: '', 
-                    keperluan: 'Praktikum',
-                    borrowDate: new Date().toISOString().split('T')[0],
-                    borrowTime: '08:00', returnDateEst: '', returnTimeEst: '16:00',
-                    items: [{ itemId: '', quantity: 1 }],
-                    approvalFileName: '', fileBase64: '', mimeType: ''
-                });
-                if (fileInputRef.current) fileInputRef.current.value = "";
-                
-                setActiveTab('transactions'); setIsSubmitting(false);
-            };
-
-            const handleReturn = async (transactionId) => {
-                if (window.confirm('Apakah alat sudah dikembalikan semua dalam kondisi baik?')) {
-                    const trxIndex = transactions.findIndex(t => t.id === transactionId);
-                    const trx = transactions[trxIndex];
-
-                    const newInventory = [...inventory];
-                    trx.items.forEach(rItem => {
-                        const match = rItem.name.match(/\[(.*?)\]/);
-                        if (match && match[1]) {
-                            const invIndex = newInventory.findIndex(i => i.id === match[1]);
-                            if (invIndex !== -1) newInventory[invIndex].available += parseInt(rItem.quantity);
-                        }
-                    });
-
-                    const newTransactions = [...transactions];
-                    newTransactions[trxIndex].status = 'completed';
-
-                    setInventory(newInventory);
-                    setTransactions(newTransactions);
-                    showNotification('Mensinkronisasi pengembalian ke sistem...');
-
-                    try {
-                        await fetch(GOOGLE_SCRIPT_URL, {
-                            method: 'POST', mode: 'no-cors',
-                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                            body: JSON.stringify({ action: "updateStatus", id: transactionId, status: "completed" })
-                        });
-                    } catch(e) {}
-                }
-            };
-
-            const handleDelete = async (transactionId) => {
-                if (window.confirm('Hapus transaksi permanen?')) {
-                    const trxIndex = transactions.findIndex(t => t.id === transactionId);
-                    const trx = transactions[trxIndex];
-
-                    if (trx.status === 'active') {
-                        const newInventory = [...inventory];
-                        trx.items.forEach(rItem => {
-                            const match = rItem.name.match(/\[(.*?)\]/);
-                            if (match && match[1]) {
-                                const invIndex = newInventory.findIndex(i => i.id === match[1]);
-                                if (invIndex !== -1) newInventory[invIndex].available += parseInt(rItem.quantity);
-                            }
-                        });
-                        setInventory(newInventory);
-                    }
-
-                    const newTransactions = transactions.filter(t => t.id !== transactionId);
-                    setTransactions(newTransactions);
-                    showNotification('Menghapus data...');
-
-                    try {
-                        await fetch(GOOGLE_SCRIPT_URL, {
-                            method: 'POST', mode: 'no-cors',
-                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                            body: JSON.stringify({ action: "delete", id: transactionId })
-                        });
-                    } catch(e) {}
-                }
-            };
-
-            const handleAdminToggle = () => {
-                if (isAdmin) { setIsAdmin(false); setShowAddForm(false); showNotification('Keluar dari Mode Admin'); } 
-                else { if (prompt('Masukkan Password Admin:') === 'adminlab') { setIsAdmin(true); showNotification('Mode Admin Aktif'); } }
-            };
-
-            const handleAddNewInventoryItem = (e) => {
-                e.preventDefault();
-                if (inventory.some(i => i.id === newItemForm.id)) return showNotification('Kode Alat digunakan!', 'error');
-                const newItem = { ...newItemForm, total: parseInt(newItemForm.total), available: parseInt(newItemForm.total) };
-                setInventory([newItem, ...inventory]); 
-                setNewItemForm({ id: '', category: '', name: '', total: 1 }); setShowAddForm(false);
-            };
-
-            const handleDeleteInventoryItem = (itemId) => {
-                const item = inventory.find(i => i.id === itemId);
-                if (item.available < item.total) return showNotification('Tidak bisa dihapus (sedang dipinjam)!', 'error');
-                if (window.confirm(`Hapus alat ${item.name}?`)) setInventory(inventory.filter(i => i.id !== itemId));
-            };
-
-            const renderDashboard = () => {
-                const totalAlat = inventory.reduce((sum, item) => sum + item.total, 0);
-                const totalTersedia = inventory.reduce((sum, item) => sum + item.available, 0);
-                const totalDipinjam = totalAlat - totalTersedia;
-                const persenTersedia = totalAlat === 0 ? 0 : Math.round((totalTersedia / totalAlat) * 100);
-                const persenDipinjam = totalAlat === 0 ? 0 : Math.round((totalDipinjam / totalAlat) * 100);
-                const activeTx = transactions.filter(t => t.status === 'active');
-                
-                const today = new Date(); today.setHours(0,0,0,0);
-                const lateTx = activeTx.filter(t => { const rDate = new Date(t.returnDateEst); rDate.setHours(0,0,0,0); return today > rDate; });
-                const persenTerlambat = activeTx.length === 0 ? 0 : Math.round((lateTx.length / activeTx.length) * 100);
-
-                const categories = [...new Set(inventory.map(i => i.category))];
-                const categoryStats = categories.map(cat => {
-                    const itemsInCat = inventory.filter(i => i.category === cat);
-                    const total = itemsInCat.reduce((sum, i) => sum + i.total, 0);
-                    const available = itemsInCat.reduce((sum, i) => sum + i.available, 0);
-                    return { category: cat, total, borrowed: total - available, available };
-                }).sort((a, b) => b.total - a.total);
-
-                const chartColors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316'];
-                let cumulativePercent = 0;
-                const pieGradients = categoryStats.map((stat, i) => {
-                    const percent = stat.total === 0 ? 0 : (stat.total / totalAlat) * 100;
-                    const gradientStr = `${chartColors[i % chartColors.length]} ${cumulativePercent}% ${cumulativePercent + percent}%`;
-                    cumulativePercent += percent; return gradientStr;
-                }).join(', ');
-                const pieStyle = { background: `conic-gradient(${pieGradients})` };
-
-                const itemFrequency = {};
-                transactions.forEach(trx => {
-                    if (!trx.items) return;
-                    trx.items.forEach(item => {
-                        const match = item.name.match(/\[(.*?)\]/);
-                        const itemId = match ? match[1] : item.name;
-                        if (!itemFrequency[itemId]) itemFrequency[itemId] = { count: 0, name: item.name };
-                        itemFrequency[itemId].count += parseInt(item.quantity);
-                    });
-                });
-                const topItems = Object.keys(itemFrequency).map(id => ({ id, count: itemFrequency[id].count, name: itemFrequency[id].name })).sort((a, b) => b.count - a.count).slice(0, 5);
-
-                return (
-                    <div className="space-y-6 animate-fade-in">
-                        <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Dashboard Monitoring</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm"><div className="flex justify-between items-start"><div><p className="text-sm text-gray-500 font-semibold mb-1">Total Inventaris</p><p className="text-3xl font-black text-gray-800">{totalAlat}</p></div><div className="bg-blue-100 p-3 rounded-lg text-blue-600"><i className="fas fa-boxes text-xl"></i></div></div></div>
-                            <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm"><div className="flex justify-between items-start"><div><p className="text-sm text-gray-500 font-semibold mb-1">Ketersediaan</p><p className="text-3xl font-black text-green-600">{persenTersedia}%</p></div><div className="bg-green-100 p-3 rounded-lg text-green-600"><i className="fas fa-check-circle text-xl"></i></div></div><div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-green-500 h-1.5 rounded-full" style={{width: `${persenTersedia}%`}}></div></div></div>
-                            <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm"><div className="flex justify-between items-start"><div><p className="text-sm text-gray-500 font-semibold mb-1">Sedang Dipinjam</p><p className="text-3xl font-black text-orange-500">{persenDipinjam}%</p></div><div className="bg-orange-100 p-3 rounded-lg text-orange-600"><i className="fas fa-exchange-alt text-xl"></i></div></div><div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-orange-500 h-1.5 rounded-full" style={{width: `${persenDipinjam}%`}}></div></div></div>
-                            <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm"><div className="flex justify-between items-start"><div><p className="text-sm text-gray-500 font-semibold mb-1">Risiko Terlambat</p><p className="text-3xl font-black text-red-500">{persenTerlambat}%</p></div><div className="bg-red-100 p-3 rounded-lg text-red-600"><i className="fas fa-exclamation-triangle text-xl"></i></div></div><div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-red-500 h-1.5 rounded-full" style={{width: `${persenTerlambat}%`}}></div></div></div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
-                                <h3 className="text-lg font-bold text-gray-800 mb-6">Distribusi Alat</h3>
-                                <div className="flex flex-col md:flex-row items-center gap-8 my-auto">
-                                    <div className="w-40 h-40 rounded-full shadow-inner relative flex-shrink-0" style={pieStyle}><div className="absolute inset-0 m-auto w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-sm"><span className="font-bold text-gray-600 text-sm">Total: {totalAlat}</span></div></div>
-                                    <div className="w-full space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                                        {categoryStats.map((stat, i) => (<div key={stat.category} className="flex items-center justify-between text-sm"><div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full flex-shrink-0" style={{backgroundColor: chartColors[i % chartColors.length]}}></span><span className="text-gray-600 font-medium truncate">{stat.category}</span></div><span className="font-bold text-gray-800">{totalAlat === 0 ? 0 : Math.round((stat.total/totalAlat)*100)}%</span></div>))}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                                <h3 className="text-lg font-bold text-gray-800 mb-6">Tingkat Penggunaan</h3>
-                                <div className="space-y-4 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                                    {categoryStats.map((stat) => {
-                                        const usePercent = stat.total === 0 ? 0 : Math.round((stat.borrowed / stat.total) * 100);
-                                        return (<div key={stat.category}><div className="flex justify-between text-sm mb-1"><span className="font-semibold text-gray-700">{stat.category}</span><span className="text-gray-500">{stat.borrowed}/{stat.total} <span className="font-bold text-blue-600">({usePercent}%)</span></span></div><div className="w-full bg-gray-100 rounded-full h-2"><div className="bg-blue-500 h-2 rounded-full" style={{width: `${usePercent}%`}}></div></div></div>);
-                                    })}
-                                </div>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                                <h3 className="text-lg font-bold text-gray-800 mb-4"><i className="fas fa-fire text-orange-500 mr-2"></i> Paling Sering Dipinjam</h3>
-                                {topItems.length === 0 ? <p className="text-gray-400 text-sm italic py-4 text-center">Belum ada data.</p> : (
-                                    <ul className="divide-y divide-gray-100">{topItems.map((item, idx) => (<li key={idx} className="py-3 flex justify-between items-center"><div className="flex items-center gap-3"><div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-50 text-gray-500'}`}>{idx + 1}</div><div><p className="text-sm font-bold text-gray-800">{item.name}</p></div></div><span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold">{item.count}x</span></li>))}</ul>
-                                )}
-                            </div>
-                            <div className="bg-white p-6 rounded-xl border border-red-200 shadow-sm relative overflow-hidden"><div className="absolute top-0 right-0 w-32 h-32 bg-red-50 rounded-bl-full -z-10"></div>
-                                <h3 className="text-lg font-bold text-red-700 mb-4"><i className="fas fa-bell mr-2"></i> Monitor Keterlambatan</h3>
-                                {lateTx.length === 0 ? <div className="text-center py-8 text-green-500"><i className="fas fa-shield-check text-4xl mb-3 opacity-50"></i><p className="text-sm font-medium">Aman. Tidak ada yang terlambat.</p></div> : (
-                                    <div className="space-y-3">{lateTx.map(trx => (<div key={trx.id} className="bg-red-50 border-l-4 border-red-500 p-3 rounded-r-lg"><div className="flex justify-between"><p className="font-bold text-red-800 text-sm">{trx.borrowerName}</p><span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded">Telat</span></div><p className="text-xs text-red-700 mt-1">Batas: {new Date(trx.returnDateEst).toLocaleDateString('id-ID')}</p></div>))}</div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                );
-            };
-
-            const renderInventory = () => {
-                const categories = ['Semua', ...new Set(inventory.map(item => item.category))];
-                const filteredInventory = filterCategory === 'Semua' ? inventory : inventory.filter(item => item.category === filterCategory);
-
-                return (
-                    <div className="space-y-6 animate-fade-in">
-                        <div className="flex justify-between items-end border-b pb-4">
-                            <h2 className="text-2xl font-bold text-gray-800">Stok Alat Laboratorium</h2>
-                        </div>
-                        <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-2">
-                            {categories.map(cat => <button key={cat} onClick={() => setFilterCategory(cat)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterCategory === cat ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>{cat}</button>)}
-                        </div>
-                        {isAdmin && (
-                            <div className="mb-4">
-                                <button onClick={() => setShowAddForm(!showAddForm)} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold shadow-sm mb-3">Tambah Alat Baru</button>
-                                {showAddForm && (
-                                    <form onSubmit={handleAddNewInventoryItem} className="bg-blue-50 p-4 rounded-xl border grid grid-cols-1 md:grid-cols-5 gap-4">
-                                        <div><label className="text-xs font-bold">Kode</label><input type="text" className="w-full p-2 border rounded" value={newItemForm.id} onChange={e => setNewItemForm({...newItemForm, id: e.target.value})} required/></div>
-                                        <div><label className="text-xs font-bold">Kategori</label><input type="text" className="w-full p-2 border rounded" value={newItemForm.category} onChange={e => setNewItemForm({...newItemForm, category: e.target.value})} required/></div>
-                                        <div className="md:col-span-2"><label className="text-xs font-bold">Nama</label><input type="text" className="w-full p-2 border rounded" value={newItemForm.name} onChange={e => setNewItemForm({...newItemForm, name: e.target.value})} required/></div>
-                                        <div><label className="text-xs font-bold">Jumlah</label><div className="flex gap-2"><input type="number" className="w-full p-2 border rounded" value={newItemForm.total} onChange={e => setNewItemForm({...newItemForm, total: e.target.value})} required/><button className="bg-green-600 text-white px-3 rounded"><i className="fas fa-save"></i></button></div></div>
-                                    </form>
-                                )}
-                            </div>
-                        )}
-                        <div className="bg-white rounded-xl border shadow-sm overflow-x-auto">
-                            <table className="w-full text-left whitespace-nowrap"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Kode</th><th className="p-4">Kategori</th><th className="p-4">Nama</th><th className="p-4 text-center">Total</th><th className="p-4 text-center">Tersedia</th>{isAdmin && <th>Aksi</th>}</tr></thead>
-                            <tbody className="divide-y divide-gray-100">{filteredInventory.map(item => <tr key={item.id} className="hover:bg-gray-50"><td className="p-4 font-bold">{item.id}</td><td className="p-4 text-xs">{item.category}</td><td className="p-4">{item.name}</td><td className="p-4 text-center">{item.total}</td><td className="p-4 text-center font-black text-green-600">{item.available}</td>{isAdmin && <td className="p-4"><button onClick={()=>handleDeleteInventoryItem(item.id)} className="text-red-500"><i className="fas fa-trash"></i></button></td>}</tr>)}</tbody></table>
-                        </div>
-                    </div>
-                );
-            };
-
-            const renderBorrowForm = () => {
-                const inventoryByCategory = inventory.reduce((acc, item) => { if (!acc[item.category]) acc[item.category] = []; acc[item.category].push(item); return acc; }, {});
-
-                return (
-                    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-                        <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Form Peminjaman Alat</h2>
-                        <form onSubmit={submitBorrow} className="bg-white p-6 rounded-xl border shadow-sm space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div><label className="block text-sm font-medium mb-1">Nama / Kelompok</label><input type="text" required className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowerName} onChange={e => setBorrowForm({...borrowForm, borrowerName: e.target.value})} placeholder="Contoh: Kelompok 1 - Budi" /></div>
-                                <div><label className="block text-sm font-medium mb-1">NIM / ID</label><input type="text" required className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.nim} onChange={e => setBorrowForm({...borrowForm, nim: e.target.value})} placeholder="Masukkan NIM" /></div>
-                                
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium mb-1">Keperluan Peminjaman</label>
-                                    <select required className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white" value={borrowForm.keperluan} onChange={e => setBorrowForm({...borrowForm, keperluan: e.target.value})}>
-                                        <option value="Praktikum">Praktikum</option>
-                                        <option value="Tugas Akhir">Tugas Akhir</option>
-                                        <option value="Penelitian">Penelitian</option>
-                                        <option value="Proyek">Proyek</option>
-                                        <option value="Lainnya">Lainnya</option>
-                                    </select>
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Waktu Pinjam (Tanggal & Jam)</label>
-                                    <div className="flex gap-2">
-                                        <input type="date" required className="w-3/5 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowDate} onChange={e => setBorrowForm({...borrowForm, borrowDate: e.target.value})} />
-                                        <input type="time" required className="w-2/5 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowTime} onChange={e => setBorrowForm({...borrowForm, borrowTime: e.target.value})} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Estimasi Kembali (Tanggal & Jam)</label>
-                                    <div className="flex gap-2">
-                                        <input type="date" required className="w-3/5 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.returnDateEst} onChange={e => setBorrowForm({...borrowForm, returnDateEst: e.target.value})} />
-                                        <input type="time" required className="w-2/5 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.returnTimeEst} onChange={e => setBorrowForm({...borrowForm, returnTimeEst: e.target.value})} />
-                                    </div>
-                                </div>
-
-                                <div className="md:col-span-2 bg-blue-50 p-4 rounded-xl border border-blue-200 mt-2">
-                                    <label className="block text-sm font-bold text-blue-900 mb-2">
-                                        <i className="fas fa-file-upload mr-2"></i> Unggah Surat Izin (PDF/Gambar, Maksimal 3MB)
-                                    </label>
-                                    <input type="file" accept=".pdf, image/jpeg, image/png" ref={fileInputRef} required onChange={handleFileChange} className="w-full text-sm text-gray-600 bg-white border border-blue-300 rounded-lg p-2" />
-                                </div>
-                            </div>
-                            <div className="border-t pt-4">
-                                <div className="flex justify-between items-center mb-3"><label className="block text-sm font-bold">Daftar Alat</label><button type="button" onClick={handleAddBorrowItem} className="text-sm bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold">+ Tambah</button></div>
-                                <div className="space-y-3">
-                                    {borrowForm.items.map((item, index) => (
-                                        <div key={index} className="flex flex-col md:flex-row gap-3 bg-slate-50 p-3 rounded-lg border items-center">
-                                            <span className="font-bold text-slate-400">{index + 1}.</span>
-                                            <select className="flex-grow w-full p-2 border rounded-lg" value={item.itemId} onChange={e => handleBorrowItemChange(index, 'itemId', e.target.value)} required>
-                                                <option value="" disabled>-- Pilih Alat --</option>
-                                                {Object.keys(inventoryByCategory).map(category => (
-                                                    <optgroup key={category} label={category.toUpperCase()}>
-                                                        {inventoryByCategory[category].map(inv => <option key={inv.id} value={inv.id} disabled={inv.available === 0}>[{inv.id}] {inv.name} (Sisa: {inv.available})</option>)}
-                                                    </optgroup>
-                                                ))}
-                                            </select>
-                                            <div className="flex items-center gap-3">
-                                                <input type="number" min="1" className="w-20 p-2 border rounded-lg text-center font-bold" value={item.quantity} onChange={e => handleBorrowItemChange(index, 'quantity', e.target.value)} required />
-                                                {borrowForm.items.length > 1 && <button type="button" onClick={() => handleRemoveBorrowItem(index)} className="text-red-500"><i className="fas fa-trash"></i></button>}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                            <button type="submit" disabled={isSubmitting} className="mt-4 bg-blue-600 text-white font-bold py-3 px-8 rounded-lg shadow-md w-full md:w-auto">
-                                {isSubmitting ? 'Memproses Upload...' : 'Proses Peminjaman'}
-                            </button>
-                        </form>
-                    </div>
-                );
-            };
-
-            const renderTransactions = () => (
-                <div className="space-y-6 animate-fade-in">
-                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Status & Pengembalian Alat</h2>
-                    <div className="bg-white rounded-xl border shadow-sm overflow-x-auto">
-                        {transactions.length === 0 ? <div className="p-10 text-center text-gray-400">Belum ada histori peminjaman.</div> : (
-                            <table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Info Peminjam</th><th className="p-4">Waktu Pinjam & Kembali</th><th className="p-4">Rincian Alat</th><th className="p-4">Status</th><th className="p-4">Aksi</th></tr></thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {transactions.map(trx => (
-                                    <tr key={trx.id} className="hover:bg-gray-50">
-                                        <td className="p-4">
-                                            <p className="font-bold text-gray-900 text-base">{trx.borrowerName}</p>
-                                            <p className="text-gray-500 text-xs">NIM: {trx.nim}</p>
-                                            <span className="inline-block mt-1 mb-2 bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold">{trx.keperluan || 'Praktikum'}</span><br/>
-                                            {/* FITUR LINK BUKA FILE PDF/GAMBAR DARI GOOGLE DRIVE */}
-                                            {trx.approvalFileUrl ? (
-                                                <a href={trx.approvalFileUrl} target="_blank" rel="noopener noreferrer" className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-1 rounded-md shadow-sm hover:bg-blue-100 inline-block">
-                                                    <i className="fas fa-external-link-alt mr-1 text-red-500"></i> Buka Berkas
-                                                </a>
-                                            ) : (
-                                                <div className="mt-2 text-xs text-slate-500 bg-slate-50 border px-2 py-1 rounded-md w-max"><i className="fas fa-file mr-1"></i> {trx.approvalFileName}</div>
-                                            )}
-                                        </td>
-                                        <td className="p-4 text-xs space-y-2">
-                                            <div><span className="font-semibold text-gray-600 block">Pinjam:</span> <span className="text-gray-800">{trx.borrowDateFormatted} <span className="font-bold text-blue-600">{trx.borrowTime}</span></span></div>
-                                            <div><span className="font-semibold text-red-500 block">Batas:</span> <span className="text-red-700">{new Date(trx.returnDateEst).toLocaleDateString('id-ID')} <span className="font-bold">{trx.returnTimeEst}</span></span></div>
-                                        </td>
-                                        <td className="p-4"><ul className="space-y-1">{trx.items && trx.items.map((item, idx) => <li key={idx} className="text-xs bg-slate-100 border px-2 py-1 rounded"><span className="font-bold">{item.name}</span> x{item.quantity}</li>)}</ul></td>
-                                        <td className="p-4">{trx.status === 'active' ? <span className="bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm">Dipinjam</span> : <span className="bg-green-100 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm">Selesai</span>}</td>
-                                        <td className="p-4 text-center">
-                                            {trx.status === 'active' ? <button onClick={() => handleReturn(trx.id)} className="bg-green-500 text-white px-3 py-2 rounded-lg text-xs font-bold shadow-sm w-full mb-1">Kembalikan</button> : <span className="text-gray-400 text-xs block mb-1">Tuntas</span>}
-                                            {isAdmin && <button onClick={() => handleDelete(trx.id)} className="bg-red-500 text-white px-3 py-2 rounded-lg text-xs font-bold shadow-sm w-full">Hapus</button>}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody></table>
-                        )}
-                    </div>
-                </div>
-            );
-
-        if (isAppLoading) return <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50"><i className="fas fa-sync fa-spin text-4xl text-blue-600 mb-4"></i><h2 className="text-xl font-bold">Menghubungkan ke Database...</h2></div>
-
-        return (
-            <div className="min-h-screen flex flex-col md:flex-row">
-                {notification && <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-xl text-white font-semibold flex items-center ${notification.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}><i className="fas fa-info-circle mr-3"></i> {notification.message}</div>}
-                
-                <nav className="bg-slate-900 w-full md:w-64 flex-shrink-0 text-white flex flex-col shadow-xl md:min-h-screen">
-                    <div className="p-6 bg-slate-950 text-center border-b border-slate-800"><div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg mb-3"><i className="fas fa-satellite-dish text-3xl"></i></div><h1 className="text-lg font-black uppercase">Monitoring Lab</h1></div>
-                    <div className="flex-grow p-4 space-y-2">
-                        <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl ${activeTab === 'dashboard' ? 'bg-blue-600' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-chart-pie w-5"></i> Dashboard</button>
-                        <button onClick={() => setActiveTab('inventory')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl ${activeTab === 'inventory' ? 'bg-blue-600' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-boxes w-5"></i> Stok Alat</button>
-                        <button onClick={() => setActiveTab('borrow')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl ${activeTab === 'borrow' ? 'bg-blue-600' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-edit w-5"></i> Peminjaman</button>
-                        <button onClick={() => setActiveTab('transactions')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl ${activeTab === 'transactions' ? 'bg-blue-600' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-history w-5"></i> Pengembalian</button>
-                    </div>
-                    <div className="p-4 border-t border-slate-800 relative text-center">
-                        <p className="text-xs text-slate-500 mb-4">&copy; 2026 Lab Geomatika</p>
-                        <button onClick={handleAdminToggle} className="p-2 text-slate-700 hover:text-white" title="Admin Access"><i className={`fas ${isAdmin ? 'fa-lock-open text-red-500' : 'fa-lock'}`}></i></button>
-                    </div>
-                </nav>
-                <main className="flex-grow p-4 md:p-8 overflow-y-auto w-full bg-gray-100/50">
-                    <div className="max-w-6xl mx-auto">
-                        {activeTab === 'dashboard' && renderDashboard()}
-                        {activeTab === 'inventory' && renderInventory()}
-                        {activeTab === 'borrow' && renderBorrowForm()}
-                        {activeTab === 'transactions' && renderTransactions()}
-                    </div>
-                </main>
-            </div>
-        );
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === data.id) {
+      sheet.getRange(i + 1, 9).setValue(data.status); // kolom status
+      break;
     }
+  }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
-</script>
+  return ContentService.createTextOutput("updated");
+}
 
-<style>
-    .animate-fade-in { animation: fadeIn 0.3s; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-    .custom-scrollbar::-webkit-scrollbar { height: 6px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-</style>
-</body>
-</html>
+function deleteData(data) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Sheet1");
+  const rows = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === data.id) {
+      sheet.deleteRow(i + 1);
+      break;
+    }
+  }
+
+  return ContentService.createTextOutput("deleted");
+}
