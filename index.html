@@ -18,12 +18,11 @@
 </head>
 <body class="bg-gray-100 font-sans">
     
-    <!-- Layar Loading -->
     <div id="root">
+        <!-- Layar Loading Awal -->
         <div class="flex flex-col items-center justify-center min-h-screen bg-gray-50">
             <i class="fas fa-spinner fa-spin text-4xl text-blue-600 mb-4"></i>
             <h2 class="text-xl font-bold text-gray-800">Memuat Aplikasi...</h2>
-            <p class="text-gray-500 text-sm mt-2">Pastikan koneksi internet stabil.</p>
         </div>
     </div>
 
@@ -97,26 +96,23 @@
         ];
 
         function App() {
+            const [isAppLoading, setIsAppLoading] = useState(true);
             const [activeTab, setActiveTab] = useState('dashboard');
             const [inventory, setInventory] = useState(initialInventory);
             const [transactions, setTransactions] = useState([]);
             const [filterCategory, setFilterCategory] = useState('Semua');
-            const [isAdmin, setIsAdmin] = useState(false); // State untuk Mode Admin
+            const [isAdmin, setIsAdmin] = useState(false);
             
-            // State Form Tambah Alat Admin
             const [showAddForm, setShowAddForm] = useState(false);
-            const [newItemForm, setNewItemForm] = useState({
-                id: '', category: '', name: '', total: 1
-            });
+            const [newItemForm, setNewItemForm] = useState({ id: '', category: '', name: '', total: 1 });
 
             const fileInputRef = useRef(null);
 
-            // URL Google Script Baru Anda yang valid
-            const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbya76yRLLkeDvF1M19Yz18cbKlItZMO5-IdwP8swQzI1ucxD9uZ4XV9sOmMrRDREKSgyw/exec'; 
+            // MASUKKAN URL GOOGLE APPS SCRIPT ANDA DI SINI
+            const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzrp17VSuAYqNexW44gWtqrxT0s3B6a0QbQSNwzhzAZr_IXPtNJ9kLeLaNEY8pXMYO6jQ/exec'; 
 
             const [borrowForm, setBorrowForm] = useState({
-                borrowerName: '',
-                nim: '',
+                borrowerName: '', nim: '',
                 borrowDate: new Date().toISOString().split('T')[0],
                 returnDateEst: '',
                 items: [{ itemId: '', quantity: 1 }],
@@ -131,41 +127,84 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
+            // EFEK SAAT PERTAMA KALI WEB DIBUKA: AMBIL DATA DARI SPREADSHEET
+            useEffect(() => {
+                const fetchDatabase = async () => {
+                    try {
+                        const response = await fetch(GOOGLE_SCRIPT_URL);
+                        const rawData = await response.json();
+                        
+                        // Format tanggal agar bagus di UI
+                        const formattedData = rawData.map(trx => ({
+                            ...trx,
+                            borrowDateFormatted: new Date(trx.borrowDate).toLocaleDateString('id-ID')
+                        }));
+
+                        setTransactions(formattedData);
+
+                        // Hitung ulang stok inventory berdasarkan alat yang sedang dipinjam (Status: active)
+                        let currentInventory = JSON.parse(JSON.stringify(initialInventory));
+                        
+                        formattedData.forEach(trx => {
+                            if (trx.status === 'active' && trx.items) {
+                                trx.items.forEach(bItem => {
+                                    // Ekstrak ID (contoh dari string: "[TS-001] Nama Alat")
+                                    const match = bItem.name.match(/\[(.*?)\]/);
+                                    if (match && match[1]) {
+                                        const itemId = match[1];
+                                        const invIndex = currentInventory.findIndex(i => i.id === itemId);
+                                        if (invIndex !== -1) {
+                                            currentInventory[invIndex].available -= parseInt(bItem.quantity);
+                                        }
+                                    }
+                                });
+                            }
+                        });
+
+                        setInventory(currentInventory);
+                    } catch (error) {
+                        console.error("Gagal terhubung ke Spreadsheet:", error);
+                        showNotification("Sistem berjalan offline sementara. Data historis tidak dapat dimuat.", "error");
+                    } finally {
+                        setIsAppLoading(false);
+                    }
+                };
+
+                fetchDatabase();
+            }, []);
+
             const handleShareLink = () => {
-                const professionalUrl = "https://ongkyanggara.github.io/peminjaman-alat-geomatika/"; 
-                const textArea = document.createElement("textarea");
-                textArea.value = professionalUrl;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand("copy");
-                document.body.removeChild(textArea);
-                showNotification('Tautan aplikasi berhasil disalin!', 'success');
+                const url = window.location.href; 
+                navigator.clipboard.writeText(url).then(() => {
+                    showNotification('Tautan aplikasi berhasil disalin!', 'success');
+                }).catch(err => {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = url;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(textArea);
+                    showNotification('Tautan aplikasi berhasil disalin!', 'success');
+                });
             };
 
-            const handleAddBorrowItem = () => {
-                setBorrowForm({...borrowForm, items: [...borrowForm.items, { itemId: '', quantity: 1 }]});
-            };
-
+            const handleAddBorrowItem = () => setBorrowForm({...borrowForm, items: [...borrowForm.items, { itemId: '', quantity: 1 }]});
             const handleRemoveBorrowItem = (index) => {
                 const newItems = [...borrowForm.items];
                 newItems.splice(index, 1);
                 setBorrowForm({ ...borrowForm, items: newItems });
             };
-
             const handleBorrowItemChange = (index, field, value) => {
                 const newItems = [...borrowForm.items];
                 newItems[index][field] = value;
                 setBorrowForm({ ...borrowForm, items: newItems });
             };
-
             const handleFileChange = (e) => {
-                if (e.target.files && e.target.files[0]) {
-                    setBorrowForm({...borrowForm, approvalFileName: e.target.files[0].name});
-                } else {
-                    setBorrowForm({...borrowForm, approvalFileName: ''});
-                }
+                if (e.target.files && e.target.files[0]) setBorrowForm({...borrowForm, approvalFileName: e.target.files[0].name});
+                else setBorrowForm({...borrowForm, approvalFileName: ''});
             };
 
+            // SIMPAN DATA (POST)
             const submitBorrow = async (e) => {
                 e.preventDefault();
                 
@@ -175,55 +214,46 @@
                 }
 
                 for (let item of borrowForm.items) {
-                    if (!item.itemId) {
-                        showNotification('Ada baris alat yang belum dipilih', 'error');
-                        return;
-                    }
-                    if (item.quantity <= 0) {
-                        showNotification('Jumlah alat tidak valid', 'error');
-                        return;
-                    }
+                    if (!item.itemId) return showNotification('Ada baris alat yang belum dipilih', 'error');
+                    if (item.quantity <= 0) return showNotification('Jumlah alat tidak valid', 'error');
                     
                     const inventoryItem = inventory.find(i => i.id === item.itemId);
                     if (item.quantity > inventoryItem.available) {
-                        showNotification(`Stok ${inventoryItem.name} tidak mencukupi! (Tersedia: ${inventoryItem.available})`, 'error');
-                        return;
+                        return showNotification(`Stok ${inventoryItem.name} tidak mencukupi! (Tersedia: ${inventoryItem.available})`, 'error');
                     }
                 }
 
                 setIsSubmitting(true);
                 const newTransactionId = 'TRX-' + Math.floor(Math.random() * 1000000);
+                
+                const alatLengkap = borrowForm.items.map(item => {
+                    const invItem = inventory.find(i => i.id === item.itemId);
+                    return { name: `[${invItem.id}] ${invItem.name}`, quantity: item.quantity };
+                });
 
-                if (GOOGLE_SCRIPT_URL) {
-                    try {
-                        const alatLengkap = borrowForm.items.map(item => {
-                            const invItem = inventory.find(i => i.id === item.itemId);
-                            return { name: `[${invItem.id}] ${invItem.name}`, quantity: item.quantity };
-                        });
+                const payload = {
+                    action: "create",
+                    id: newTransactionId,
+                    borrowerName: borrowForm.borrowerName,
+                    nim: borrowForm.nim,
+                    borrowDate: borrowForm.borrowDate,
+                    returnDateEst: borrowForm.returnDateEst,
+                    approvalFileName: borrowForm.approvalFileName,
+                    items: alatLengkap
+                };
 
-                        const payload = {
-                            id: newTransactionId,
-                            borrowerName: borrowForm.borrowerName,
-                            nim: borrowForm.nim,
-                            borrowDate: borrowForm.borrowDate,
-                            returnDateEst: borrowForm.returnDateEst,
-                            approvalFileName: borrowForm.approvalFileName,
-                            items: alatLengkap
-                        };
-
-                        // PEMBARUAN: Mengirim tanpa header custom agar browser membiarkan request lewat tanpa blokir CORS
-                        await fetch(GOOGLE_SCRIPT_URL, {
-                            method: 'POST',
-                            mode: 'no-cors',
-                            body: JSON.stringify(payload)
-                        });
-                        
-                    } catch (error) {
-                        // Error ditangkap secara sembunyi karena mode no-cors pada Chrome terkadang memunculkan pesan error palsu
-                        console.error('Info pengiriman fetch:', error);
-                    }
+                try {
+                    // Kirim ke GS
+                    await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify(payload)
+                    });
+                } catch (error) {
+                    console.error('Info pengiriman fetch:', error);
                 }
 
+                // Update UI Langsung
                 const newInventory = [...inventory];
                 borrowForm.items.forEach(bItem => {
                     const invIndex = newInventory.findIndex(i => i.id === bItem.itemId);
@@ -231,16 +261,14 @@
                 });
 
                 const newTransaction = {
-                    id: newTransactionId,
-                    type: 'borrow',
+                    ...payload,
                     status: 'active',
-                    ...borrowForm,
                     borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID'),
                 };
 
                 setInventory(newInventory);
                 setTransactions([newTransaction, ...transactions]);
-                showNotification('Peminjaman berhasil dicatat!');
+                showNotification('Peminjaman berhasil dicatat & tersimpan di Spreadsheet!');
                 
                 setBorrowForm({
                     borrowerName: '', nim: '',
@@ -254,106 +282,111 @@
                 setIsSubmitting(false);
             };
 
-            const handleReturn = (transactionId) => {
+            // KEMBALIKAN ALAT & UPDATE DI SPREADSHEET
+            const handleReturn = async (transactionId) => {
                 if (window.confirm('Apakah alat sudah dikembalikan semua dalam kondisi baik?')) {
                     const trxIndex = transactions.findIndex(t => t.id === transactionId);
                     const trx = transactions[trxIndex];
 
                     const newInventory = [...inventory];
                     trx.items.forEach(rItem => {
-                        const invIndex = newInventory.findIndex(i => i.id === rItem.itemId);
-                        newInventory[invIndex].available += parseInt(rItem.quantity);
+                        // Extract ID if necessary
+                        const match = rItem.name.match(/\[(.*?)\]/);
+                        const itemId = match ? match[1] : null;
+                        if (itemId) {
+                            const invIndex = newInventory.findIndex(i => i.id === itemId);
+                            if (invIndex !== -1) newInventory[invIndex].available += parseInt(rItem.quantity);
+                        }
                     });
 
                     const newTransactions = [...transactions];
                     newTransactions[trxIndex].status = 'completed';
-                    newTransactions[trxIndex].actualReturnDate = new Date().toLocaleDateString('id-ID');
 
                     setInventory(newInventory);
                     setTransactions(newTransactions);
-                    showNotification('Pengembalian berhasil dicatat!');
+                    showNotification('Pengembalian dicatat. Mensinkronisasi ke sistem...');
+
+                    // Update Spreadsheet
+                    try {
+                        await fetch(GOOGLE_SCRIPT_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            body: JSON.stringify({ action: "updateStatus", id: transactionId, status: "completed" })
+                        });
+                    } catch(e) { console.error("Gagal sinkron pengembalian", e) }
                 }
             };
 
-            const handleDelete = (transactionId) => {
-                if (window.confirm('PERINGATAN: Data ini akan dihapus dari layar dan stok akan dikembalikan. Namun data di Spreadsheet harus Anda hapus manual. Lanjutkan?')) {
+            // HAPUS ALAT & HAPUS BARIS DI SPREADSHEET
+            const handleDelete = async (transactionId) => {
+                if (window.confirm('PERINGATAN: Transaksi ini akan dihapus permanen dari memori DAN Google Spreadsheet Anda. Lanjutkan?')) {
                     const trxIndex = transactions.findIndex(t => t.id === transactionId);
                     const trx = transactions[trxIndex];
 
-                    // Jika status masih dipinjam, kembalikan stoknya
                     if (trx.status === 'active') {
                         const newInventory = [...inventory];
                         trx.items.forEach(rItem => {
-                            const invIndex = newInventory.findIndex(i => i.id === rItem.itemId);
-                            if (invIndex !== -1) newInventory[invIndex].available += parseInt(rItem.quantity);
+                            const match = rItem.name.match(/\[(.*?)\]/);
+                            const itemId = match ? match[1] : null;
+                            if (itemId) {
+                                const invIndex = newInventory.findIndex(i => i.id === itemId);
+                                if (invIndex !== -1) newInventory[invIndex].available += parseInt(rItem.quantity);
+                            }
                         });
                         setInventory(newInventory);
                     }
 
-                    // Hapus dari daftar transaksi
                     const newTransactions = transactions.filter(t => t.id !== transactionId);
                     setTransactions(newTransactions);
-                    showNotification('Data transaksi berhasil dihapus dari sistem layar.');
+                    showNotification('Menghapus data dari server...');
+
+                    // Hapus dari Spreadsheet
+                    try {
+                        await fetch(GOOGLE_SCRIPT_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            body: JSON.stringify({ action: "delete", id: transactionId })
+                        });
+                    } catch(e) { console.error("Gagal sinkron hapus", e) }
                 }
             };
 
             const handleAdminToggle = () => {
                 if (isAdmin) {
-                    setIsAdmin(false);
-                    setShowAddForm(false);
-                    showNotification('Berhasil keluar dari Mode Admin', 'success');
+                    setIsAdmin(false); setShowAddForm(false);
+                    showNotification('Keluar dari Mode Admin', 'success');
                 } else {
                     const pass = prompt('Masukkan Password Admin:');
-                    if (pass === 'adminlab') { // Password rahasianya: adminlab
-                        setIsAdmin(true);
-                        showNotification('Mode Admin Aktif! Anda kini bisa menambah/menghapus data.', 'success');
+                    if (pass === 'adminlab') { 
+                        setIsAdmin(true); showNotification('Mode Admin Aktif!', 'success');
                     } else if (pass !== null) {
                         showNotification('Password salah!', 'error');
                     }
                 }
             };
 
-            // Tambah Alat Baru (Khusus Admin)
+            // Fitur ini hanya sementara, jika web refresh alat baru hilang karena belum disimpan di Sheet Inventory
             const handleAddNewInventoryItem = (e) => {
                 e.preventDefault();
-                if (!newItemForm.id || !newItemForm.category || !newItemForm.name || newItemForm.total <= 0) {
-                    showNotification('Lengkapi semua data alat dengan benar!', 'error');
-                    return;
-                }
-                if (inventory.some(i => i.id === newItemForm.id)) {
-                    showNotification('Kode Alat sudah digunakan di sistem!', 'error');
-                    return;
-                }
+                if (!newItemForm.id || !newItemForm.category || !newItemForm.name || newItemForm.total <= 0) return showNotification('Data alat belum lengkap!', 'error');
+                if (inventory.some(i => i.id === newItemForm.id)) return showNotification('Kode Alat sudah digunakan!', 'error');
                 
-                const newItem = {
-                    id: newItemForm.id,
-                    category: newItemForm.category,
-                    name: newItemForm.name,
-                    total: parseInt(newItemForm.total),
-                    available: parseInt(newItemForm.total)
-                };
-
-                setInventory([newItem, ...inventory]); // Tambahkan ke baris atas
-                showNotification('Alat baru berhasil ditambahkan ke sistem!', 'success');
+                const newItem = { id: newItemForm.id, category: newItemForm.category, name: newItemForm.name, total: parseInt(newItemForm.total), available: parseInt(newItemForm.total) };
+                setInventory([newItem, ...inventory]); 
+                showNotification('Alat ditambahkan ke sesi ini', 'success');
                 setNewItemForm({ id: '', category: '', name: '', total: 1 });
                 setShowAddForm(false);
             };
 
-            // Hapus Alat dari Inventaris (Khusus Admin)
             const handleDeleteInventoryItem = (itemId) => {
                 const item = inventory.find(i => i.id === itemId);
-                if (item.available < item.total) {
-                    showNotification('Tidak bisa menghapus alat yang sedang dipinjam mahasiswa!', 'error');
-                    return;
-                }
-                if (window.confirm(`Hapus alat ${item.name} (${item.id}) secara permanen dari sistem?`)) {
+                if (item.available < item.total) return showNotification('Tidak bisa menghapus alat yang dipinjam!', 'error');
+                if (window.confirm(`Hapus alat ${item.name}?`)) {
                     setInventory(inventory.filter(i => i.id !== itemId));
-                    showNotification('Alat berhasil dihapus dari daftar stok', 'success');
                 }
             };
 
             const renderDashboard = () => {
-                // Kalkulasi Metrik Utama (Top Section)
                 const totalAlat = inventory.reduce((sum, item) => sum + item.total, 0);
                 const totalTersedia = inventory.reduce((sum, item) => sum + item.available, 0);
                 const totalDipinjam = totalAlat - totalTersedia;
@@ -363,7 +396,6 @@
 
                 const activeTx = transactions.filter(t => t.status === 'active');
                 
-                // Kalkulasi Keterlambatan
                 const today = new Date();
                 today.setHours(0,0,0,0);
                 const lateTx = activeTx.filter(t => {
@@ -373,7 +405,6 @@
                 });
                 const persenTerlambat = activeTx.length === 0 ? 0 : Math.round((lateTx.length / activeTx.length) * 100);
 
-                // Kalkulasi Kategori (Middle Section)
                 const categories = [...new Set(inventory.map(i => i.category))];
                 const categoryStats = categories.map(cat => {
                     const itemsInCat = inventory.filter(i => i.category === cat);
@@ -382,10 +413,8 @@
                     return { category: cat, total, borrowed: total - available, available };
                 }).sort((a, b) => b.total - a.total);
 
-                // Setup Warna Grafik Pie
                 const chartColors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316', '#64748b'];
                 
-                // CSS Grafik Pie
                 let cumulativePercent = 0;
                 const pieGradients = categoryStats.map((stat, i) => {
                     const percent = stat.total === 0 ? 0 : (stat.total / totalAlat) * 100;
@@ -395,17 +424,18 @@
                 }).join(', ');
                 const pieStyle = { background: `conic-gradient(${pieGradients})` };
 
-                // Kalkulasi Top Alat Sering Dipinjam (Bottom Section)
                 const itemFrequency = {};
                 transactions.forEach(trx => {
+                    if (!trx.items) return;
                     trx.items.forEach(item => {
-                        if (!itemFrequency[item.itemId]) itemFrequency[item.itemId] = 0;
-                        itemFrequency[item.itemId] += parseInt(item.quantity);
+                        const match = item.name.match(/\[(.*?)\]/);
+                        const itemId = match ? match[1] : item.name;
+                        if (!itemFrequency[itemId]) itemFrequency[itemId] = { count: 0, name: item.name };
+                        itemFrequency[itemId].count += parseInt(item.quantity);
                     });
                 });
                 const topItems = Object.keys(itemFrequency)
-                    .map(id => ({ id, count: itemFrequency[id], ...inventory.find(i => i.id === id) }))
-                    .filter(item => item.name !== undefined) // Hapus item tak ditemukan
+                    .map(id => ({ id, count: itemFrequency[id].count, name: itemFrequency[id].name }))
                     .sort((a, b) => b.count - a.count)
                     .slice(0, 5);
 
@@ -422,56 +452,40 @@
                                     <div><p className="text-sm text-gray-500 font-semibold mb-1">Total Inventaris</p><p className="text-3xl font-black text-gray-800">{totalAlat}</p></div>
                                     <div className="bg-blue-100 p-3 rounded-lg text-blue-600"><i className="fas fa-boxes text-xl"></i></div>
                                 </div>
-                                <p className="text-xs text-gray-400 mt-4">Keseluruhan item di sistem</p>
                             </div>
-
                             <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
                                 <div className="flex justify-between items-start">
                                     <div><p className="text-sm text-gray-500 font-semibold mb-1">Ketersediaan Alat</p><p className="text-3xl font-black text-green-600">{persenTersedia}%</p></div>
                                     <div className="bg-green-100 p-3 rounded-lg text-green-600"><i className="fas fa-check-circle text-xl"></i></div>
                                 </div>
-                                <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4">
-                                    <div className="bg-green-500 h-1.5 rounded-full" style={{width: `${persenTersedia}%`}}></div>
-                                </div>
-                                <p className="text-xs text-gray-500 mt-1">{totalTersedia} item siap dipinjam</p>
+                                <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-green-500 h-1.5 rounded-full" style={{width: `${persenTersedia}%`}}></div></div>
                             </div>
-
                             <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
                                 <div className="flex justify-between items-start">
                                     <div><p className="text-sm text-gray-500 font-semibold mb-1">Sedang Dipinjam</p><p className="text-3xl font-black text-orange-500">{persenDipinjam}%</p></div>
                                     <div className="bg-orange-100 p-3 rounded-lg text-orange-600"><i className="fas fa-exchange-alt text-xl"></i></div>
                                 </div>
-                                <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4">
-                                    <div className="bg-orange-500 h-1.5 rounded-full" style={{width: `${persenDipinjam}%`}}></div>
-                                </div>
-                                <p className="text-xs text-gray-500 mt-1">{totalDipinjam} item diluar lab</p>
+                                <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-orange-500 h-1.5 rounded-full" style={{width: `${persenDipinjam}%`}}></div></div>
                             </div>
-
                             <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
                                 <div className="flex justify-between items-start">
-                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Risiko Keterlambatan</p><p className="text-3xl font-black text-red-500">{persenTerlambat}%</p></div>
+                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Risiko Terlambat</p><p className="text-3xl font-black text-red-500">{persenTerlambat}%</p></div>
                                     <div className="bg-red-100 p-3 rounded-lg text-red-600"><i className="fas fa-exclamation-triangle text-xl"></i></div>
                                 </div>
-                                <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4">
-                                    <div className="bg-red-500 h-1.5 rounded-full" style={{width: `${persenTerlambat}%`}}></div>
-                                </div>
-                                <p className="text-xs text-gray-500 mt-1">{lateTx.length} dari {activeTx.length} transaksi telat</p>
+                                <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-red-500 h-1.5 rounded-full" style={{width: `${persenTerlambat}%`}}></div></div>
                             </div>
                         </div>
 
                         {/* SECTION 2: Middle Visuals */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Pie Chart: Distribusi */}
                             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
-                                <h3 className="text-lg font-bold text-gray-800 mb-6">Distribusi Alat (Per Kategori)</h3>
+                                <h3 className="text-lg font-bold text-gray-800 mb-6">Distribusi Alat</h3>
                                 <div className="flex flex-col md:flex-row items-center gap-8 my-auto">
-                                    {/* Lingkaran Pie */}
                                     <div className="w-40 h-40 rounded-full shadow-inner relative flex-shrink-0" style={pieStyle}>
                                         <div className="absolute inset-0 m-auto w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-sm">
                                             <span className="font-bold text-gray-600 text-sm">Total: {totalAlat}</span>
                                         </div>
                                     </div>
-                                    {/* Legend Pie */}
                                     <div className="w-full space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                                         {categoryStats.map((stat, i) => (
                                             <div key={stat.category} className="flex items-center justify-between text-sm">
@@ -486,9 +500,8 @@
                                 </div>
                             </div>
 
-                            {/* Bar Chart: Penggunaan */}
                             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                                <h3 className="text-lg font-bold text-gray-800 mb-6">Tingkat Penggunaan (Sedang Dipinjam)</h3>
+                                <h3 className="text-lg font-bold text-gray-800 mb-6">Tingkat Penggunaan</h3>
                                 <div className="space-y-4 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                                     {categoryStats.map((stat) => {
                                         const usePercent = stat.total === 0 ? 0 : Math.round((stat.borrowed / stat.total) * 100);
@@ -496,10 +509,10 @@
                                             <div key={stat.category}>
                                                 <div className="flex justify-between text-sm mb-1">
                                                     <span className="font-semibold text-gray-700">{stat.category}</span>
-                                                    <span className="text-gray-500">{stat.borrowed} / {stat.total} <span className="font-bold text-blue-600 ml-1">({usePercent}%)</span></span>
+                                                    <span className="text-gray-500">{stat.borrowed}/{stat.total} <span className="font-bold text-blue-600">({usePercent}%)</span></span>
                                                 </div>
                                                 <div className="w-full bg-gray-100 rounded-full h-2">
-                                                    <div className="bg-blue-500 h-2 rounded-full transition-all duration-500" style={{width: `${usePercent}%`}}></div>
+                                                    <div className="bg-blue-500 h-2 rounded-full" style={{width: `${usePercent}%`}}></div>
                                                 </div>
                                             </div>
                                         );
@@ -510,23 +523,19 @@
 
                         {/* SECTION 3: Bottom Monitoring */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Alat Sering Dipinjam */}
                             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                                <h3 className="text-lg font-bold text-gray-800 mb-4"><i className="fas fa-fire text-orange-500 mr-2"></i> Alat Paling Sering Dipinjam</h3>
+                                <h3 className="text-lg font-bold text-gray-800 mb-4"><i className="fas fa-fire text-orange-500 mr-2"></i> Paling Sering Dipinjam</h3>
                                 {topItems.length === 0 ? (
-                                    <p className="text-gray-400 text-sm italic py-4 text-center">Belum ada data peminjaman untuk dianalisis.</p>
+                                    <p className="text-gray-400 text-sm italic py-4 text-center">Belum ada data peminjaman.</p>
                                 ) : (
                                     <ul className="divide-y divide-gray-100">
                                         {topItems.map((item, idx) => (
-                                            <li key={item.id} className="py-3 flex justify-between items-center">
+                                            <li key={idx} className="py-3 flex justify-between items-center">
                                                 <div className="flex items-center gap-3">
                                                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? 'bg-yellow-100 text-yellow-700' : idx === 1 ? 'bg-slate-200 text-slate-700' : idx === 2 ? 'bg-orange-100 text-orange-800' : 'bg-gray-50 text-gray-500'}`}>
                                                         {idx + 1}
                                                     </div>
-                                                    <div>
-                                                        <p className="text-sm font-bold text-gray-800">{item.name}</p>
-                                                        <p className="text-xs text-gray-500">[{item.id}] - {item.category}</p>
-                                                    </div>
+                                                    <div><p className="text-sm font-bold text-gray-800">{item.name}</p></div>
                                                 </div>
                                                 <div className="text-right">
                                                     <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold">{item.count}x Dipinjam</span>
@@ -537,14 +546,13 @@
                                 )}
                             </div>
 
-                            {/* Alert Keterlambatan Aktif */}
                             <div className="bg-white p-6 rounded-xl border border-red-200 shadow-sm relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-red-50 rounded-bl-full -z-10"></div>
                                 <h3 className="text-lg font-bold text-red-700 mb-4"><i className="fas fa-bell mr-2"></i> Monitor Keterlambatan</h3>
                                 {lateTx.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center py-8 text-green-500">
                                         <i className="fas fa-shield-check text-4xl mb-3 opacity-50"></i>
-                                        <p className="text-sm font-medium">Luar biasa! Tidak ada peminjam yang terlambat saat ini.</p>
+                                        <p className="text-sm font-medium">Luar biasa! Tidak ada yang terlambat.</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-3">
@@ -562,42 +570,28 @@
                             </div>
                         </div>
 
-                        {/* SECTION 4: Aktivitas Sedang Berjalan (Hari Ini) */}
+                        {/* SECTION 4: Aktivitas */}
                         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                            <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-4 gap-2">
-                                <h3 className="text-lg font-bold text-gray-800"><i className="fas fa-tasks text-blue-500 mr-2"></i> Aktivitas Peminjaman Berjalan</h3>
-                                <span className="text-sm text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg font-medium border border-gray-200">
-                                    <i className="far fa-calendar-alt mr-1"></i> {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                                </span>
-                            </div>
+                            <h3 className="text-lg font-bold text-gray-800 mb-4"><i className="fas fa-tasks text-blue-500 mr-2"></i> Peminjaman Berjalan</h3>
                             {activeTx.length === 0 ? (
-                                <p className="text-gray-400 text-sm italic py-6 text-center bg-gray-50 rounded-lg">Tidak ada peminjaman yang sedang berlangsung saat ini.</p>
+                                <p className="text-gray-400 text-sm italic py-6 text-center bg-gray-50 rounded-lg">Tidak ada peminjaman aktif.</p>
                             ) : (
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left text-sm whitespace-nowrap">
                                         <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
                                             <tr>
-                                                <th className="p-3 font-semibold rounded-tl-lg">Nama Peminjam</th>
+                                                <th className="p-3 font-semibold">Nama Peminjam</th>
                                                 <th className="p-3 font-semibold">Ringkasan Alat</th>
-                                                <th className="p-3 font-semibold">Tanggal Pinjam</th>
-                                                <th className="p-3 font-semibold text-center rounded-tr-lg">Estimasi Kembali</th>
+                                                <th className="p-3 font-semibold text-center">Estimasi Kembali</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {activeTx.map(trx => (
                                                 <tr key={trx.id} className="hover:bg-slate-50 transition-colors">
-                                                    <td className="p-3">
-                                                        <p className="font-bold text-gray-800">{trx.borrowerName}</p>
-                                                        <p className="text-xs text-gray-500">{trx.nim}</p>
-                                                    </td>
+                                                    <td className="p-3"><p className="font-bold text-gray-800">{trx.borrowerName}</p><p className="text-xs text-gray-500">{trx.nim}</p></td>
                                                     <td className="p-3 text-gray-700 whitespace-normal min-w-[250px]">
-                                                        {trx.items.map(i => {
-                                                            const alat = inventory.find(inv => inv.id === i.itemId);
-                                                            if (!alat) return `Alat Terhapus (${i.quantity}x)`;
-                                                            return `${alat?.name} (${i.quantity}x)`;
-                                                        }).join(', ')}
+                                                        {trx.items && trx.items.map(i => `${i.name} (${i.quantity}x)`).join(', ')}
                                                     </td>
-                                                    <td className="p-3 text-gray-600">{trx.borrowDateFormatted}</td>
                                                     <td className="p-3 text-center">
                                                         <span className="bg-orange-50 text-orange-700 border border-orange-100 px-2.5 py-1 rounded-md font-bold text-xs">
                                                             {new Date(trx.returnDateEst).toLocaleDateString('id-ID')}
@@ -616,9 +610,7 @@
 
             const renderInventory = () => {
                 const categories = ['Semua', ...new Set(inventory.map(item => item.category))];
-                const filteredInventory = filterCategory === 'Semua' 
-                    ? inventory 
-                    : inventory.filter(item => item.category === filterCategory);
+                const filteredInventory = filterCategory === 'Semua' ? inventory : inventory.filter(item => item.category === filterCategory);
 
                 return (
                     <div className="space-y-6 animate-fade-in">
@@ -626,52 +618,32 @@
                             <h2 className="text-2xl font-bold text-gray-800">Stok Alat Laboratorium</h2>
                             <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
                                 {categories.map(cat => (
-                                    <button 
-                                        key={cat}
-                                        onClick={() => setFilterCategory(cat)} 
-                                        className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterCategory === cat ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}`}
-                                    >
+                                    <button key={cat} onClick={() => setFilterCategory(cat)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterCategory === cat ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}`}>
                                         {cat}
                                     </button>
                                 ))}
                             </div>
                         </div>
 
-                        {/* FORM TAMBAH ALAT (HANYA ADMIN) */}
                         {isAdmin && (
                             <div className="mb-4">
-                                <button 
-                                    onClick={() => setShowAddForm(!showAddForm)}
-                                    className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition flex items-center ${showAddForm ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
-                                >
-                                    <i className={`fas ${showAddForm ? 'fa-times' : 'fa-plus'} mr-2`}></i>
-                                    {showAddForm ? 'Batal Tambah Alat' : 'Tambah Alat Baru (Mode Admin)'}
+                                <button onClick={() => setShowAddForm(!showAddForm)} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition flex items-center ${showAddForm ? 'bg-slate-200 text-slate-700' : 'bg-slate-800 text-white'}`}>
+                                    <i className={`fas ${showAddForm ? 'fa-times' : 'fa-plus'} mr-2`}></i> {showAddForm ? 'Batal Tambah Alat' : 'Tambah Alat Baru (Sesi Ini)'}
                                 </button>
-
                                 {showAddForm && (
                                     <form onSubmit={handleAddNewInventoryItem} className="mt-4 bg-blue-50/50 p-5 rounded-xl border border-blue-100 shadow-sm grid grid-cols-1 md:grid-cols-5 gap-4 items-end animate-fade-in">
-                                        <div>
-                                            <label className="block text-xs font-bold text-blue-900 mb-1">Kode Alat</label>
-                                            <input type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" placeholder="Cth: TS-016" value={newItemForm.id} onChange={e => setNewItemForm({...newItemForm, id: e.target.value.toUpperCase()})} />
-                                        </div>
+                                        <div><label className="block text-xs font-bold text-blue-900 mb-1">Kode Alat</label><input type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.id} onChange={e => setNewItemForm({...newItemForm, id: e.target.value.toUpperCase()})} /></div>
                                         <div>
                                             <label className="block text-xs font-bold text-blue-900 mb-1">Kategori</label>
-                                            <input type="text" required list="category-list" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" placeholder="Pilih/Ketik" value={newItemForm.category} onChange={e => setNewItemForm({...newItemForm, category: e.target.value})} />
-                                            <datalist id="category-list">
-                                                {categories.filter(c => c !== 'Semua').map(c => <option key={c} value={c} />)}
-                                            </datalist>
+                                            <input type="text" required list="category-list" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.category} onChange={e => setNewItemForm({...newItemForm, category: e.target.value})} />
+                                            <datalist id="category-list">{categories.filter(c => c !== 'Semua').map(c => <option key={c} value={c} />)}</datalist>
                                         </div>
-                                        <div className="md:col-span-2">
-                                            <label className="block text-xs font-bold text-blue-900 mb-1">Nama Alat / Model</label>
-                                            <input type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" placeholder="Masukkan nama alat" value={newItemForm.name} onChange={e => setNewItemForm({...newItemForm, name: e.target.value})} />
-                                        </div>
+                                        <div className="md:col-span-2"><label className="block text-xs font-bold text-blue-900 mb-1">Nama Alat / Model</label><input type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.name} onChange={e => setNewItemForm({...newItemForm, name: e.target.value})} /></div>
                                         <div>
                                             <label className="block text-xs font-bold text-blue-900 mb-1">Jumlah</label>
                                             <div className="flex gap-2">
                                                 <input type="number" min="1" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.total} onChange={e => setNewItemForm({...newItemForm, total: e.target.value})} />
-                                                <button type="submit" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-bold shadow transition flex items-center justify-center">
-                                                    <i className="fas fa-save"></i>
-                                                </button>
+                                                <button type="submit" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-bold"><i className="fas fa-save"></i></button>
                                             </div>
                                         </div>
                                     </form>
@@ -684,49 +656,27 @@
                                 <table className="w-full text-left whitespace-nowrap">
                                     <thead className="bg-gray-800 text-white">
                                         <tr>
-                                            <th className="p-4">Kode Alat</th>
-                                            <th className="p-4">Kategori</th>
-                                            <th className="p-4">Nama Alat / Model</th>
-                                            <th className="p-4 text-center">Total</th>
-                                            <th className="p-4 text-center">Tersedia</th>
-                                            <th className="p-4 text-center">Status</th>
+                                            <th className="p-4">Kode Alat</th><th className="p-4">Kategori</th><th className="p-4">Nama Alat / Model</th>
+                                            <th className="p-4 text-center">Total</th><th className="p-4 text-center">Tersedia</th><th className="p-4 text-center">Status</th>
                                             {isAdmin && <th className="p-4 text-center">Aksi</th>}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
                                         {filteredInventory.map(item => (
-                                            <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                                            <tr key={item.id} className="hover:bg-gray-50">
                                                 <td className="p-4 text-sm font-bold text-slate-700">{item.id}</td>
                                                 <td className="p-4"><span className="bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded text-xs font-semibold">{item.category}</span></td>
                                                 <td className="p-4 font-medium text-gray-900">{item.name}</td>
                                                 <td className="p-4 text-center text-sm">{item.total}</td>
                                                 <td className="p-4 text-center font-black text-green-600">{item.available}</td>
                                                 <td className="p-4 text-center">
-                                                    {item.available === 0 
-                                                        ? <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold">Habis</span>
-                                                        : <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Tersedia</span>
-                                                    }
+                                                    {item.available === 0 ? <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold">Habis</span> : <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Tersedia</span>}
                                                 </td>
                                                 {isAdmin && (
-                                                    <td className="p-4 text-center">
-                                                        <button 
-                                                            onClick={() => handleDeleteInventoryItem(item.id)}
-                                                            className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition"
-                                                            title="Hapus Alat Permanen"
-                                                        >
-                                                            <i className="fas fa-trash-alt"></i>
-                                                        </button>
-                                                    </td>
+                                                    <td className="p-4 text-center"><button onClick={() => handleDeleteInventoryItem(item.id)} className="text-red-500 hover:bg-red-100 p-2 rounded-lg transition"><i className="fas fa-trash-alt"></i></button></td>
                                                 )}
                                             </tr>
                                         ))}
-                                        {filteredInventory.length === 0 && (
-                                            <tr>
-                                                <td colSpan={isAdmin ? "7" : "6"} className="p-6 text-center text-gray-400 font-medium">
-                                                    Alat pada kategori ini tidak ditemukan.
-                                                </td>
-                                            </tr>
-                                        )}
                                     </tbody>
                                 </table>
                             </div>
@@ -747,38 +697,26 @@
                         <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Form Peminjaman Alat</h2>
                         <form onSubmit={submitBorrow} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Nama Peminjam / Kelompok</label>
-                                    <input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowerName} onChange={e => setBorrowForm({...borrowForm, borrowerName: e.target.value})} placeholder="Contoh: Kelompok 1 - Budi" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">NIM / ID Anggota</label>
-                                    <input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.nim} onChange={e => setBorrowForm({...borrowForm, nim: e.target.value})} placeholder="Masukkan NIM" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Pinjam</label>
-                                    <input type="date" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowDate} onChange={e => setBorrowForm({...borrowForm, borrowDate: e.target.value})} />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Estimasi Kembali</label>
-                                    <input type="date" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.returnDateEst} onChange={e => setBorrowForm({...borrowForm, returnDateEst: e.target.value})} />
-                                </div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Nama Peminjam / Kelompok</label><input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowerName} onChange={e => setBorrowForm({...borrowForm, borrowerName: e.target.value})} placeholder="Contoh: Kelompok 1 - Budi" /></div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">NIM / ID Anggota</label><input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.nim} onChange={e => setBorrowForm({...borrowForm, nim: e.target.value})} placeholder="Masukkan NIM" /></div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Pinjam</label><input type="date" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowDate} onChange={e => setBorrowForm({...borrowForm, borrowDate: e.target.value})} /></div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Estimasi Kembali</label><input type="date" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.returnDateEst} onChange={e => setBorrowForm({...borrowForm, returnDateEst: e.target.value})} /></div>
                                 <div className="md:col-span-2 bg-blue-50 p-4 rounded-xl border border-blue-200 mt-2">
-                                    <label className="block text-sm font-bold text-blue-900 mb-2"><i className="fas fa-file-pdf mr-2"></i> Unggah Surat Izin</label>
-                                    <input type="file" ref={fileInputRef} accept=".pdf, image/png, image/jpeg" required onChange={handleFileChange} className="w-full text-sm text-gray-600 bg-white border border-blue-300 rounded-lg p-2" />
+                                    <label className="block text-sm font-bold text-blue-900 mb-2"><i className="fas fa-file-pdf mr-2"></i> Unggah Nama Surat Izin (Palsu/Demo)</label>
+                                    <input type="file" ref={fileInputRef} required onChange={handleFileChange} className="w-full text-sm text-gray-600 bg-white border border-blue-300 rounded-lg p-2" />
                                 </div>
                             </div>
 
                             <div className="border-t pt-4">
                                 <div className="flex justify-between items-center mb-3">
                                     <label className="block text-sm font-bold text-gray-800">Daftar Alat yang Dipinjam</label>
-                                    <button type="button" onClick={handleAddBorrowItem} className="text-sm bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-200 font-bold shadow-sm transition"><i className="fas fa-plus mr-1"></i> Tambah Alat</button>
+                                    <button type="button" onClick={handleAddBorrowItem} className="text-sm bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold"><i className="fas fa-plus mr-1"></i> Tambah Alat</button>
                                 </div>
                                 <div className="space-y-3">
                                     {borrowForm.items.map((item, index) => (
                                         <div key={index} className="flex flex-col md:flex-row gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 items-center">
                                             <span className="font-bold text-slate-400 hidden md:block">{index + 1}.</span>
-                                            <select className="flex-grow w-full p-2 border border-slate-300 rounded-lg bg-white font-medium focus:ring-2 focus:ring-blue-500" value={item.itemId} onChange={e => handleBorrowItemChange(index, 'itemId', e.target.value)} required>
+                                            <select className="flex-grow w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={item.itemId} onChange={e => handleBorrowItemChange(index, 'itemId', e.target.value)} required>
                                                 <option value="" disabled>-- Pilih Alat Sesuai Kategori --</option>
                                                 {Object.keys(inventoryByCategory).map(category => (
                                                     <optgroup key={category} label={`--- KATEGORI: ${category.toUpperCase()} ---`}>
@@ -792,18 +730,17 @@
                                             </select>
                                             <div className="flex items-center w-full md:w-auto gap-3">
                                                 <label className="text-xs font-bold text-slate-600 md:hidden">Jumlah:</label>
-                                                <input type="number" min="1" className="w-full md:w-24 p-2 border border-slate-300 rounded-lg text-center font-bold" placeholder="Jumlah" value={item.quantity} onChange={e => handleBorrowItemChange(index, 'quantity', e.target.value)} required />
+                                                <input type="number" min="1" className="w-full md:w-24 p-2 border border-slate-300 rounded-lg text-center font-bold" value={item.quantity} onChange={e => handleBorrowItemChange(index, 'quantity', e.target.value)} required />
                                                 {borrowForm.items.length > 1 && (
-                                                    <button type="button" onClick={() => handleRemoveBorrowItem(index)} className="p-2 text-red-500 bg-red-50 hover:bg-red-100 border border-red-100 rounded-lg transition" title="Hapus Baris"><i className="fas fa-trash-alt"></i></button>
+                                                    <button type="button" onClick={() => handleRemoveBorrowItem(index)} className="p-2 text-red-500 bg-red-50 rounded-lg"><i className="fas fa-trash-alt"></i></button>
                                                 )}
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
-
                             <div className="border-t pt-6 flex justify-end">
-                                <button type="submit" disabled={isSubmitting} className={`w-full md:w-auto text-white font-bold py-3 px-8 rounded-lg shadow-md transition ${isSubmitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                <button type="submit" disabled={isSubmitting} className={`w-full md:w-auto text-white font-bold py-3 px-8 rounded-lg shadow-md transition ${isSubmitting ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
                                     {isSubmitting ? <><i className="fas fa-spinner fa-spin mr-2"></i> Mengirim Data...</> : <><i className="fas fa-paper-plane mr-2"></i> Proses Peminjaman</>}
                                 </button>
                             </div>
@@ -817,17 +754,14 @@
                     <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Status & Pengembalian Alat</h2>
                     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
                         {transactions.length === 0 ? (
-                            <div className="p-10 text-center text-gray-400"><i className="fas fa-clipboard-check text-5xl mb-4 opacity-30"></i><p className="font-medium text-lg">Belum ada alat yang sedang dipinjam.</p></div>
+                            <div className="p-10 text-center text-gray-400"><i className="fas fa-clipboard-check text-5xl mb-4 opacity-30"></i><p className="font-medium text-lg">Belum ada histori peminjaman.</p></div>
                         ) : (
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-sm whitespace-nowrap">
                                     <thead className="bg-gray-800 text-white">
                                         <tr>
-                                            <th className="p-4">Info Peminjam</th>
-                                            <th className="p-4">Tanggal</th>
-                                            <th className="p-4">Rincian Alat</th>
-                                            <th className="p-4 text-center">Status</th>
-                                            <th className="p-4 text-center">Aksi</th>
+                                            <th className="p-4">Info Peminjam</th><th className="p-4">Tanggal</th><th className="p-4">Rincian Alat</th>
+                                            <th className="p-4 text-center">Status</th><th className="p-4 text-center">Aksi</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
@@ -836,46 +770,34 @@
                                                 <td className="p-4">
                                                     <p className="font-bold text-gray-900 text-base">{trx.borrowerName}</p>
                                                     <p className="text-gray-500 text-xs mt-0.5">NIM: <span className="font-semibold">{trx.nim}</span></p>
-                                                    <div className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-100 w-max px-2 py-1 rounded-md shadow-sm">
-                                                        <i className="fas fa-file-pdf mr-1"></i> {trx.approvalFileName}
-                                                    </div>
+                                                    <div className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-100 w-max px-2 py-1 rounded-md"><i className="fas fa-file-pdf mr-1"></i> {trx.approvalFileName}</div>
                                                 </td>
                                                 <td className="p-4 text-xs space-y-1">
-                                                    <p><span className="font-semibold text-gray-600">Pinjam:</span> <span className="font-medium">{trx.borrowDateFormatted}</span></p>
-                                                    <p><span className="font-semibold text-red-500">Batas:</span> <span className="font-medium">{new Date(trx.returnDateEst).toLocaleDateString('id-ID')}</span></p>
-                                                    {trx.actualReturnDate && <p className="text-green-600 mt-1 pt-1 border-t border-green-100"><span className="font-semibold">Kembali:</span> {trx.actualReturnDate}</p>}
+                                                    <p><span className="font-semibold text-gray-600">Pinjam:</span> {trx.borrowDateFormatted}</p>
+                                                    <p><span className="font-semibold text-red-500">Batas:</span> {new Date(trx.returnDateEst).toLocaleDateString('id-ID')}</p>
                                                 </td>
                                                 <td className="p-4">
                                                     <ul className="list-none space-y-1">
-                                                        {trx.items.map((item, idx) => {
-                                                            const alat = inventory.find(i => i.id === item.itemId);
-                                                            return (
-                                                                <li key={idx} className="text-xs bg-slate-100 border border-slate-200 px-2 py-1 rounded">
-                                                                    <span className="font-bold text-slate-700">[{alat?.id || item.itemId}]</span> {alat?.name || 'Alat Dihapus'} <span className="font-bold text-blue-600 ml-1">x{item.quantity}</span>
-                                                                </li>
-                                                            )
-                                                        })}
+                                                        {trx.items && trx.items.map((item, idx) => (
+                                                            <li key={idx} className="text-xs bg-slate-100 border border-slate-200 px-2 py-1 rounded">
+                                                                <span className="font-bold text-slate-700">{item.name}</span> <span className="font-bold text-blue-600 ml-1">x{item.quantity}</span>
+                                                            </li>
+                                                        ))}
                                                     </ul>
                                                 </td>
                                                 <td className="p-4 text-center">
                                                     {trx.status === 'active' 
-                                                        ? <span className="bg-orange-100 border border-orange-200 text-orange-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm"><i className="fas fa-exclamation-circle mr-1"></i> Dipinjam</span>
-                                                        : <span className="bg-green-100 border border-green-200 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm"><i className="fas fa-check-circle mr-1"></i> Selesai</span>
-                                                    }
+                                                        ? <span className="bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm">Dipinjam</span>
+                                                        : <span className="bg-green-100 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm">Selesai</span>}
                                                 </td>
                                                 <td className="p-4 text-center">
                                                     {trx.status === 'active' ? (
-                                                        <button onClick={() => handleReturn(trx.id)} className="bg-green-500 hover:bg-green-600 border border-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow transition w-full mb-2">
-                                                            <i className="fas fa-undo mr-1"></i> Kembalikan
-                                                        </button>
+                                                        <button onClick={() => handleReturn(trx.id)} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full mb-2 shadow-sm"><i className="fas fa-undo mr-1"></i> Kembalikan</button>
                                                     ) : (
                                                         <span className="text-gray-400 text-xs italic font-medium block mb-2">Tuntas</span>
                                                     )}
-                                                    
                                                     {isAdmin && (
-                                                        <button onClick={() => handleDelete(trx.id)} className="bg-red-500 hover:bg-red-600 border border-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow transition w-full">
-                                                            <i className="fas fa-trash-alt mr-1"></i> Hapus
-                                                        </button>
+                                                        <button onClick={() => handleDelete(trx.id)} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full shadow-sm"><i className="fas fa-trash-alt mr-1"></i> Hapus</button>
                                                     )}
                                                 </td>
                                             </tr>
@@ -888,46 +810,41 @@
                 </div>
             );
 
+            // Layar loading putih murni saat mengambil data spreadsheet awal
+            if (isAppLoading) {
+                return (
+                    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+                        <i className="fas fa-sync fa-spin text-4xl text-blue-600 mb-4"></i>
+                        <h2 className="text-xl font-bold text-gray-800">Menghubungkan ke Database...</h2>
+                        <p className="text-gray-500 text-sm mt-2">Membaca riwayat peminjaman dari Spreadsheet</p>
+                    </div>
+                )
+            }
+
             return (
                 <div className="min-h-screen flex flex-col md:flex-row">
                     {notification && (
                         <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-xl text-white font-semibold transition-all flex items-center ${notification.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}>
-                            <i className={`fas ${notification.type === 'error' ? 'fa-times-circle' : 'fa-check-circle'} text-xl mr-3`}></i>
-                            {notification.message}
+                            <i className={`fas ${notification.type === 'error' ? 'fa-times-circle' : 'fa-check-circle'} text-xl mr-3`}></i> {notification.message}
                         </div>
                     )}
 
-                    {/* Sidebar */}
                     <nav className="bg-slate-900 w-full md:w-64 flex-shrink-0 text-white flex flex-col shadow-xl z-10 md:min-h-screen">
                         <div className="p-6 bg-slate-950 text-center border-b border-slate-800">
-                            <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg mb-3">
-                                <i className="fas fa-satellite-dish text-3xl"></i>
-                            </div>
+                            <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg mb-3"><i className="fas fa-satellite-dish text-3xl"></i></div>
                             <h1 className="text-lg font-black tracking-tight leading-tight uppercase">Monitoring Peminjaman Alat</h1>
                             <p className="text-blue-400 text-xs font-semibold mt-2">Laboratorium Geomatika</p>
                         </div>
                         <div className="flex-grow p-4 space-y-2">
-                            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}>
-                                <i className="fas fa-chart-pie w-5"></i> <span className="font-medium">Dashboard</span>
-                            </button>
-                            <button onClick={() => setActiveTab('inventory')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'inventory' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}>
-                                <i className="fas fa-clipboard-list w-5"></i> <span className="font-medium">Stok Alat</span>
-                            </button>
-                            <button onClick={() => setActiveTab('borrow')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'borrow' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}>
-                                <i className="fas fa-edit w-5"></i> <span className="font-medium">Form Peminjaman</span>
-                            </button>
-                            <button onClick={() => setActiveTab('transactions')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'transactions' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}>
-                                <i className="fas fa-history w-5"></i> <span className="font-medium">Pengembalian</span>
-                            </button>
+                            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-chart-pie w-5"></i> <span className="font-medium">Dashboard</span></button>
+                            <button onClick={() => setActiveTab('inventory')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'inventory' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-clipboard-list w-5"></i> <span className="font-medium">Stok Alat</span></button>
+                            <button onClick={() => setActiveTab('borrow')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'borrow' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-edit w-5"></i> <span className="font-medium">Form Peminjaman</span></button>
+                            <button onClick={() => setActiveTab('transactions')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'transactions' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-history w-5"></i> <span className="font-medium">Pengembalian</span></button>
                         </div>
                         <div className="p-4 border-t border-slate-800">
-                            <button onClick={handleShareLink} className="w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg transition text-sm font-semibold mb-5 shadow-sm border border-slate-700">
-                                <i className="fas fa-share-alt"></i> <span>Salin Tautan Web</span>
-                            </button>
+                            <button onClick={handleShareLink} className="w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg transition text-sm font-semibold mb-5"><i className="fas fa-share-alt"></i> <span>Salin Tautan Web</span></button>
                             <div className="text-[11px] text-slate-500 text-center leading-relaxed relative">
                                 &copy; 2026 Laboratorium Geomatika <br/>Institut Teknologi Sumatera
-                                
-                                {/* Tombol Rahasia Admin */}
                                 <button onClick={handleAdminToggle} className="absolute -bottom-2 -right-2 p-2 text-slate-700 hover:text-slate-400 transition" title="Admin Access">
                                     <i className={`fas ${isAdmin ? 'fa-lock-open text-red-500' : 'fa-lock'}`}></i>
                                 </button>
@@ -935,7 +852,6 @@
                         </div>
                     </nav>
 
-                    {/* Main Content Area */}
                     <main className="flex-grow p-4 md:p-8 overflow-y-auto w-full bg-gray-100/50">
                         <div className="max-w-6xl mx-auto">
                             {activeTab === 'dashboard' && renderDashboard()}
@@ -955,7 +871,6 @@
     <style>
         .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        /* Kustom scrollbar untuk tab kategori */
         .custom-scrollbar::-webkit-scrollbar { height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
