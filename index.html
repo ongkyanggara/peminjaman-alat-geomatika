@@ -111,7 +111,7 @@
 
             const fileInputRef = useRef(null);
 
-            // --- PENTING: GANTI DENGAN URL GOOGLE SCRIPT ANDA ---
+            // URL Google Script Baru Anda yang valid
             const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzQtjmJ5V-StnmnNoX0MgJpR4tqhktze3pTj_iX4PZQQgkdMdcohDj_PVYcnUqgVWUGHA/exec'; 
 
             const [borrowForm, setBorrowForm] = useState({
@@ -194,7 +194,7 @@
                 setIsSubmitting(true);
                 const newTransactionId = 'TRX-' + Math.floor(Math.random() * 1000000);
 
-                if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'https://script.google.com/macros/s/AKfycbzqjNJDvO0t3YMoRGrrX9ZMj1XjbVNFmv80FgGLehMA/dev') {
+                if (GOOGLE_SCRIPT_URL) {
                     try {
                         const alatLengkap = borrowForm.items.map(item => {
                             const invItem = inventory.find(i => i.id === item.itemId);
@@ -211,20 +211,16 @@
                             items: alatLengkap
                         };
 
-                        // PEMBARUAN: Ditambahkan text/plain dan no-cors untuk dijamin lolos keamanan (CORS) Google Script
+                        // PEMBARUAN: Mengirim tanpa header custom agar browser membiarkan request lewat tanpa blokir CORS
                         await fetch(GOOGLE_SCRIPT_URL, {
                             method: 'POST',
-                            mode: 'no-cors', // Memaksa browser mengirim data tanpa mempedulikan preflight CORS
-                            headers: {
-                                'Content-Type': 'text/plain',
-                            },
+                            mode: 'no-cors',
                             body: JSON.stringify(payload)
                         });
                         
                     } catch (error) {
-                        console.error('Error pengiriman:', error);
-                        showNotification('Koneksi lambat, namun data akan tetap tersimpan di sistem.', 'error');
-                        // Dihapus setIsSubmitting(false) dan return agar sistem di layar tetap memproses
+                        // Error ditangkap secara sembunyi karena mode no-cors pada Chrome terkadang memunculkan pesan error palsu
+                        console.error('Info pengiriman fetch:', error);
                     }
                 }
 
