@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Alat Lab Geomatika</title>
+    
+    <!-- Memuat Tailwind CSS untuk Desain -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Memuat FontAwesome untuk Ikon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Memuat React -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Memuat Babel (Agar browser bisa membaca kode React JSX) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Data Awal Inventaris Lab Geomatika
+        const initialInventory = [
+            { id: 'TS-01', name: 'Total Station Sokkia', total: 5, available: 5 },
+            { id: 'TH-01', name: 'Digital Theodolite Topcon', total: 8, available: 8 },
+            { id: 'WP-01', name: 'Waterpass / Auto Level', total: 10, available: 10 },
+            { id: 'GPS-01', name: 'GPS Geodetic RTK', total: 3, available: 3 },
+            { id: 'GPS-02', name: 'GPS Navigasi Garmin', total: 6, available: 6 },
+            { id: 'PR-01', name: 'Prisma Target / Polygon', total: 15, available: 15 },
+            { id: 'RB-01', name: 'Rambu Ukur / Jalon', total: 20, available: 20 },
+            { id: 'TR-01', name: 'Tripod / Statif', total: 25, available: 25 },
+            { id: 'MT-01', name: 'Pita Ukur / Meteran 50m', total: 10, available: 10 },
+            { id: 'PL-01', name: 'Plumb Bob / Unting-unting', total: 15, available: 15 }
+        ];
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [inventory, setInventory] = useState(initialInventory);
+            const [transactions, setTransactions] = useState([]);
+            
+            const fileInputRef = useRef(null);
+
+            // --- PENTING: GANTI DENGAN URL GOOGLE SCRIPT ANDA ---
+            const GOOGLE_SCRIPT_URL = 'MASUKKAN_URL_ANDA_DISINI'; 
+
+            // State untuk form peminjaman
+            const [borrowForm, setBorrowForm] = useState({
+                borrowerName: '',
+                nim: '',
+                borrowDate: new Date().toISOString().split('T')[0],
+                returnDateEst: '',
+                items: [{ itemId: '', quantity: 1 }],
+                approvalFileName: ''
+            });
+
+            const [notification, setNotification] = useState(null);
+            const [isSubmitting, setIsSubmitting] = useState(false);
+
+            const showNotification = (message, type = 'success') => {
+                setNotification({ message, type });
+                setTimeout(() => setNotification(null), 3000);
+            };
+
+            const handleShareLink = () => {
+                const professionalUrl = "https://ongkyanggara.github.io/peminjaman-alat-geomatika/"; 
+                const textArea = document.createElement("textarea");
+                textArea.value = professionalUrl;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand("copy");
+                document.body.removeChild(textArea);
+                
+                showNotification('Tautan aplikasi berhasil disalin!', 'success');
+            };
+
+            const handleAddBorrowItem = () => {
+                setBorrowForm({
+                    ...borrowForm,
+                    items: [...borrowForm.items, { itemId: '', quantity: 1 }]
+                });
+            };
+
+            const handleRemoveBorrowItem = (index) => {
+                const newItems = [...borrowForm.items];
+                newItems.splice(index, 1);
+                setBorrowForm({ ...borrowForm, items: newItems });
+            };
+
+            const handleBorrowItemChange = (index, field, value) => {
+                const newItems = [...borrowForm.items];
+                newItems[index][field] = value;
+                setBorrowForm({ ...borrowForm, items: newItems });
+            };
+
+            const handleFileChange = (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    setBorrowForm({...borrowForm, approvalFileName: e.target.files[0].name});
+                } else {
+                    setBorrowForm({...borrowForm, approvalFileName: ''});
+                }
+            };
+
+            const submitBorrow = async (e) => {
+                e.preventDefault();
+                
+                if (!borrowForm.borrowerName || !borrowForm.nim || !borrowForm.borrowDate || borrowForm.items.length === 0 || !borrowForm.approvalFileName) {
+                    showNotification('Mohon lengkapi semua data diri, alat, dan unggah surat izin', 'error');
+                    return;
+                }
+
+                for (let item of borrowForm.items) {
+                    if (!item.itemId) {
+                        showNotification('Ada baris alat yang belum dipilih', 'error');
+                        return;
+                    }
+                    if (item.quantity <= 0) {
+                        showNotification('Jumlah alat tidak valid', 'error');
+                        return;
+                    }
+                    
+                    const inventoryItem = inventory.find(i => i.id === item.itemId);
+                    if (item.quantity > inventoryItem.available) {
+                        showNotification(`Stok ${inventoryItem.name} tidak mencukupi! (Tersedia: ${inventoryItem.available})`, 'error');
+                        return;
+                    }
+                }
+
+                setIsSubmitting(true);
+                const newTransactionId = 'TRX-' + Math.floor(Math.random() * 1000000);
+
+                if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'MASUKKAN_URL_ANDA_DISINI') {
+                    try {
+                        const alatLengkap = borrowForm.items.map(item => {
+                            const invItem = inventory.find(i => i.id === item.itemId);
+                            return { name: invItem.name, quantity: item.quantity };
+                        });
+
+                        const payload = {
+                            id: newTransactionId,
+                            borrowerName: borrowForm.borrowerName,
+                            nim: borrowForm.nim,
+                            borrowDate: borrowForm.borrowDate,
+                            returnDateEst: borrowForm.returnDateEst,
+                            approvalFileName: borrowForm.approvalFileName,
+                            items: alatLengkap
+                        };
+
+                        await fetch(GOOGLE_SCRIPT_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                    } catch (error) {
+                        console.error('Error pengiriman:', error);
+                        showNotification('Gagal mengirim ke Spreadsheet. Cek koneksi.', 'error');
+                        setIsSubmitting(false);
+                        return; 
+                    }
+                } else {
+                    console.warn("GOOGLE_SCRIPT_URL belum diisi. Hanya tersimpan di web sementara.");
+                }
+
+                const newInventory = [...inventory];
+                borrowForm.items.forEach(bItem => {
+                    const invIndex = newInventory.findIndex(i => i.id === bItem.itemId);
+                    newInventory[invIndex].available -= parseInt(bItem.quantity);
+                });
+
+                const newTransaction = {
+                    id: newTransactionId,
+                    type: 'borrow',
+                    status: 'active',
+                    ...borrowForm,
+                    borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID'),
+                };
+
+                setInventory(newInventory);
+                setTransactions([newTransaction, ...transactions]);
+                showNotification('Peminjaman berhasil dicatat!');
+                
+                setBorrowForm({
+                    borrowerName: '', nim: '',
+                    borrowDate: new Date().toISOString().split('T')[0],
+                    returnDateEst: '', items: [{ itemId: '', quantity: 1 }],
+                    approvalFileName: ''
+                });
+                if (fileInputRef.current) fileInputRef.current.value = "";
+                
+                setActiveTab('transactions');
+                setIsSubmitting(false);
+            };
+
+            const handleReturn = (transactionId) => {
+                if (window.confirm('Apakah alat sudah dikembalikan semua dalam kondisi baik?')) {
+                    const trxIndex = transactions.findIndex(t => t.id === transactionId);
+                    const trx = transactions[trxIndex];
+
+                    const newInventory = [...inventory];
+                    trx.items.forEach(rItem => {
+                        const invIndex = newInventory.findIndex(i => i.id === rItem.itemId);
+                        newInventory[invIndex].available += parseInt(rItem.quantity);
+                    });
+
+                    const newTransactions = [...transactions];
+                    newTransactions[trxIndex].status = 'completed';
+                    newTransactions[trxIndex].actualReturnDate = new Date().toLocaleDateString('id-ID');
+
+                    setInventory(newInventory);
+                    setTransactions(newTransactions);
+                    showNotification('Pengembalian berhasil dicatat!');
+                }
+            };
+
+            const renderDashboard = () => {
+                const totalAlat = inventory.reduce((sum, item) => sum + item.total, 0);
+                const totalTersedia = inventory.reduce((sum, item) => sum + item.available, 0);
+                const totalDipinjam = totalAlat - totalTersedia;
+                const activeTxCount = transactions.filter(t => t.status === 'active').length;
+
+                return (
+                    <div className="space-y-6 animate-fade-in">
+                        <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Dashboard Lab Geomatika</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-center space-x-4">
+                                <div className="bg-blue-500 p-4 rounded-lg text-white"><i className="fas fa-boxes text-xl"></i></div>
+                                <div><p className="text-sm text-blue-600 font-semibold">Total Item</p><p className="text-2xl font-bold text-blue-900">{totalAlat}</p></div>
+                            </div>
+                            <div className="bg-green-50 border border-green-200 p-4 rounded-xl flex items-center space-x-4">
+                                <div className="bg-green-500 p-4 rounded-lg text-white"><i className="fas fa-check-circle text-xl"></i></div>
+                                <div><p className="text-sm text-green-600 font-semibold">Tersedia</p><p className="text-2xl font-bold text-green-900">{totalTersedia}</p></div>
+                            </div>
+                            <div className="bg-orange-50 border border-orange-200 p-4 rounded-xl flex items-center space-x-4">
+                                <div className="bg-orange-500 p-4 rounded-lg text-white"><i className="fas fa-exchange-alt text-xl"></i></div>
+                                <div><p className="text-sm text-orange-600 font-semibold">Dipinjam</p><p className="text-2xl font-bold text-orange-900">{totalDipinjam}</p></div>
+                            </div>
+                            <div className="bg-purple-50 border border-purple-200 p-4 rounded-xl flex items-center space-x-4">
+                                <div className="bg-purple-500 p-4 rounded-lg text-white"><i className="fas fa-users text-xl"></i></div>
+                                <div><p className="text-sm text-purple-600 font-semibold">Peminjam Aktif</p><p className="text-2xl font-bold text-purple-900">{activeTxCount}</p></div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-xl border border-gray-200">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Aktivitas Terbaru</h3>
+                            {transactions.length === 0 ? (
+                                <p className="text-gray-500 text-center py-8">Belum ada aktivitas.</p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="bg-gray-50 text-gray-600">
+                                            <tr>
+                                                <th className="p-3">ID Trx</th>
+                                                <th className="p-3">Nama / NIM</th>
+                                                <th className="p-3">Alat</th>
+                                                <th className="p-3">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {transactions.slice(0, 5).map(trx => (
+                                                <tr key={trx.id} className="border-b border-gray-100">
+                                                    <td className="p-3 font-medium text-gray-900">{trx.id}</td>
+                                                    <td className="p-3">{trx.borrowerName} <br/><span className="text-xs text-gray-500">{trx.nim}</span></td>
+                                                    <td className="p-3">
+                                                        <ul className="list-disc pl-4">
+                                                            {trx.items.map((item, idx) => {
+                                                                const alat = inventory.find(i => i.id === item.itemId);
+                                                                return <li key={idx} className="text-xs">{alat?.name} ({item.quantity})</li>
+                                                            })}
+                                                        </ul>
+                                                    </td>
+                                                    <td className="p-3">
+                                                        {trx.status === 'active' 
+                                                            ? <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs font-semibold">Dipinjam</span>
+                                                            : <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-semibold">Selesai</span>
+                                                        }
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderInventory = () => (
+                <div className="space-y-6 animate-fade-in">
+                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Daftar Alat Laboratorium</h2>
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left whitespace-nowrap">
+                                <thead className="bg-gray-800 text-white">
+                                    <tr>
+                                        <th className="p-4">Kode</th>
+                                        <th className="p-4">Nama Alat</th>
+                                        <th className="p-4 text-center">Total</th>
+                                        <th className="p-4 text-center">Tersedia</th>
+                                        <th className="p-4 text-center">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {inventory.map(item => (
+                                        <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                                            <td className="p-4 text-sm font-semibold text-gray-600">{item.id}</td>
+                                            <td className="p-4 font-medium text-gray-900">{item.name}</td>
+                                            <td className="p-4 text-center">{item.total}</td>
+                                            <td className="p-4 text-center font-bold text-green-600">{item.available}</td>
+                                            <td className="p-4 text-center">
+                                                {item.available === 0 
+                                                    ? <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs font-bold">Habis</span>
+                                                    : <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-bold">Tersedia</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            const renderBorrowForm = () => (
+                <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
+                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Form Peminjaman</h2>
+                    
+                    <form onSubmit={submitBorrow} className="bg-white p-6 rounded-xl border border-gray-200 space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Nama Peminjam/Kelompok</label>
+                                <input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowerName} onChange={e => setBorrowForm({...borrowForm, borrowerName: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">NIM / ID Anggota</label>
+                                <input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.nim} onChange={e => setBorrowForm({...borrowForm, nim: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Pinjam</label>
+                                <input type="date" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowDate} onChange={e => setBorrowForm({...borrowForm, borrowDate: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Estimasi Kembali</label>
+                                <input type="date" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.returnDateEst} onChange={e => setBorrowForm({...borrowForm, returnDateEst: e.target.value})} />
+                            </div>
+                            
+                            <div className="md:col-span-2 bg-blue-50 p-4 rounded-xl border border-blue-100 mt-2">
+                                <label className="block text-sm font-bold text-blue-800 mb-2"><i className="fas fa-file-pdf mr-2"></i> Unggah Surat Izin</label>
+                                <input type="file" ref={fileInputRef} accept=".pdf, image/png, image/jpeg" required onChange={handleFileChange} className="w-full text-sm text-gray-600 bg-white border border-blue-200 rounded-lg p-2" />
+                            </div>
+                        </div>
+
+                        <div className="border-t pt-4">
+                            <div className="flex justify-between items-center mb-3">
+                                <label className="block text-sm font-bold text-gray-800">Daftar Alat</label>
+                                <button type="button" onClick={handleAddBorrowItem} className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-200 font-semibold"><i className="fas fa-plus mr-1"></i> Tambah</button>
+                            </div>
+                            <div className="space-y-3">
+                                {borrowForm.items.map((item, index) => (
+                                    <div key={index} className="flex flex-col md:flex-row gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                        <select className="flex-grow p-2 border border-gray-300 rounded-lg bg-white" value={item.itemId} onChange={e => handleBorrowItemChange(index, 'itemId', e.target.value)} required>
+                                            <option value="" disabled>-- Pilih Alat --</option>
+                                            {inventory.map(inv => (
+                                                <option key={inv.id} value={inv.id} disabled={inv.available === 0}>{inv.name} (Sisa: {inv.available})</option>
+                                            ))}
+                                        </select>
+                                        <input type="number" min="1" className="w-full md:w-24 p-2 border border-gray-300 rounded-lg" placeholder="Jml" value={item.quantity} onChange={e => handleBorrowItemChange(index, 'quantity', e.target.value)} required />
+                                        {borrowForm.items.length > 1 && (
+                                            <button type="button" onClick={() => handleRemoveBorrowItem(index)} className="p-2 text-red-500 hover:bg-red-100 rounded-lg"><i className="fas fa-trash-alt"></i></button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="border-t pt-4 flex justify-end">
+                            <button type="submit" disabled={isSubmitting} className={`text-white font-bold py-3 px-6 rounded-lg shadow-md transition ${isSubmitting ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                {isSubmitting ? <><i className="fas fa-spinner fa-spin mr-2"></i> Mengirim...</> : <><i className="fas fa-paper-plane mr-2"></i> Proses Peminjaman</>}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            );
+
+            const renderTransactions = () => (
+                <div className="space-y-6 animate-fade-in">
+                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Status & Pengembalian</h2>
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                        {transactions.length === 0 ? (
+                            <div className="p-8 text-center text-gray-500"><i className="fas fa-clock text-4xl mb-3 opacity-50"></i><p>Belum ada data.</p></div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm whitespace-nowrap">
+                                    <thead className="bg-gray-800 text-white">
+                                        <tr>
+                                            <th className="p-4">Peminjam</th>
+                                            <th className="p-4">Tanggal</th>
+                                            <th className="p-4">Alat</th>
+                                            <th className="p-4 text-center">Status</th>
+                                            <th className="p-4 text-center">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {transactions.map(trx => (
+                                            <tr key={trx.id} className="hover:bg-gray-50">
+                                                <td className="p-4">
+                                                    <p className="font-bold text-gray-900">{trx.borrowerName}</p>
+                                                    <p className="text-gray-500 text-xs">NIM: {trx.nim}</p>
+                                                    <div className="mt-1 text-xs text-blue-700 bg-blue-50 w-max px-2 py-1 rounded"><i className="fas fa-file-alt mr-1"></i> {trx.approvalFileName}</div>
+                                                </td>
+                                                <td className="p-4 text-xs">
+                                                    <p><span className="font-semibold">Pinjam:</span> {trx.borrowDateFormatted}</p>
+                                                    <p><span className="font-semibold">Batas:</span> {new Date(trx.returnDateEst).toLocaleDateString('id-ID')}</p>
+                                                    {trx.actualReturnDate && <p className="text-green-600 mt-1"><span className="font-semibold">Kembali:</span> {trx.actualReturnDate}</p>}
+                                                </td>
+                                                <td className="p-4">
+                                                    <ul className="list-disc pl-4">
+                                                        {trx.items.map((item, idx) => {
+                                                            const alat = inventory.find(i => i.id === item.itemId);
+                                                            return <li key={idx} className="text-xs"><span className="font-semibold">{alat?.name}</span> x{item.quantity}</li>
+                                                        })}
+                                                    </ul>
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    {trx.status === 'active' 
+                                                        ? <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-xs font-bold"><i className="fas fa-exclamation-circle mr-1"></i> Dipinjam</span>
+                                                        : <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold"><i className="fas fa-check mr-1"></i> Selesai</span>
+                                                    }
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    {trx.status === 'active' && (
+                                                        <button onClick={() => handleReturn(trx.id)} className="bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg text-xs font-bold shadow"><i className="fas fa-undo mr-1"></i> Kembalikan</button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen flex flex-col md:flex-row">
+                    {notification && (
+                        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white font-semibold transition-all ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>
+                            {notification.message}
+                        </div>
+                    )}
+
+                    {/* Sidebar */}
+                    <nav className="bg-slate-900 w-full md:w-64 flex-shrink-0 text-white flex flex-col shadow-xl z-10 md:min-h-screen">
+                        <div className="p-6 bg-slate-950 text-center border-b border-slate-800">
+                            <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg mb-3">
+                                <i className="fas fa-satellite-dish text-3xl"></i>
+                            </div>
+                            <h1 className="text-xl font-black tracking-tight">SISTEM ALAT</h1>
+                            <p className="text-blue-400 text-xs font-semibold mt-1">Lab Geomatika ITERA</p>
+                        </div>
+                        <div className="flex-grow p-4 space-y-2">
+                            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+                                <i className="fas fa-home w-5"></i> <span className="font-medium">Dashboard</span>
+                            </button>
+                            <button onClick={() => setActiveTab('inventory')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'inventory' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+                                <i className="fas fa-clipboard-list w-5"></i> <span className="font-medium">Stok Alat</span>
+                            </button>
+                            <button onClick={() => setActiveTab('borrow')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'borrow' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+                                <i className="fas fa-edit w-5"></i> <span className="font-medium">Form Peminjaman</span>
+                            </button>
+                            <button onClick={() => setActiveTab('transactions')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'transactions' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}>
+                                <i className="fas fa-history w-5"></i> <span className="font-medium">Pengembalian</span>
+                            </button>
+                        </div>
+                        <div className="p-4 border-t border-slate-800">
+                            <button onClick={handleShareLink} className="w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg transition text-sm font-semibold">
+                                <i className="fas fa-share-alt"></i> <span>Salin Tautan</span>
+                            </button>
+                        </div>
+                    </nav>
+
+                    {/* Main Content Area */}
+                    <main className="flex-grow p-4 md:p-8 overflow-y-auto w-full">
+                        <div className="max-w-5xl mx-auto">
+                            {activeTab === 'dashboard' && renderDashboard()}
+                            {activeTab === 'inventory' && renderInventory()}
+                            {activeTab === 'borrow' && renderBorrowForm()}
+                            {activeTab === 'transactions' && renderTransactions()}
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+    <style>
+        .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</body>
+</html>
