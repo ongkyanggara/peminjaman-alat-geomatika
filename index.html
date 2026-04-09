@@ -194,7 +194,7 @@
                 setIsSubmitting(true);
                 const newTransactionId = 'TRX-' + Math.floor(Math.random() * 1000000);
 
-                if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'PASTE_URL_ANDA_DISINI') {
+                if (GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL !== 'https://script.google.com/macros/s/AKfycbzqjNJDvO0t3YMoRGrrX9ZMj1XjbVNFmv80FgGLehMA/dev') {
                     try {
                         const alatLengkap = borrowForm.items.map(item => {
                             const invItem = inventory.find(i => i.id === item.itemId);
