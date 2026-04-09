@@ -945,7 +945,11 @@
                                                 </td>
                                                 <td className="p-4 text-center">
                                                     {trx.status === 'active' ? (
-                                                        <button onClick={() => handleReturn(trx.id)} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full mb-2 shadow-sm"><i className="fas fa-undo mr-1"></i> Kembalikan</button>
+                                                        isAdmin ? (
+                                                            <button onClick={() => handleReturn(trx.id)} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full mb-2 shadow-sm"><i className="fas fa-undo mr-1"></i> Kembalikan</button>
+                                                        ) : (
+                                                            <span className="text-orange-500 text-xs italic font-medium block mb-2">Menunggu Pengembalian</span>
+                                                        )
                                                     ) : (
                                                         <span className="text-gray-400 text-xs italic font-medium block mb-2">Tuntas</span>
                                                     )}
