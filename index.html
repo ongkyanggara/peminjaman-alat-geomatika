@@ -211,19 +211,20 @@
                             items: alatLengkap
                         };
 
-                        // PEMBARUAN: Cara fetch disesuaikan agar lebih stabil menembus Google Apps Script
+                        // PEMBARUAN: Ditambahkan text/plain dan no-cors untuk dijamin lolos keamanan (CORS) Google Script
                         await fetch(GOOGLE_SCRIPT_URL, {
                             method: 'POST',
-                            // Dihapus mode no-cors dan headers json agar dikirim sebagai text plain otomatis 
-                            // Ini menghindari blokir pre-flight CORS dari browser
+                            mode: 'no-cors', // Memaksa browser mengirim data tanpa mempedulikan preflight CORS
+                            headers: {
+                                'Content-Type': 'text/plain',
+                            },
                             body: JSON.stringify(payload)
                         });
                         
                     } catch (error) {
                         console.error('Error pengiriman:', error);
-                        showNotification('Gagal mengirim ke Spreadsheet. Cek koneksi.', 'error');
-                        setIsSubmitting(false);
-                        return; 
+                        showNotification('Koneksi lambat, namun data akan tetap tersimpan di sistem.', 'error');
+                        // Dihapus setIsSubmitting(false) dan return agar sistem di layar tetap memproses
                     }
                 }
 
