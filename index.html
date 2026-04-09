@@ -1,102 +1,1033 @@
-function doGet() {
-  return ContentService
-    .createTextOutput(JSON.stringify(getData()))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoring Peminjaman Alat Laboratorium Geomatika</title>
+    
+    <!-- Memuat Tailwind CSS untuk Desain -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Memuat FontAwesome untuk Ikon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- MENGGUNAKAN CDNJS -->
+    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+    <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    
+    <div id="root">
+        <!-- Layar Loading Awal -->
+        <div class="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+            <i class="fas fa-spinner fa-spin text-4xl text-blue-600 mb-4"></i>
+            <h2 class="text-xl font-bold text-gray-800">Memuat Aplikasi...</h2>
+        </div>
+    </div>
 
-function getData() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Sheet1");
-  const data = sheet.getDataRange().getValues();
-  
-  const headers = data.shift();
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
 
-  return data.map(row => {
-    let obj = {};
-    headers.forEach((h, i) => obj[h] = row[i]);
-    return obj;
-  });
-}
+        // Data Awal Inventaris Lab Geomatika Sesuai Kategori
+        const initialInventory = [
+            // Total Station
+            { id: 'TS-001', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
+            { id: 'TS-002', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
+            { id: 'TS-003', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
+            { id: 'TS-004', category: 'Total Station', name: 'TOPCON OS-SERIES', total: 1, available: 1 },
+            { id: 'TS-005', category: 'Total Station', name: 'TOPCON ES-SERIES', total: 1, available: 1 },
+            { id: 'TS-006', category: 'Total Station', name: 'TOPCON OS-SERIES', total: 1, available: 1 },
+            { id: 'TS-007', category: 'Total Station', name: 'TOPCON GM-SERIES', total: 1, available: 1 },
+            { id: 'TS-008', category: 'Total Station', name: 'TOPCON GTS-235N', total: 1, available: 1 },
+            { id: 'TS-013', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
+            { id: 'TS-014', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
+            { id: 'TS-015', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
+            
+            // Theodolite
+            { id: 'DT-001', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
+            { id: 'DT-002', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
+            { id: 'DT-003', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
+            { id: 'DT-004', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
+            { id: 'DT-005', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
+            { id: 'DT-006', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
+            { id: 'DT-007', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
+            { id: 'DT-008', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
+            
+            // Leveling
+            { id: 'AL-001', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
+            { id: 'AL-002', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
+            { id: 'AL-003', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
+            { id: 'AL-004', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
+            { id: 'AL-005', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
+            { id: 'AL-006', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
+            { id: 'AL-007', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
+            { id: 'AL-008', category: 'Leveling', name: 'LEICA', total: 1, available: 1 },
+            { id: 'AL-009', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
+            { id: 'AL-010', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
+            { id: 'AL-011', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
+            { id: 'AL-012', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
+            { id: 'AL-013', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
+            { id: 'AL-014', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
+            { id: 'AL-015', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
+            
+            // GNSS & Laser Scanner
+            { id: 'G-001', category: 'GNSS', name: 'TOPCON HIPER II', total: 1, available: 1 },
+            { id: 'G-002', category: 'GNSS', name: 'LEICA GS14', total: 1, available: 1 },
+            { id: 'G-003', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
+            { id: 'G-004', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
+            { id: 'G-005', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
+            { id: 'G-006', category: 'Laser Scanner', name: 'LEICA BLK360', total: 1, available: 1 },
+            
+            // Safety
+            { id: 'HL-001-100', category: 'Safety', name: 'Helm', total: 100, available: 100 },
+            { id: 'RM-001-100', category: 'Safety', name: 'Rompi', total: 100, available: 100 },
+            
+            // Aksesoris
+            { id: 'JL-001-020', category: 'Aksesoris', name: 'Jalon', total: 14, available: 14 },
+            { id: 'RB-001-030', category: 'Aksesoris', name: 'Rambu Ukur (3 m)', total: 30, available: 30 },
+            { id: 'RB-001-010', category: 'Aksesoris', name: 'Rambu Ukur (4 m)', total: 10, available: 10 },
+            { id: 'RB-001-009', category: 'Aksesoris', name: 'Rambu Ukur (5 m)', total: 9, available: 9 },
+            { id: 'TM-001-035', category: 'Aksesoris', name: 'Tripod / Statip', total: 35, available: 35 },
+            
+            // Hidrografi
+            { id: 'F-0001', category: 'Hidrografi', name: 'Fish Finder', total: 1, available: 1 },
+            { id: 'PL-001-029', category: 'Hidrografi', name: 'Pelampung', total: 29, available: 29 }
+        ];
 
-function doPost(e) {
-  const data = JSON.parse(e.postData.contents);
+        function App() {
+            const [isAppLoading, setIsAppLoading] = useState(true);
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [inventory, setInventory] = useState(initialInventory);
+            const [transactions, setTransactions] = useState([]);
+            const [filterCategory, setFilterCategory] = useState('Semua');
+            const [isAdmin, setIsAdmin] = useState(false);
+            
+            const [showAddForm, setShowAddForm] = useState(false);
+            const [newItemForm, setNewItemForm] = useState({ id: '', category: '', name: '', total: 1 });
 
-  if (data.action === "create") {
-    return createData(data);
-  }
+            const fileInputRef = useRef(null);
 
-  if (data.action === "updateStatus") {
-    return updateStatus(data);
-  }
+            // Waktu berjalan untuk Dashboard
+            const [currentTime, setCurrentTime] = useState(new Date());
 
-  if (data.action === "delete") {
-    return deleteData(data);
-  }
-}
+            // MASUKKAN URL GOOGLE APPS SCRIPT ANDA DI SINI
+            const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxCitKJEJ_Tq5r8dvTeizbqiV9iS1KPtdOkNMhW1ar8-pRWJyW29nW8rzwry3dk5V24/exec'; 
 
-function createData(data) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Sheet1");
+            const [borrowForm, setBorrowForm] = useState({
+                borrowerName: '', nim: '', purpose: '',
+                borrowDate: new Date().toISOString().split('T')[0],
+                borrowTime: '',
+                returnDateEst: '',
+                returnTimeEst: '',
+                items: [{ itemId: '', quantity: 1 }],
+                approvalFileName: '',
+                fileBase64: '',
+                mimeType: ''
+            });
 
-  let fileUrl = "";
+            const [notification, setNotification] = useState(null);
+            const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ===============================
-  // HANDLE FILE (BASE64 → DRIVE)
-  // ===============================
-  if (data.file && data.fileName) {
-    const blob = Utilities.newBlob(
-      Utilities.base64Decode(data.file),
-      data.mimeType || "application/pdf",
-      data.fileName
-    );
+            const showNotification = (message, type = 'success') => {
+                setNotification({ message, type });
+                setTimeout(() => setNotification(null), 3000);
+            };
 
-    const folder = DriveApp.getFolderById("PASTE_FOLDER_ID_DI_SINI");
-    const file = folder.createFile(blob);
+            // EFEK SAAT PERTAMA KALI WEB DIBUKA: AMBIL DATA DARI SPREADSHEET & JAM BERJALAN
+            useEffect(() => {
+                // Timer untuk jam berjalan
+                const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
-    fileUrl = file.getUrl();
-  }
+                const fetchDatabase = async () => {
+                    try {
+                        const response = await fetch(GOOGLE_SCRIPT_URL);
+                        const rawData = await response.json();
+                        
+                        // Format tanggal agar bagus di UI
+                        const formattedData = rawData.map(trx => ({
+                            ...trx,
+                            borrowDateFormatted: new Date(trx.borrowDate).toLocaleDateString('id-ID')
+                        }));
 
-  sheet.appendRow([
-    data.id,
-    data.borrowerName,
-    data.nim,
-    data.jenis,
-    data.borrowDate,
-    data.borrowTime,
-    data.returnDateEst,
-    data.returnTime,
-    "active",
-    fileUrl,
-    JSON.stringify(data.items)
-  ]);
+                        setTransactions(formattedData);
 
-  return ContentService.createTextOutput(
-    JSON.stringify({ status: "success" })
-  ).setMimeType(ContentService.MimeType.JSON);
-}
+                        // Hitung ulang stok inventory berdasarkan alat yang sedang dipinjam (Status: active)
+                        let currentInventory = JSON.parse(JSON.stringify(initialInventory));
+                        
+                        formattedData.forEach(trx => {
+                            if (trx.status === 'active' && trx.items) {
+                                trx.items.forEach(bItem => {
+                                    // Ekstrak ID (contoh dari string: "[TS-001] Nama Alat")
+                                    const match = bItem.name.match(/\[(.*?)\]/);
+                                    if (match && match[1]) {
+                                        const itemId = match[1];
+                                        const invIndex = currentInventory.findIndex(i => i.id === itemId);
+                                        if (invIndex !== -1) {
+                                            currentInventory[invIndex].available -= parseInt(bItem.quantity);
+                                        }
+                                    }
+                                });
+                            }
+                        });
 
-function updateStatus(data) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Sheet1");
-  const rows = sheet.getDataRange().getValues();
+                        setInventory(currentInventory);
+                    } catch (error) {
+                        console.error("Gagal terhubung ke Spreadsheet:", error);
+                        showNotification("Sistem berjalan offline sementara. Data historis tidak dapat dimuat.", "error");
+                    } finally {
+                        setIsAppLoading(false);
+                    }
+                };
 
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i][0] === data.id) {
-      sheet.getRange(i + 1, 9).setValue(data.status); // kolom status
-      break;
-    }
-  }
+                fetchDatabase();
+                
+                return () => clearInterval(timer); // Membersihkan interval saat unmount
+            }, []);
 
-  return ContentService.createTextOutput("updated");
-}
+            const handleShareLink = () => {
+                const url = window.location.href; 
+                navigator.clipboard.writeText(url).then(() => {
+                    showNotification('Tautan aplikasi berhasil disalin!', 'success');
+                }).catch(err => {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = url;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(textArea);
+                    showNotification('Tautan aplikasi berhasil disalin!', 'success');
+                });
+            };
 
-function deleteData(data) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Sheet1");
-  const rows = sheet.getDataRange().getValues();
+            const handleAddBorrowItem = () => setBorrowForm({...borrowForm, items: [...borrowForm.items, { itemId: '', quantity: 1 }]});
+            const handleRemoveBorrowItem = (index) => {
+                const newItems = [...borrowForm.items];
+                newItems.splice(index, 1);
+                setBorrowForm({ ...borrowForm, items: newItems });
+            };
+            const handleBorrowItemChange = (index, field, value) => {
+                const newItems = [...borrowForm.items];
+                newItems[index][field] = value;
+                setBorrowForm({ ...borrowForm, items: newItems });
+            };
+            
+            // UPLOAD FILE & KONVERSI KE BASE64 AGAR BISA MASUK SPREADSHEET
+            const handleFileChange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    if (file.size > 3 * 1024 * 1024) { // Maksimal 3MB
+                        showNotification('Ukuran file maksimal 3MB!', 'error');
+                        e.target.value = ''; return;
+                    }
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        // Mengambil string base64 murni tanpa prefix data url
+                        const base64String = reader.result.split(',')[1];
+                        setBorrowForm({
+                            ...borrowForm,
+                            approvalFileName: file.name,
+                            fileBase64: base64String,
+                            mimeType: file.type
+                        });
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    setBorrowForm({...borrowForm, approvalFileName: '', fileBase64: '', mimeType: ''});
+                }
+            };
 
-  for (let i = 1; i < rows.length; i++) {
-    if (rows[i][0] === data.id) {
-      sheet.deleteRow(i + 1);
-      break;
-    }
-  }
+            // SIMPAN DATA (POST)
+            const submitBorrow = async (e) => {
+                e.preventDefault();
+                
+                // Validasi data baru
+                if (!borrowForm.borrowerName || !borrowForm.nim || !borrowForm.purpose || !borrowForm.borrowDate || !borrowForm.borrowTime || !borrowForm.returnDateEst || !borrowForm.returnTimeEst || borrowForm.items.length === 0 || !borrowForm.fileBase64) {
+                    showNotification('Mohon lengkapi data diri, keperluan, jam, daftar alat, dan surat izin', 'error');
+                    return;
+                }
 
-  return ContentService.createTextOutput("deleted");
-}
+                for (let item of borrowForm.items) {
+                    if (!item.itemId) return showNotification('Ada baris alat yang belum dipilih', 'error');
+                    if (item.quantity <= 0) return showNotification('Jumlah alat tidak valid', 'error');
+                    
+                    const inventoryItem = inventory.find(i => i.id === item.itemId);
+                    if (item.quantity > inventoryItem.available) {
+                        return showNotification(`Stok ${inventoryItem.name} tidak mencukupi! (Tersedia: ${inventoryItem.available})`, 'error');
+                    }
+                }
+
+                setIsSubmitting(true);
+                const newTransactionId = 'TRX-' + Math.floor(Math.random() * 1000000);
+                
+                const alatLengkap = borrowForm.items.map(item => {
+                    const invItem = inventory.find(i => i.id === item.itemId);
+                    return { name: `[${invItem.id}] ${invItem.name}`, quantity: item.quantity };
+                });
+
+                // Menambahkan data baru ke Payload JSON
+                const payload = {
+                    action: "create",
+                    id: newTransactionId,
+                    borrowerName: borrowForm.borrowerName,
+                    nim: borrowForm.nim,
+                    purpose: borrowForm.purpose,
+                    borrowDate: borrowForm.borrowDate,
+                    borrowTime: borrowForm.borrowTime,
+                    returnDateEst: borrowForm.returnDateEst,
+                    returnTimeEst: borrowForm.returnTimeEst,
+                    approvalFileName: borrowForm.approvalFileName,
+                    fileBase64: borrowForm.fileBase64,
+                    mimeType: borrowForm.mimeType,
+                    items: alatLengkap
+                };
+
+                try {
+                    // Kirim ke GS
+                    await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify(payload)
+                    });
+                } catch (error) {
+                    console.error('Info pengiriman fetch:', error);
+                }
+
+                // Update UI Langsung
+                const newInventory = [...inventory];
+                borrowForm.items.forEach(bItem => {
+                    const invIndex = newInventory.findIndex(i => i.id === bItem.itemId);
+                    newInventory[invIndex].available -= parseInt(bItem.quantity);
+                });
+
+                const newTransaction = {
+                    ...payload,
+                    status: 'active',
+                    borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID'),
+                };
+
+                setInventory(newInventory);
+                setTransactions([newTransaction, ...transactions]);
+                showNotification('Peminjaman berhasil dicatat & tersimpan di Spreadsheet!');
+                
+                setBorrowForm({
+                    borrowerName: '', nim: '', purpose: '',
+                    borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
+                    returnDateEst: '', returnTimeEst: '', 
+                    items: [{ itemId: '', quantity: 1 }],
+                    approvalFileName: '', fileBase64: '', mimeType: ''
+                });
+                if (fileInputRef.current) fileInputRef.current.value = "";
+                
+                setActiveTab('transactions');
+                setIsSubmitting(false);
+            };
+
+            // KEMBALIKAN ALAT & UPDATE DI SPREADSHEET
+            const handleReturn = async (transactionId) => {
+                if (window.confirm('Apakah alat sudah dikembalikan semua dalam kondisi baik?')) {
+                    const trxIndex = transactions.findIndex(t => t.id === transactionId);
+                    const trx = transactions[trxIndex];
+
+                    const newInventory = [...inventory];
+                    trx.items.forEach(rItem => {
+                        // Extract ID if necessary
+                        const match = rItem.name.match(/\[(.*?)\]/);
+                        const itemId = match ? match[1] : null;
+                        if (itemId) {
+                            const invIndex = newInventory.findIndex(i => i.id === itemId);
+                            if (invIndex !== -1) newInventory[invIndex].available += parseInt(rItem.quantity);
+                        }
+                    });
+
+                    const newTransactions = [...transactions];
+                    newTransactions[trxIndex].status = 'completed';
+
+                    setInventory(newInventory);
+                    setTransactions(newTransactions);
+                    showNotification('Pengembalian dicatat. Mensinkronisasi ke sistem...');
+
+                    // Update Spreadsheet
+                    try {
+                        await fetch(GOOGLE_SCRIPT_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            body: JSON.stringify({ action: "updateStatus", id: transactionId, status: "completed" })
+                        });
+                    } catch(e) { console.error("Gagal sinkron pengembalian", e) }
+                }
+            };
+
+            // HAPUS ALAT & HAPUS BARIS DI SPREADSHEET
+            const handleDelete = async (transactionId) => {
+                if (window.confirm('PERINGATAN: Transaksi ini akan dihapus permanen dari memori DAN Google Spreadsheet Anda. Lanjutkan?')) {
+                    const trxIndex = transactions.findIndex(t => t.id === transactionId);
+                    const trx = transactions[trxIndex];
+
+                    if (trx.status === 'active') {
+                        const newInventory = [...inventory];
+                        trx.items.forEach(rItem => {
+                            const match = rItem.name.match(/\[(.*?)\]/);
+                            const itemId = match ? match[1] : null;
+                            if (itemId) {
+                                const invIndex = newInventory.findIndex(i => i.id === itemId);
+                                if (invIndex !== -1) newInventory[invIndex].available += parseInt(rItem.quantity);
+                            }
+                        });
+                        setInventory(newInventory);
+                    }
+
+                    const newTransactions = transactions.filter(t => t.id !== transactionId);
+                    setTransactions(newTransactions);
+                    showNotification('Menghapus data dari server...');
+
+                    // Hapus dari Spreadsheet
+                    try {
+                        await fetch(GOOGLE_SCRIPT_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            body: JSON.stringify({ action: "delete", id: transactionId })
+                        });
+                    } catch(e) { console.error("Gagal sinkron hapus", e) }
+                }
+            };
+
+            const handleAdminToggle = () => {
+                if (isAdmin) {
+                    setIsAdmin(false); setShowAddForm(false);
+                    showNotification('Keluar dari Mode Admin', 'success');
+                } else {
+                    const pass = prompt('Masukkan Password Admin:');
+                    if (pass === 'adminlab') { 
+                        setIsAdmin(true); showNotification('Mode Admin Aktif!', 'success');
+                    } else if (pass !== null) {
+                        showNotification('Password salah!', 'error');
+                    }
+                }
+            };
+
+            // Fitur ini hanya sementara, jika web refresh alat baru hilang karena belum disimpan di Sheet Inventory
+            const handleAddNewInventoryItem = (e) => {
+                e.preventDefault();
+                if (!newItemForm.id || !newItemForm.category || !newItemForm.name || newItemForm.total <= 0) return showNotification('Data alat belum lengkap!', 'error');
+                if (inventory.some(i => i.id === newItemForm.id)) return showNotification('Kode Alat sudah digunakan!', 'error');
+                
+                const newItem = { id: newItemForm.id, category: newItemForm.category, name: newItemForm.name, total: parseInt(newItemForm.total), available: parseInt(newItemForm.total) };
+                setInventory([newItem, ...inventory]); 
+                showNotification('Alat ditambahkan ke sesi ini', 'success');
+                setNewItemForm({ id: '', category: '', name: '', total: 1 });
+                setShowAddForm(false);
+            };
+
+            const handleDeleteInventoryItem = (itemId) => {
+                const item = inventory.find(i => i.id === itemId);
+                if (item.available < item.total) return showNotification('Tidak bisa menghapus alat yang dipinjam!', 'error');
+                if (window.confirm(`Hapus alat ${item.name}?`)) {
+                    setInventory(inventory.filter(i => i.id !== itemId));
+                }
+            };
+
+            const renderDashboard = () => {
+                const totalAlat = inventory.reduce((sum, item) => sum + item.total, 0);
+                const totalTersedia = inventory.reduce((sum, item) => sum + item.available, 0);
+                const totalDipinjam = totalAlat - totalTersedia;
+                
+                const persenTersedia = totalAlat === 0 ? 0 : Math.round((totalTersedia / totalAlat) * 100);
+                const persenDipinjam = totalAlat === 0 ? 0 : Math.round((totalDipinjam / totalAlat) * 100);
+
+                const activeTx = transactions.filter(t => t.status === 'active');
+                
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                
+                let mendekatiDeadlineCount = 0;
+                const lateTx = [];
+
+                // Hitung status hari untuk tabel Peminjaman Berjalan & Hitung Keterlambatan / Mendekati
+                activeTx.forEach(trx => {
+                    const rDate = new Date(trx.returnDateEst);
+                    rDate.setHours(0,0,0,0);
+                    const diffTime = rDate.getTime() - today.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    
+                    trx.diffDays = diffDays; // Simpan untuk dipakai di tabel
+                    
+                    if (diffDays < 0) {
+                        lateTx.push(trx);
+                    } else if (diffDays === 1 || diffDays === 2) {
+                        mendekatiDeadlineCount += trx.items.reduce((acc, item) => acc + parseInt(item.quantity), 0);
+                    }
+                });
+
+                const persenTerlambat = activeTx.length === 0 ? 0 : Math.round((lateTx.length / activeTx.length) * 100);
+
+                // --- 1. Statistik Kategori Alat ---
+                const categories = [...new Set(inventory.map(i => i.category))];
+                const categoryStats = categories.map(cat => {
+                    const itemsInCat = inventory.filter(i => i.category === cat);
+                    const total = itemsInCat.reduce((sum, i) => sum + i.total, 0);
+                    const available = itemsInCat.reduce((sum, i) => sum + i.available, 0);
+                    return { category: cat, total, borrowed: total - available, available };
+                }).sort((a, b) => b.total - a.total);
+
+                const chartColors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316', '#64748b'];
+                
+                let cumulativePercent = 0;
+                const pieGradients = categoryStats.map((stat, i) => {
+                    const percent = stat.total === 0 ? 0 : (stat.total / totalAlat) * 100;
+                    const gradientStr = `${chartColors[i % chartColors.length]} ${cumulativePercent}% ${cumulativePercent + percent}%`;
+                    cumulativePercent += percent;
+                    return gradientStr;
+                }).join(', ');
+                const pieStyle = { background: `conic-gradient(${pieGradients})` };
+
+                // --- 2. Statistik Alat Paling Sering Dipinjam ---
+                const itemFrequency = {};
+                transactions.forEach(trx => {
+                    if (!trx.items) return;
+                    trx.items.forEach(item => {
+                        const match = item.name.match(/\[(.*?)\]/);
+                        const itemId = match ? match[1] : item.name;
+                        if (!itemFrequency[itemId]) itemFrequency[itemId] = { count: 0, name: item.name };
+                        itemFrequency[itemId].count += parseInt(item.quantity);
+                    });
+                });
+                const topItems = Object.keys(itemFrequency)
+                    .map(id => ({ id, count: itemFrequency[id].count, name: itemFrequency[id].name }))
+                    .sort((a, b) => b.count - a.count)
+                    .slice(0, 5);
+
+                // --- 3. Analisis Jenis Peminjaman (BARU) ---
+                const purposeStats = {};
+                let totalPurposeCount = 0;
+                transactions.forEach(trx => {
+                    const purpose = trx.purpose || 'Lainnya'; // Fallback untuk data lama
+                    purposeStats[purpose] = (purposeStats[purpose] || 0) + 1;
+                    totalPurposeCount++;
+                });
+                
+                const purposeArray = Object.keys(purposeStats).map(p => ({
+                    purpose: p,
+                    count: purposeStats[p],
+                    percent: totalPurposeCount === 0 ? 0 : Math.round((purposeStats[p] / totalPurposeCount) * 100)
+                })).sort((a, b) => b.count - a.count);
+
+                return (
+                    <div className="space-y-6 animate-fade-in">
+                        <div className="flex justify-between items-end border-b pb-2">
+                            <h2 className="text-2xl font-bold text-gray-800">Dashboard Monitoring</h2>
+                            <div className="text-right bg-white px-4 py-2 rounded-xl border border-gray-200 shadow-sm">
+                                <p className="text-xs font-bold text-gray-500 mb-0.5 uppercase tracking-wider">{currentTime.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                                <p className="text-2xl font-black text-blue-600 font-mono tracking-widest">{currentTime.toLocaleTimeString('id-ID', { hour12: false })}</p>
+                            </div>
+                        </div>
+
+                        {/* BANNER: Mendekati Deadline */}
+                        {mendekatiDeadlineCount > 0 && (
+                            <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-r-xl flex items-center shadow-sm">
+                                <i className="fas fa-exclamation-circle text-yellow-500 text-2xl mr-4"></i>
+                                <div>
+                                    <p className="text-sm text-yellow-800 font-bold">Perhatian: Ada alat yang mendekati jatuh tempo (H-1 / H-2)!</p>
+                                    <p className="text-xs text-yellow-700">Sebanyak <span className="font-black text-lg">{mendekatiDeadlineCount}</span> alat akan segera mencapai batas waktu pengembalian. Cek tabel di bawah.</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* SECTION 1: Quick Stats */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
+                                <div className="flex justify-between items-start">
+                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Total Inventaris</p><p className="text-3xl font-black text-gray-800">{totalAlat}</p></div>
+                                    <div className="bg-blue-100 p-3 rounded-lg text-blue-600"><i className="fas fa-boxes text-xl"></i></div>
+                                </div>
+                            </div>
+                            <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
+                                <div className="flex justify-between items-start">
+                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Ketersediaan Alat</p><p className="text-3xl font-black text-green-600">{persenTersedia}%</p></div>
+                                    <div className="bg-green-100 p-3 rounded-lg text-green-600"><i className="fas fa-check-circle text-xl"></i></div>
+                                </div>
+                                <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-green-500 h-1.5 rounded-full" style={{width: `${persenTersedia}%`}}></div></div>
+                            </div>
+                            <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
+                                <div className="flex justify-between items-start">
+                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Sedang Dipinjam</p><p className="text-3xl font-black text-orange-500">{persenDipinjam}%</p></div>
+                                    <div className="bg-orange-100 p-3 rounded-lg text-orange-600"><i className="fas fa-exchange-alt text-xl"></i></div>
+                                </div>
+                                <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-orange-500 h-1.5 rounded-full" style={{width: `${persenDipinjam}%`}}></div></div>
+                            </div>
+                            <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
+                                <div className="flex justify-between items-start">
+                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Risiko Terlambat</p><p className="text-3xl font-black text-red-500">{persenTerlambat}%</p></div>
+                                    <div className="bg-red-100 p-3 rounded-lg text-red-600"><i className="fas fa-exclamation-triangle text-xl"></i></div>
+                                </div>
+                                <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-red-500 h-1.5 rounded-full" style={{width: `${persenTerlambat}%`}}></div></div>
+                            </div>
+                        </div>
+
+                        {/* SECTION 2: Distribusi & Analisis Jenis (BARU) */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
+                                <h3 className="text-lg font-bold text-gray-800 mb-6">Distribusi Alat</h3>
+                                <div className="flex flex-col md:flex-row items-center gap-8 my-auto">
+                                    <div className="w-40 h-40 rounded-full shadow-inner relative flex-shrink-0" style={pieStyle}>
+                                        <div className="absolute inset-0 m-auto w-24 h-24 bg-white rounded-full flex flex-col items-center justify-center shadow-sm">
+                                            <span className="font-bold text-gray-800 text-xl">{totalAlat}</span>
+                                            <span className="text-gray-500 text-[10px] font-bold uppercase">Total Alat</span>
+                                        </div>
+                                    </div>
+                                    <div className="w-full space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                                        {categoryStats.map((stat, i) => (
+                                            <div key={stat.category} className="flex items-center justify-between text-sm">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="w-3 h-3 rounded-full block flex-shrink-0" style={{backgroundColor: chartColors[i % chartColors.length]}}></span>
+                                                    <span className="text-gray-600 font-medium truncate max-w-[120px]" title={stat.category}>{stat.category}</span>
+                                                </div>
+                                                <span className="font-bold text-gray-800">{totalAlat === 0 ? 0 : Math.round((stat.total/totalAlat)*100)}%</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                                <h3 className="text-lg font-bold text-gray-800 mb-6"><i className="fas fa-chart-bar text-indigo-500 mr-2"></i> Analisis Jenis Peminjaman</h3>
+                                <div className="space-y-4 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                                    {purposeArray.map((stat) => (
+                                        <div key={stat.purpose}>
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="font-semibold text-gray-700">{stat.purpose}</span>
+                                                <span className="text-gray-500 font-bold text-indigo-600">{stat.percent}% <span className="font-medium text-gray-400 text-xs">({stat.count}x)</span></span>
+                                            </div>
+                                            <div className="w-full bg-gray-100 rounded-full h-2.5">
+                                                <div className="bg-indigo-500 h-2.5 rounded-full" style={{width: `${stat.percent}%`}}></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {purposeArray.length === 0 && <p className="text-gray-400 text-sm italic">Belum ada data peminjaman.</p>}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* SECTION 3: Paling Sering & Monitor Terlambat */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                                <h3 className="text-lg font-bold text-gray-800 mb-4"><i className="fas fa-fire text-orange-500 mr-2"></i> Alat Paling Sering Dipinjam</h3>
+                                {topItems.length === 0 ? (
+                                    <p className="text-gray-400 text-sm italic py-4 text-center">Belum ada data peminjaman.</p>
+                                ) : (
+                                    <ul className="divide-y divide-gray-100">
+                                        {topItems.map((item, idx) => (
+                                            <li key={idx} className="py-3 flex justify-between items-center">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? 'bg-yellow-100 text-yellow-700' : idx === 1 ? 'bg-slate-200 text-slate-700' : idx === 2 ? 'bg-orange-100 text-orange-800' : 'bg-gray-50 text-gray-500'}`}>
+                                                        {idx + 1}
+                                                    </div>
+                                                    <div><p className="text-sm font-bold text-gray-800">{item.name}</p></div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold">{item.count}x Dipinjam</span>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+
+                            <div className="bg-white p-6 rounded-xl border border-red-200 shadow-sm relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-red-50 rounded-bl-full -z-10"></div>
+                                <h3 className="text-lg font-bold text-red-700 mb-4"><i className="fas fa-bell mr-2"></i> Monitor Keterlambatan</h3>
+                                {lateTx.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-8 text-green-500">
+                                        <i className="fas fa-shield-check text-4xl mb-3 opacity-50"></i>
+                                        <p className="text-sm font-medium">Luar biasa! Tidak ada yang terlambat.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {lateTx.map(trx => (
+                                            <div key={trx.id} className="bg-red-50 border-l-4 border-red-500 p-3 rounded-r-lg">
+                                                <div className="flex justify-between">
+                                                    <p className="font-bold text-red-800 text-sm">{trx.borrowerName} <span className="font-normal text-xs text-red-600">({trx.nim})</span></p>
+                                                    <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded">Telat</span>
+                                                </div>
+                                                <p className="text-xs text-red-700 mt-1">Batas: {new Date(trx.returnDateEst).toLocaleDateString('id-ID')} {trx.returnTimeEst}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* SECTION 4: Peminjaman Berjalan (DI-UPDATE DENGAN STATUS DETAIL) */}
+                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4"><i className="fas fa-tasks text-blue-500 mr-2"></i> Peminjaman Berjalan (Detail Peminjam)</h3>
+                            {activeTx.length === 0 ? (
+                                <p className="text-gray-400 text-sm italic py-6 text-center bg-gray-50 rounded-lg">Tidak ada peminjaman aktif.</p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm whitespace-nowrap">
+                                        <thead className="bg-slate-50 text-slate-600 border-y border-slate-200">
+                                            <tr>
+                                                <th className="p-3 font-semibold">Info Peminjam</th>
+                                                <th className="p-3 font-semibold">Ringkasan Alat</th>
+                                                <th className="p-3 font-semibold text-center">Waktu Pinjam</th>
+                                                <th className="p-3 font-semibold text-center">Deadline Pengembalian</th>
+                                                <th className="p-3 font-semibold text-center">Status Deadline</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {activeTx.map(trx => {
+                                                // Menentukan Tampilan Status Berdasarkan Hari
+                                                let statusBadge;
+                                                let statusClassRow = "hover:bg-slate-50 transition-colors";
+
+                                                if (trx.diffDays < 0) {
+                                                    statusBadge = <span className="bg-red-100 text-red-700 border border-red-200 px-3 py-1.5 rounded-md font-bold text-xs"><i className="fas fa-times-circle mr-1"></i> Terlambat</span>;
+                                                    statusClassRow = "bg-red-50/30 hover:bg-red-50 transition-colors";
+                                                } else if (trx.diffDays === 0) {
+                                                    statusBadge = <span className="bg-orange-100 text-orange-700 border border-orange-200 px-3 py-1.5 rounded-md font-bold text-xs animate-pulse"><i className="fas fa-exclamation-triangle mr-1"></i> Jatuh Tempo Hari Ini</span>;
+                                                } else if (trx.diffDays === 1 || trx.diffDays === 2) {
+                                                    statusBadge = <span className="bg-yellow-100 text-yellow-700 border border-yellow-200 px-3 py-1.5 rounded-md font-bold text-xs"><i className="fas fa-clock mr-1"></i> Mendekati (H-{trx.diffDays})</span>;
+                                                    statusClassRow = "bg-yellow-50/30 hover:bg-yellow-50 transition-colors";
+                                                } else {
+                                                    statusBadge = <span className="bg-green-100 text-green-700 border border-green-200 px-3 py-1.5 rounded-md font-bold text-xs"><i className="fas fa-check-circle mr-1"></i> Aman (H-{trx.diffDays})</span>;
+                                                }
+
+                                                return (
+                                                <tr key={trx.id} className={statusClassRow}>
+                                                    <td className="p-3">
+                                                        <p className="font-bold text-gray-800">{trx.borrowerName}</p>
+                                                        <p className="text-xs text-gray-500 mb-1">{trx.nim}</p>
+                                                        <span className="inline-block bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">{trx.purpose || 'Lainnya'}</span>
+                                                    </td>
+                                                    <td className="p-3 text-gray-700 whitespace-normal min-w-[200px]">
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {trx.items && trx.items.map((i, idx) => (
+                                                                <span key={idx} className="bg-white border border-gray-200 text-xs px-2 py-1 rounded text-gray-600 font-semibold shadow-sm">{i.name} ({i.quantity}x)</span>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-3 text-center text-xs">
+                                                        <span className="block text-gray-800 font-medium">{new Date(trx.borrowDate).toLocaleDateString('id-ID')}</span>
+                                                        <span className="block font-bold text-blue-600 mt-0.5"><i className="far fa-clock"></i> {trx.borrowTime || '-'}</span>
+                                                    </td>
+                                                    <td className="p-3 text-center text-xs">
+                                                        <span className="block text-gray-800 font-medium">{new Date(trx.returnDateEst).toLocaleDateString('id-ID')}</span>
+                                                        <span className="block font-bold text-red-600 mt-0.5"><i className="far fa-clock"></i> {trx.returnTimeEst || '-'}</span>
+                                                    </td>
+                                                    <td className="p-3 text-center">
+                                                        {statusBadge}
+                                                    </td>
+                                                </tr>
+                                            )})}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderInventory = () => {
+                const categories = ['Semua', ...new Set(inventory.map(item => item.category))];
+                const filteredInventory = filterCategory === 'Semua' ? inventory : inventory.filter(item => item.category === filterCategory);
+
+                return (
+                    <div className="space-y-6 animate-fade-in">
+                        <div className="flex flex-col md:flex-row justify-between md:items-end border-b pb-4 gap-4">
+                            <h2 className="text-2xl font-bold text-gray-800">Stok Alat Laboratorium</h2>
+                            <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                                {categories.map(cat => (
+                                    <button key={cat} onClick={() => setFilterCategory(cat)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${filterCategory === cat ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}`}>
+                                        {cat}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {isAdmin && (
+                            <div className="mb-4">
+                                <button onClick={() => setShowAddForm(!showAddForm)} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition flex items-center ${showAddForm ? 'bg-slate-200 text-slate-700' : 'bg-slate-800 text-white'}`}>
+                                    <i className={`fas ${showAddForm ? 'fa-times' : 'fa-plus'} mr-2`}></i> {showAddForm ? 'Batal Tambah Alat' : 'Tambah Alat Baru (Sesi Ini)'}
+                                </button>
+                                {showAddForm && (
+                                    <form onSubmit={handleAddNewInventoryItem} className="mt-4 bg-blue-50/50 p-5 rounded-xl border border-blue-100 shadow-sm grid grid-cols-1 md:grid-cols-5 gap-4 items-end animate-fade-in">
+                                        <div><label className="block text-xs font-bold text-blue-900 mb-1">Kode Alat</label><input type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.id} onChange={e => setNewItemForm({...newItemForm, id: e.target.value.toUpperCase()})} /></div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-blue-900 mb-1">Kategori</label>
+                                            <input type="text" required list="category-list" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.category} onChange={e => setNewItemForm({...newItemForm, category: e.target.value})} />
+                                            <datalist id="category-list">{categories.filter(c => c !== 'Semua').map(c => <option key={c} value={c} />)}</datalist>
+                                        </div>
+                                        <div className="md:col-span-2"><label className="block text-xs font-bold text-blue-900 mb-1">Nama Alat / Model</label><input type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.name} onChange={e => setNewItemForm({...newItemForm, name: e.target.value})} /></div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-blue-900 mb-1">Jumlah</label>
+                                            <div className="flex gap-2">
+                                                <input type="number" min="1" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.total} onChange={e => setNewItemForm({...newItemForm, total: e.target.value})} />
+                                                <button type="submit" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-bold"><i className="fas fa-save"></i></button>
+                                            </div>
+                                        </div>
+                                    </form>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left whitespace-nowrap">
+                                    <thead className="bg-gray-800 text-white">
+                                        <tr>
+                                            <th className="p-4">Kode Alat</th><th className="p-4">Kategori</th><th className="p-4">Nama Alat / Model</th>
+                                            <th className="p-4 text-center">Total</th><th className="p-4 text-center">Tersedia</th><th className="p-4 text-center">Status</th>
+                                            {isAdmin && <th className="p-4 text-center">Aksi</th>}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {filteredInventory.map(item => (
+                                            <tr key={item.id} className="hover:bg-gray-50">
+                                                <td className="p-4 text-sm font-bold text-slate-700">{item.id}</td>
+                                                <td className="p-4"><span className="bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded text-xs font-semibold">{item.category}</span></td>
+                                                <td className="p-4 font-medium text-gray-900">{item.name}</td>
+                                                <td className="p-4 text-center text-sm">{item.total}</td>
+                                                <td className="p-4 text-center font-black text-green-600">{item.available}</td>
+                                                <td className="p-4 text-center">
+                                                    {item.available === 0 ? <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold">Habis</span> : <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Tersedia</span>}
+                                                </td>
+                                                {isAdmin && (
+                                                    <td className="p-4 text-center"><button onClick={() => handleDeleteInventoryItem(item.id)} className="text-red-500 hover:bg-red-100 p-2 rounded-lg transition"><i className="fas fa-trash-alt"></i></button></td>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderBorrowForm = () => {
+                const inventoryByCategory = inventory.reduce((acc, item) => {
+                    if (!acc[item.category]) acc[item.category] = [];
+                    acc[item.category].push(item);
+                    return acc;
+                }, {});
+
+                return (
+                    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+                        <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Form Peminjaman Alat</h2>
+                        <form onSubmit={submitBorrow} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Nama Peminjam / Kelompok</label><input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowerName} onChange={e => setBorrowForm({...borrowForm, borrowerName: e.target.value})} placeholder="Contoh: Kelompok 1 - Budi" /></div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">NIM / ID Anggota</label><input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.nim} onChange={e => setBorrowForm({...borrowForm, nim: e.target.value})} placeholder="Masukkan NIM" /></div>
+                                
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Keperluan Peminjaman</label>
+                                    <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white" value={borrowForm.purpose} onChange={e => setBorrowForm({...borrowForm, purpose: e.target.value})}>
+                                        <option value="" disabled>-- Pilih Keperluan --</option>
+                                        <option value="Praktikum">Praktikum</option>
+                                        <option value="Tugas akhir">Tugas Akhir</option>
+                                        <option value="Penelitian">Penelitian</option>
+                                        <option value="Proyek">Proyek</option>
+                                        <option value="Lainnya">Lainnya</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal & Jam Pengambilan</label>
+                                    <div className="flex gap-2">
+                                        <input type="date" required className="w-3/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={borrowForm.borrowDate} onChange={e => setBorrowForm({...borrowForm, borrowDate: e.target.value})} />
+                                        <input type="time" required className="w-2/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm font-bold" value={borrowForm.borrowTime} onChange={e => setBorrowForm({...borrowForm, borrowTime: e.target.value})} />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Estimasi Tanggal & Jam Pemulangan</label>
+                                    <div className="flex gap-2">
+                                        <input type="date" required className="w-3/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={borrowForm.returnDateEst} onChange={e => setBorrowForm({...borrowForm, returnDateEst: e.target.value})} />
+                                        <input type="time" required className="w-2/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm font-bold" value={borrowForm.returnTimeEst} onChange={e => setBorrowForm({...borrowForm, returnTimeEst: e.target.value})} />
+                                    </div>
+                                </div>
+                                
+                                <div className="md:col-span-2 bg-blue-50 p-4 rounded-xl border border-blue-200 mt-2">
+                                    <label className="block text-sm font-bold text-blue-900 mb-2"><i className="fas fa-file-upload mr-2"></i> Unggah Surat Izin Peminjaman (PDF/Gambar, Max 3MB)</label>
+                                    <input type="file" accept=".pdf, image/jpeg, image/png" ref={fileInputRef} required onChange={handleFileChange} className="w-full text-sm text-gray-600 bg-white border border-blue-300 rounded-lg p-2" />
+                                </div>
+                            </div>
+
+                            <div className="border-t pt-4">
+                                <div className="flex justify-between items-center mb-3">
+                                    <label className="block text-sm font-bold text-gray-800">Daftar Alat yang Dipinjam</label>
+                                    <button type="button" onClick={handleAddBorrowItem} className="text-sm bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold"><i className="fas fa-plus mr-1"></i> Tambah Alat</button>
+                                </div>
+                                <div className="space-y-3">
+                                    {borrowForm.items.map((item, index) => (
+                                        <div key={index} className="flex flex-col md:flex-row gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 items-center">
+                                            <span className="font-bold text-slate-400 hidden md:block">{index + 1}.</span>
+                                            <select className="flex-grow w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={item.itemId} onChange={e => handleBorrowItemChange(index, 'itemId', e.target.value)} required>
+                                                <option value="" disabled>-- Pilih Alat Sesuai Kategori --</option>
+                                                {Object.keys(inventoryByCategory).map(category => (
+                                                    <optgroup key={category} label={`--- KATEGORI: ${category.toUpperCase()} ---`}>
+                                                        {inventoryByCategory[category].map(inv => (
+                                                            <option key={inv.id} value={inv.id} disabled={inv.available === 0}>
+                                                                [{inv.id}] {inv.name} - (Tersedia: {inv.available})
+                                                            </option>
+                                                        ))}
+                                                    </optgroup>
+                                                ))}
+                                            </select>
+                                            <div className="flex items-center w-full md:w-auto gap-3">
+                                                <label className="text-xs font-bold text-slate-600 md:hidden">Jumlah:</label>
+                                                <input type="number" min="1" className="w-full md:w-24 p-2 border border-slate-300 rounded-lg text-center font-bold" value={item.quantity} onChange={e => handleBorrowItemChange(index, 'quantity', e.target.value)} required />
+                                                {borrowForm.items.length > 1 && (
+                                                    <button type="button" onClick={() => handleRemoveBorrowItem(index)} className="p-2 text-red-500 bg-red-50 rounded-lg"><i className="fas fa-trash-alt"></i></button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="border-t pt-6 flex justify-end">
+                                <button type="submit" disabled={isSubmitting} className={`w-full md:w-auto text-white font-bold py-3 px-8 rounded-lg shadow-md transition ${isSubmitting ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                    {isSubmitting ? <><i className="fas fa-spinner fa-spin mr-2"></i> Mengirim Data...</> : <><i className="fas fa-paper-plane mr-2"></i> Proses Peminjaman</>}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                );
+            };
+
+            const renderTransactions = () => (
+                <div className="space-y-6 animate-fade-in">
+                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Status & Pengembalian Alat</h2>
+                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                        {transactions.length === 0 ? (
+                            <div className="p-10 text-center text-gray-400"><i className="fas fa-clipboard-check text-5xl mb-4 opacity-30"></i><p className="font-medium text-lg">Belum ada histori peminjaman.</p></div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm whitespace-nowrap">
+                                    <thead className="bg-gray-800 text-white">
+                                        <tr>
+                                            <th className="p-4">Info Peminjam</th><th className="p-4">Waktu</th><th className="p-4">Rincian Alat</th>
+                                            <th className="p-4 text-center">Status</th><th className="p-4 text-center">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {transactions.map(trx => (
+                                            <tr key={trx.id} className="hover:bg-gray-50">
+                                                <td className="p-4">
+                                                    <p className="font-bold text-gray-900 text-base">{trx.borrowerName}</p>
+                                                    <p className="text-gray-500 text-xs mt-0.5">NIM: <span className="font-semibold">{trx.nim}</span></p>
+                                                    {trx.purpose && <p className="text-blue-600 text-xs font-semibold mt-1"><i className="fas fa-tag mr-1"></i> {trx.purpose}</p>}
+                                                    
+                                                    {/* Link untuk membuka file jika Google Script mengembalikan URL File Google Drive */}
+                                                    {trx.approvalFileUrl ? (
+                                                        <a href={trx.approvalFileUrl} target="_blank" rel="noopener noreferrer" className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 w-max px-2 py-1 rounded-md shadow-sm hover:bg-blue-100 inline-flex items-center transition"><i className="fas fa-external-link-alt mr-1 text-red-500"></i> Buka Surat Izin</a>
+                                                    ) : (
+                                                        <div className="mt-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 w-max px-2 py-1 rounded-md"><i className="fas fa-file mr-1"></i> {trx.approvalFileName}</div>
+                                                    )}
+                                                </td>
+                                                <td className="p-4 text-xs space-y-1">
+                                                    <p><span className="font-semibold text-gray-600">Ambil:</span> {trx.borrowDateFormatted} <span className="font-bold text-gray-800 ml-1">{trx.borrowTime || ''}</span></p>
+                                                    <p><span className="font-semibold text-red-500">Pulang:</span> {new Date(trx.returnDateEst).toLocaleDateString('id-ID')} <span className="font-bold text-red-700 ml-1">{trx.returnTimeEst || ''}</span></p>
+                                                </td>
+                                                <td className="p-4">
+                                                    <ul className="list-none space-y-1">
+                                                        {trx.items && trx.items.map((item, idx) => (
+                                                            <li key={idx} className="text-xs bg-slate-100 border border-slate-200 px-2 py-1 rounded">
+                                                                <span className="font-bold text-slate-700">{item.name}</span> <span className="font-bold text-blue-600 ml-1">x{item.quantity}</span>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    {trx.status === 'active' 
+                                                        ? <span className="bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm">Dipinjam</span>
+                                                        : <span className="bg-green-100 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm">Selesai</span>}
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    {trx.status === 'active' ? (
+                                                        <button onClick={() => handleReturn(trx.id)} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full mb-2 shadow-sm"><i className="fas fa-undo mr-1"></i> Kembalikan</button>
+                                                    ) : (
+                                                        <span className="text-gray-400 text-xs italic font-medium block mb-2">Tuntas</span>
+                                                    )}
+                                                    {isAdmin && (
+                                                        <button onClick={() => handleDelete(trx.id)} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full shadow-sm"><i className="fas fa-trash-alt mr-1"></i> Hapus</button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+
+            // Layar loading putih murni saat mengambil data spreadsheet awal
+            if (isAppLoading) {
+                return (
+                    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+                        <i className="fas fa-sync fa-spin text-4xl text-blue-600 mb-4"></i>
+                        <h2 className="text-xl font-bold text-gray-800">Menghubungkan ke Database...</h2>
+                        <p className="text-gray-500 text-sm mt-2">Membaca riwayat peminjaman dari Spreadsheet</p>
+                    </div>
+                )
+            }
+
+            return (
+                <div className="min-h-screen flex flex-col md:flex-row">
+                    {notification && (
+                        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-xl text-white font-semibold transition-all flex items-center ${notification.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}>
+                            <i className={`fas ${notification.type === 'error' ? 'fa-times-circle' : 'fa-check-circle'} text-xl mr-3`}></i> {notification.message}
+                        </div>
+                    )}
+
+                    <nav className="bg-slate-900 w-full md:w-64 flex-shrink-0 text-white flex flex-col shadow-xl z-10 md:min-h-screen">
+                        <div className="p-6 bg-slate-950 text-center border-b border-slate-800">
+                            <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg mb-3"><i className="fas fa-satellite-dish text-3xl"></i></div>
+                            <h1 className="text-lg font-black tracking-tight leading-tight uppercase">Monitoring Peminjaman Alat</h1>
+                            <p className="text-blue-400 text-xs font-semibold mt-2">Laboratorium Geomatika</p>
+                        </div>
+                        <div className="flex-grow p-4 space-y-2">
+                            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-chart-pie w-5"></i> <span className="font-medium">Dashboard</span></button>
+                            <button onClick={() => setActiveTab('inventory')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'inventory' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-clipboard-list w-5"></i> <span className="font-medium">Stok Alat</span></button>
+                            <button onClick={() => setActiveTab('borrow')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'borrow' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-edit w-5"></i> <span className="font-medium">Form Peminjaman</span></button>
+                            <button onClick={() => setActiveTab('transactions')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'transactions' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-history w-5"></i> <span className="font-medium">Pengembalian</span></button>
+                        </div>
+                        <div className="p-4 border-t border-slate-800">
+                            <button onClick={handleShareLink} className="w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg transition text-sm font-semibold mb-5"><i className="fas fa-share-alt"></i> <span>Salin Tautan Web</span></button>
+                            <div className="text-[11px] text-slate-500 text-center leading-relaxed relative">
+                                &copy; 2026 Laboratorium Geomatika <br/>Institut Teknologi Sumatera
+                                <button onClick={handleAdminToggle} className="absolute -bottom-2 -right-2 p-2 text-slate-700 hover:text-slate-400 transition" title="Admin Access">
+                                    <i className={`fas ${isAdmin ? 'fa-lock-open text-red-500' : 'fa-lock'}`}></i>
+                                </button>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <main className="flex-grow p-4 md:p-8 overflow-y-auto w-full bg-gray-100/50">
+                        <div className="max-w-6xl mx-auto">
+                            {activeTab === 'dashboard' && renderDashboard()}
+                            {activeTab === 'inventory' && renderInventory()}
+                            {activeTab === 'borrow' && renderBorrowForm()}
+                            {activeTab === 'transactions' && renderTransactions()}
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+    <style>
+        .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .custom-scrollbar::-webkit-scrollbar { height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</body>
+</html>
