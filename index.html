@@ -283,10 +283,13 @@
                 };
 
                 try {
-                    // Kirim ke GS
+                    // Kirim ke GS dengan Header Content-Type text/plain agar bisa di parse Apps Script
                     await fetch(GOOGLE_SCRIPT_URL, {
                         method: 'POST',
                         mode: 'no-cors',
+                        headers: {
+                            'Content-Type': 'text/plain;charset=utf-8'
+                        },
                         body: JSON.stringify(payload)
                     });
                 } catch (error) {
@@ -352,6 +355,7 @@
                         await fetch(GOOGLE_SCRIPT_URL, {
                             method: 'POST',
                             mode: 'no-cors',
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({ action: "updateStatus", id: transactionId, status: "completed" })
                         });
                     } catch(e) { console.error("Gagal sinkron pengembalian", e) }
@@ -386,6 +390,7 @@
                         await fetch(GOOGLE_SCRIPT_URL, {
                             method: 'POST',
                             mode: 'no-cors',
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({ action: "delete", id: transactionId })
                         });
                     } catch(e) { console.error("Gagal sinkron hapus", e) }
