@@ -78,7 +78,15 @@
             { id: 'G-004', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
             { id: 'G-005', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
             { id: 'G-006', category: 'Laser Scanner', name: 'LEICA BLK360', total: 1, available: 1 },
+
+            // Fotogrametri
+            { id: 'DN-001', category: 'Fotogrametri', name: 'DJI drone M3E', total: 1, available: 1 },
+            { id: 'DN-002', category: 'Fotogrametri', name: 'DJI Inspire 2', total: 1, available: 1 },
             
+            // Hidrografi
+            { id: 'F-0001', category: 'Hidrografi', name: 'Fish Finder', total: 1, available: 1 },
+            { id: 'PL-001-029', category: 'Hidrografi', name: 'Pelampung', total: 29, available: 29 },
+
             // Safety
             { id: 'HL-001-100', category: 'Safety', name: 'Helm', total: 100, available: 100 },
             { id: 'RM-001-100', category: 'Safety', name: 'Rompi', total: 100, available: 100 },
@@ -88,18 +96,41 @@
             { id: 'RB-001-030', category: 'Aksesoris', name: 'Rambu Ukur (3 m)', total: 30, available: 30 },
             { id: 'RB-001-010', category: 'Aksesoris', name: 'Rambu Ukur (4 m)', total: 10, available: 10 },
             { id: 'RB-001-009', category: 'Aksesoris', name: 'Rambu Ukur (5 m)', total: 9, available: 9 },
-            { id: 'TM-001-035', category: 'Aksesoris', name: 'Tripod / Statip', total: 35, available: 35 },
-            
-            // Hidrografi
-            { id: 'F-0001', category: 'Hidrografi', name: 'Fish Finder', total: 1, available: 1 },
-            { id: 'PL-001-029', category: 'Hidrografi', name: 'Pelampung', total: 29, available: 29 }
+            { id: 'TM-001-035', category: 'Aksesoris', name: 'Tripod / Statip', total: 35, available: 35 }
         ];
 
+        // FUNGSI UTAMA: Menghitung persediaan alat berdasarkan data transaksi yang aktif
+        const calculateInventory = (txData) => {
+            let currentInventory = JSON.parse(JSON.stringify(initialInventory));
+            txData.forEach(trx => {
+                if (trx.status === 'active' && trx.items) {
+                    trx.items.forEach(bItem => {
+                        const match = bItem.name.match(/\[(.*?)\]/);
+                        if (match && match[1]) {
+                            const itemId = match[1];
+                            const invIndex = currentInventory.findIndex(i => i.id === itemId);
+                            if (invIndex !== -1) {
+                                currentInventory[invIndex].available -= parseInt(bItem.quantity);
+                            }
+                        }
+                    });
+                }
+            });
+            return currentInventory;
+        };
+
         function App() {
-            const [isAppLoading, setIsAppLoading] = useState(true);
+            // MENARIK DATA CADANGAN DARI MEMORI LOKAL BROWSER (Agar langsung muncul tanpa loading)
+            const localSavedTx = JSON.parse(localStorage.getItem('lab_transactions_v2') || '[]');
+            
+            const [isAppLoading, setIsAppLoading] = useState(localSavedTx.length === 0);
+            const [isSyncing, setIsSyncing] = useState(true);
             const [activeTab, setActiveTab] = useState('dashboard');
-            const [inventory, setInventory] = useState(initialInventory);
-            const [transactions, setTransactions] = useState([]);
+            
+            // Inisialisasi state dengan data cadangan
+            const [transactions, setTransactions] = useState(localSavedTx);
+            const [inventory, setInventory] = useState(() => calculateInventory(localSavedTx));
+            
             const [filterCategory, setFilterCategory] = useState('Semua');
             const [isAdmin, setIsAdmin] = useState(false);
             
@@ -112,7 +143,7 @@
             const [currentTime, setCurrentTime] = useState(new Date());
 
             // MASUKKAN URL GOOGLE APPS SCRIPT ANDA DI SINI
-            const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzTsPumYV90bgvmIqIo9J19ZtMwNGP7fO6cqELaKYdHbZ1gI_6CjLHSxYLiZdh-bBIg/exec'; 
+            const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPlSeyXWP0ALhXp4VqJ_NUmB433jHqLUn4hButn2UFzHu2J9hOfEeRlj-Zdky0TA_b/exec'; 
 
             const [borrowForm, setBorrowForm] = useState({
                 borrowerName: '', nim: '', purpose: '',
@@ -134,55 +165,49 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
-            // EFEK SAAT PERTAMA KALI WEB DIBUKA: AMBIL DATA DARI SPREADSHEET & JAM BERJALAN
+            // SIMPAN KE LOKAL STORAGE SETIAP ADA PERUBAHAN DATA TRANSAKSI
             useEffect(() => {
-                // Timer untuk jam berjalan
+                localStorage.setItem('lab_transactions_v2', JSON.stringify(transactions));
+            }, [transactions]);
+
+            // EFEK SAAT PERTAMA KALI WEB DIBUKA: AMBIL DATA DARI SPREADSHEET (SINKRONISASI LATAR BELAKANG)
+            useEffect(() => {
                 const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
                 const fetchDatabase = async () => {
+                    setIsSyncing(true);
                     try {
-                        const response = await fetch(GOOGLE_SCRIPT_URL);
+                        // SOLUSI ANTI-CACHE: Menambahkan waktu saat ini agar browser selalu minta data baru ke server
+                        const cacheBusterUrl = GOOGLE_SCRIPT_URL + '?t=' + new Date().getTime();
+                        
+                        const response = await fetch(cacheBusterUrl, { redirect: 'follow' });
                         const rawData = await response.json();
                         
-                        // Format tanggal agar bagus di UI
+                        if (rawData.error) {
+                            throw new Error("Server Error: " + rawData.error);
+                        }
+                        
                         const formattedData = rawData.map(trx => ({
                             ...trx,
                             borrowDateFormatted: new Date(trx.borrowDate).toLocaleDateString('id-ID')
                         }));
 
                         setTransactions(formattedData);
-
-                        // Hitung ulang stok inventory berdasarkan alat yang sedang dipinjam (Status: active)
-                        let currentInventory = JSON.parse(JSON.stringify(initialInventory));
+                        setInventory(calculateInventory(formattedData));
                         
-                        formattedData.forEach(trx => {
-                            if (trx.status === 'active' && trx.items) {
-                                trx.items.forEach(bItem => {
-                                    // Ekstrak ID (contoh dari string: "[TS-001] Nama Alat")
-                                    const match = bItem.name.match(/\[(.*?)\]/);
-                                    if (match && match[1]) {
-                                        const itemId = match[1];
-                                        const invIndex = currentInventory.findIndex(i => i.id === itemId);
-                                        if (invIndex !== -1) {
-                                            currentInventory[invIndex].available -= parseInt(bItem.quantity);
-                                        }
-                                    }
-                                });
-                            }
-                        });
-
-                        setInventory(currentInventory);
                     } catch (error) {
                         console.error("Gagal terhubung ke Spreadsheet:", error);
-                        showNotification("Sistem berjalan offline sementara. Data historis tidak dapat dimuat.", "error");
+                        if (localSavedTx.length === 0) {
+                            showNotification("Gagal memuat data dari server.", "error");
+                        }
                     } finally {
                         setIsAppLoading(false);
+                        setIsSyncing(false);
                     }
                 };
 
                 fetchDatabase();
-                
-                return () => clearInterval(timer); // Membersihkan interval saat unmount
+                return () => clearInterval(timer);
             }, []);
 
             const handleShareLink = () => {
@@ -220,17 +245,16 @@
                 });
             };
             
-            // UPLOAD FILE & KONVERSI KE BASE64 AGAR BISA MASUK SPREADSHEET
+            // UPLOAD FILE & KONVERSI KE BASE64
             const handleFileChange = (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    if (file.size > 3 * 1024 * 1024) { // Maksimal 3MB
+                    if (file.size > 3 * 1024 * 1024) { 
                         showNotification('Ukuran file maksimal 3MB!', 'error');
                         e.target.value = ''; return;
                     }
                     const reader = new FileReader();
                     reader.onloadend = () => {
-                        // Mengambil string base64 murni tanpa prefix data url
                         const base64String = reader.result.split(',')[1];
                         setBorrowForm(prev => ({
                             ...prev,
@@ -249,7 +273,6 @@
             const submitBorrow = async (e) => {
                 e.preventDefault();
                 
-                // Validasi data baru
                 if (!borrowForm.borrowerName || !borrowForm.nim || !borrowForm.purpose || !borrowForm.borrowDate || !borrowForm.borrowTime || !borrowForm.returnDateEst || !borrowForm.returnTimeEst || borrowForm.items.length === 0 || !borrowForm.fileBase64) {
                     showNotification('Mohon lengkapi data diri, keperluan, jam, daftar alat, dan unggah surat izin', 'error');
                     return;
@@ -273,7 +296,6 @@
                     return { name: `[${invItem.id}] ${invItem.name}`, quantity: item.quantity };
                 });
 
-                // Menambahkan data baru ke Payload JSON
                 const payload = {
                     action: "create",
                     id: newTransactionId,
@@ -290,35 +312,17 @@
                     items: alatLengkap
                 };
 
-                console.log("Mengirim payload ke Google Apps Script:", payload);
-
                 try {
-                    // Kirim ke GS dengan Header Content-Type text/plain agar bisa di parse Apps Script
-                    await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: {
-                            'Content-Type': 'text/plain;charset=utf-8'
-                        },
-                        body: JSON.stringify(payload)
-                    });
-                    
-                    // Update UI Langsung
-                    const newInventory = [...inventory];
-                    borrowForm.items.forEach(bItem => {
-                        const invIndex = newInventory.findIndex(i => i.id === bItem.itemId);
-                        newInventory[invIndex].available -= parseInt(bItem.quantity);
-                    });
-
+                    // Update UI Secara Instan (Optimistic Update)
                     const newTransaction = {
                         ...payload,
                         status: 'active',
                         borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID'),
                     };
 
-                    setInventory(newInventory);
-                    setTransactions([newTransaction, ...transactions]);
-                    showNotification('Peminjaman berhasil dicatat & tersimpan di Spreadsheet!');
+                    const updatedTransactions = [newTransaction, ...transactions];
+                    setTransactions(updatedTransactions);
+                    setInventory(calculateInventory(updatedTransactions));
                     
                     setBorrowForm({
                         borrowerName: '', nim: '', purpose: '',
@@ -330,10 +334,21 @@
                     if (fileInputRef.current) fileInputRef.current.value = "";
                     
                     setActiveTab('transactions');
+                    showNotification('Memproses peminjaman...');
+
+                    // Kirim ke server di latar belakang
+                    await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    showNotification('Peminjaman berhasil dicatat & tersimpan secara online!');
 
                 } catch (error) {
                     console.error('Info pengiriman fetch error:', error);
-                    showNotification('Gagal mengirim data. Periksa koneksi atau script.', 'error');
+                    showNotification('Jaringan offline. Data tersimpan lokal & akan dikirim nanti.', 'error');
                 } finally {
                     setIsSubmitting(false);
                 }
@@ -343,27 +358,16 @@
             const handleReturn = async (transactionId) => {
                 if (window.confirm('Apakah alat sudah dikembalikan semua dalam kondisi baik?')) {
                     const trxIndex = transactions.findIndex(t => t.id === transactionId);
-                    const trx = transactions[trxIndex];
-
-                    const newInventory = [...inventory];
-                    trx.items.forEach(rItem => {
-                        // Extract ID if necessary
-                        const match = rItem.name.match(/\[(.*?)\]/);
-                        const itemId = match ? match[1] : null;
-                        if (itemId) {
-                            const invIndex = newInventory.findIndex(i => i.id === itemId);
-                            if (invIndex !== -1) newInventory[invIndex].available += parseInt(rItem.quantity);
-                        }
-                    });
-
+                    
+                    // Update UI Instan
                     const newTransactions = [...transactions];
                     newTransactions[trxIndex].status = 'completed';
-
-                    setInventory(newInventory);
+                    
                     setTransactions(newTransactions);
-                    showNotification('Pengembalian dicatat. Mensinkronisasi ke sistem...');
+                    setInventory(calculateInventory(newTransactions));
+                    showNotification('Mensinkronisasi pengembalian ke sistem...');
 
-                    // Update Spreadsheet
+                    // Update Spreadsheet di latar belakang
                     try {
                         await fetch(GOOGLE_SCRIPT_URL, {
                             method: 'POST',
@@ -378,24 +382,10 @@
             // HAPUS ALAT & HAPUS BARIS DI SPREADSHEET
             const handleDelete = async (transactionId) => {
                 if (window.confirm('PERINGATAN: Transaksi ini akan dihapus permanen dari memori DAN Google Spreadsheet Anda. Lanjutkan?')) {
-                    const trxIndex = transactions.findIndex(t => t.id === transactionId);
-                    const trx = transactions[trxIndex];
-
-                    if (trx.status === 'active') {
-                        const newInventory = [...inventory];
-                        trx.items.forEach(rItem => {
-                            const match = rItem.name.match(/\[(.*?)\]/);
-                            const itemId = match ? match[1] : null;
-                            if (itemId) {
-                                const invIndex = newInventory.findIndex(i => i.id === itemId);
-                                if (invIndex !== -1) newInventory[invIndex].available += parseInt(rItem.quantity);
-                            }
-                        });
-                        setInventory(newInventory);
-                    }
-
+                    // Update UI Instan
                     const newTransactions = transactions.filter(t => t.id !== transactionId);
                     setTransactions(newTransactions);
+                    setInventory(calculateInventory(newTransactions));
                     showNotification('Menghapus data dari server...');
 
                     // Hapus dari Spreadsheet
@@ -424,7 +414,6 @@
                 }
             };
 
-            // Fitur ini hanya sementara, jika web refresh alat baru hilang karena belum disimpan di Sheet Inventory
             const handleAddNewInventoryItem = (e) => {
                 e.preventDefault();
                 if (!newItemForm.id || !newItemForm.category || !newItemForm.name || newItemForm.total <= 0) return showNotification('Data alat belum lengkap!', 'error');
@@ -446,8 +435,12 @@
             };
 
             const renderDashboard = () => {
-                const totalAlat = inventory.reduce((sum, item) => sum + item.total, 0);
-                const totalTersedia = inventory.reduce((sum, item) => sum + item.available, 0);
+                // Hanya menghitung ketersediaan untuk kategori Alat Utama sesuai permintaan pengguna
+                const mainCategories = ['Total Station', 'GNSS', 'Laser Scanner', 'Hidrografi', 'Theodolite', 'Leveling', 'Fotogrametri'];
+                const dashboardInventory = inventory.filter(item => mainCategories.includes(item.category));
+
+                const totalAlat = dashboardInventory.reduce((sum, item) => sum + item.total, 0);
+                const totalTersedia = dashboardInventory.reduce((sum, item) => sum + item.available, 0);
                 const totalDipinjam = totalAlat - totalTersedia;
                 
                 const persenTersedia = totalAlat === 0 ? 0 : Math.round((totalTersedia / totalAlat) * 100);
@@ -468,7 +461,7 @@
                     const diffTime = rDate.getTime() - today.getTime();
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                     
-                    trx.diffDays = diffDays; // Simpan untuk dipakai di tabel
+                    trx.diffDays = diffDays; 
                     
                     if (diffDays < 0) {
                         lateTx.push(trx);
@@ -480,9 +473,9 @@
                 const persenTerlambat = activeTx.length === 0 ? 0 : Math.round((lateTx.length / activeTx.length) * 100);
 
                 // --- 1. Statistik Kategori Alat ---
-                const categories = [...new Set(inventory.map(i => i.category))];
+                const categories = [...new Set(dashboardInventory.map(i => i.category))];
                 const categoryStats = categories.map(cat => {
-                    const itemsInCat = inventory.filter(i => i.category === cat);
+                    const itemsInCat = dashboardInventory.filter(i => i.category === cat);
                     const total = itemsInCat.reduce((sum, i) => sum + i.total, 0);
                     const available = itemsInCat.reduce((sum, i) => sum + i.available, 0);
                     return { category: cat, total, borrowed: total - available, available };
@@ -515,11 +508,11 @@
                     .sort((a, b) => b.count - a.count)
                     .slice(0, 5);
 
-                // --- 3. Analisis Jenis Peminjaman (BARU) ---
+                // --- 3. Analisis Jenis Peminjaman ---
                 const purposeStats = {};
                 let totalPurposeCount = 0;
                 transactions.forEach(trx => {
-                    const purpose = trx.purpose || 'Lainnya'; // Fallback untuk data lama
+                    const purpose = trx.purpose || 'Lainnya';
                     purposeStats[purpose] = (purposeStats[purpose] || 0) + 1;
                     totalPurposeCount++;
                 });
@@ -533,7 +526,10 @@
                 return (
                     <div className="space-y-6 animate-fade-in">
                         <div className="flex justify-between items-end border-b pb-2">
-                            <h2 className="text-2xl font-bold text-gray-800">Dashboard Monitoring</h2>
+                            <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+                                Dashboard Monitoring 
+                                {isSyncing && <i className="fas fa-sync fa-spin text-blue-500 text-sm ml-3" title="Sinkronisasi Data..."></i>}
+                            </h2>
                             <div className="text-right bg-white px-4 py-2 rounded-xl border border-gray-200 shadow-sm">
                                 <p className="text-xs font-bold text-gray-500 mb-0.5 uppercase tracking-wider">{currentTime.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
                                 <p className="text-2xl font-black text-blue-600 font-mono tracking-widest">{currentTime.toLocaleTimeString('id-ID', { hour12: false })}</p>
@@ -555,7 +551,7 @@
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
                                 <div className="flex justify-between items-start">
-                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Total Inventaris</p><p className="text-3xl font-black text-gray-800">{totalAlat}</p></div>
+                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Total Alat Utama</p><p className="text-3xl font-black text-gray-800">{totalAlat}</p></div>
                                     <div className="bg-blue-100 p-3 rounded-lg text-blue-600"><i className="fas fa-boxes text-xl"></i></div>
                                 </div>
                             </div>
@@ -582,10 +578,10 @@
                             </div>
                         </div>
 
-                        {/* SECTION 2: Distribusi & Analisis Jenis (BARU) */}
+                        {/* SECTION 2: Distribusi & Analisis Jenis */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
-                                <h3 className="text-lg font-bold text-gray-800 mb-6">Distribusi Alat</h3>
+                                <h3 className="text-lg font-bold text-gray-800 mb-6">Distribusi Alat Utama</h3>
                                 <div className="flex flex-col md:flex-row items-center gap-8 my-auto">
                                     <div className="w-40 h-40 rounded-full shadow-inner relative flex-shrink-0" style={pieStyle}>
                                         <div className="absolute inset-0 m-auto w-24 h-24 bg-white rounded-full flex flex-col items-center justify-center shadow-sm">
@@ -675,7 +671,7 @@
                             </div>
                         </div>
 
-                        {/* SECTION 4: Peminjaman Berjalan (DI-UPDATE DENGAN STATUS DETAIL) */}
+                        {/* SECTION 4: Peminjaman Berjalan */}
                         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                             <h3 className="text-lg font-bold text-gray-800 mb-4"><i className="fas fa-tasks text-blue-500 mr-2"></i> Peminjaman Berjalan (Detail Peminjam)</h3>
                             {activeTx.length === 0 ? (
@@ -694,7 +690,6 @@
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {activeTx.map(trx => {
-                                                // Menentukan Tampilan Status Berdasarkan Hari
                                                 let statusBadge;
                                                 let statusClassRow = "hover:bg-slate-50 transition-colors";
 
@@ -985,7 +980,7 @@
                 </div>
             );
 
-            // Layar loading putih murni saat mengambil data spreadsheet awal
+            // Layar loading putih murni hanya saat aplikasi PERTAMA KALI dibuka dan belum ada cache lokal
             if (isAppLoading) {
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
