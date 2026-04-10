@@ -200,16 +200,24 @@
                 });
             };
 
-            const handleAddBorrowItem = () => setBorrowForm({...borrowForm, items: [...borrowForm.items, { itemId: '', quantity: 1 }]});
-            const handleRemoveBorrowItem = (index) => {
-                const newItems = [...borrowForm.items];
-                newItems.splice(index, 1);
-                setBorrowForm({ ...borrowForm, items: newItems });
+            const handleAddBorrowItem = () => {
+                setBorrowForm(prev => ({...prev, items: [...prev.items, { itemId: '', quantity: 1 }]}));
             };
+
+            const handleRemoveBorrowItem = (index) => {
+                setBorrowForm(prev => {
+                    const newItems = [...prev.items];
+                    newItems.splice(index, 1);
+                    return { ...prev, items: newItems };
+                });
+            };
+
             const handleBorrowItemChange = (index, field, value) => {
-                const newItems = [...borrowForm.items];
-                newItems[index][field] = value;
-                setBorrowForm({ ...borrowForm, items: newItems });
+                setBorrowForm(prev => {
+                    const newItems = [...prev.items];
+                    newItems[index] = { ...newItems[index], [field]: value };
+                    return { ...prev, items: newItems };
+                });
             };
             
             // UPLOAD FILE & KONVERSI KE BASE64 AGAR BISA MASUK SPREADSHEET
@@ -224,16 +232,16 @@
                     reader.onloadend = () => {
                         // Mengambil string base64 murni tanpa prefix data url
                         const base64String = reader.result.split(',')[1];
-                        setBorrowForm({
-                            ...borrowForm,
+                        setBorrowForm(prev => ({
+                            ...prev,
                             approvalFileName: file.name,
                             fileBase64: base64String,
                             mimeType: file.type
-                        });
+                        }));
                     };
                     reader.readAsDataURL(file);
                 } else {
-                    setBorrowForm({...borrowForm, approvalFileName: '', fileBase64: '', mimeType: ''});
+                    setBorrowForm(prev => ({...prev, approvalFileName: '', fileBase64: '', mimeType: ''}));
                 }
             };
 
@@ -243,7 +251,7 @@
                 
                 // Validasi data baru
                 if (!borrowForm.borrowerName || !borrowForm.nim || !borrowForm.purpose || !borrowForm.borrowDate || !borrowForm.borrowTime || !borrowForm.returnDateEst || !borrowForm.returnTimeEst || borrowForm.items.length === 0 || !borrowForm.fileBase64) {
-                    showNotification('Mohon lengkapi data diri, keperluan, jam, daftar alat, dan surat izin', 'error');
+                    showNotification('Mohon lengkapi data diri, keperluan, jam, daftar alat, dan unggah surat izin', 'error');
                     return;
                 }
 
@@ -282,6 +290,8 @@
                     items: alatLengkap
                 };
 
+                console.log("Mengirim payload ke Google Apps Script:", payload);
+
                 try {
                     // Kirim ke GS dengan Header Content-Type text/plain agar bisa di parse Apps Script
                     await fetch(GOOGLE_SCRIPT_URL, {
@@ -292,38 +302,41 @@
                         },
                         body: JSON.stringify(payload)
                     });
+                    
+                    // Update UI Langsung
+                    const newInventory = [...inventory];
+                    borrowForm.items.forEach(bItem => {
+                        const invIndex = newInventory.findIndex(i => i.id === bItem.itemId);
+                        newInventory[invIndex].available -= parseInt(bItem.quantity);
+                    });
+
+                    const newTransaction = {
+                        ...payload,
+                        status: 'active',
+                        borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID'),
+                    };
+
+                    setInventory(newInventory);
+                    setTransactions([newTransaction, ...transactions]);
+                    showNotification('Peminjaman berhasil dicatat & tersimpan di Spreadsheet!');
+                    
+                    setBorrowForm({
+                        borrowerName: '', nim: '', purpose: '',
+                        borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
+                        returnDateEst: '', returnTimeEst: '', 
+                        items: [{ itemId: '', quantity: 1 }],
+                        approvalFileName: '', fileBase64: '', mimeType: ''
+                    });
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                    
+                    setActiveTab('transactions');
+
                 } catch (error) {
-                    console.error('Info pengiriman fetch:', error);
+                    console.error('Info pengiriman fetch error:', error);
+                    showNotification('Gagal mengirim data. Periksa koneksi atau script.', 'error');
+                } finally {
+                    setIsSubmitting(false);
                 }
-
-                // Update UI Langsung
-                const newInventory = [...inventory];
-                borrowForm.items.forEach(bItem => {
-                    const invIndex = newInventory.findIndex(i => i.id === bItem.itemId);
-                    newInventory[invIndex].available -= parseInt(bItem.quantity);
-                });
-
-                const newTransaction = {
-                    ...payload,
-                    status: 'active',
-                    borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID'),
-                };
-
-                setInventory(newInventory);
-                setTransactions([newTransaction, ...transactions]);
-                showNotification('Peminjaman berhasil dicatat & tersimpan di Spreadsheet!');
-                
-                setBorrowForm({
-                    borrowerName: '', nim: '', purpose: '',
-                    borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
-                    returnDateEst: '', returnTimeEst: '', 
-                    items: [{ itemId: '', quantity: 1 }],
-                    approvalFileName: '', fileBase64: '', mimeType: ''
-                });
-                if (fileInputRef.current) fileInputRef.current.value = "";
-                
-                setActiveTab('transactions');
-                setIsSubmitting(false);
             };
 
             // KEMBALIKAN ALAT & UPDATE DI SPREADSHEET
