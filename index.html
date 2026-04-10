@@ -165,6 +165,28 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
+            // FUNGSI HELPER: Format Tanggal Lebih Rapi (Contoh: 12 Apr 2026)
+            const formatDate = (dateString) => {
+                if (!dateString) return '-';
+                const date = new Date(dateString);
+                return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+            };
+
+            // FUNGSI HELPER: Format Jam (Mengatasi bug format 1899-12-30T...Z dari Spreadsheet)
+            const formatTimeStr = (timeStr) => {
+                if (!timeStr) return '-';
+                if (/^\d{2}:\d{2}$/.test(timeStr)) return timeStr; // Jika sudah berformat HH:mm
+                try {
+                    const d = new Date(timeStr);
+                    if (!isNaN(d.getTime())) {
+                        const hrs = d.getHours().toString().padStart(2, '0');
+                        const mins = d.getMinutes().toString().padStart(2, '0');
+                        return `${hrs}:${mins}`;
+                    }
+                } catch(e) {}
+                return String(timeStr).substring(0, 5); // Fallback jika gagal
+            };
+
             // SIMPAN KE LOKAL STORAGE SETIAP ADA PERUBAHAN DATA TRANSAKSI
             useEffect(() => {
                 localStorage.setItem('lab_transactions_v2', JSON.stringify(transactions));
@@ -435,6 +457,9 @@
             };
 
             const renderDashboard = () => {
+                // Menghitung Grand Total Semua Inventaris
+                const grandTotalAlat = inventory.reduce((sum, item) => sum + item.total, 0);
+
                 // Hanya menghitung ketersediaan untuk kategori Alat Utama sesuai permintaan pengguna
                 const mainCategories = ['Total Station', 'GNSS', 'Laser Scanner', 'Hidrografi', 'Theodolite', 'Leveling', 'Fotogrametri'];
                 const dashboardInventory = inventory.filter(item => mainCategories.includes(item.category));
@@ -548,31 +573,37 @@
                         )}
 
                         {/* SECTION 1: Quick Stats */}
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                             <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
                                 <div className="flex justify-between items-start">
-                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Total Alat Utama</p><p className="text-3xl font-black text-gray-800">{totalAlat}</p></div>
-                                    <div className="bg-blue-100 p-3 rounded-lg text-blue-600"><i className="fas fa-boxes text-xl"></i></div>
+                                    <div><p className="text-sm text-gray-500 font-semibold mb-1 leading-tight">Total Semua Inventaris</p><p className="text-3xl font-black text-gray-800">{grandTotalAlat}</p></div>
+                                    <div className="bg-indigo-100 p-3 rounded-lg text-indigo-600 flex-shrink-0 ml-2"><i className="fas fa-warehouse text-xl"></i></div>
                                 </div>
                             </div>
                             <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
                                 <div className="flex justify-between items-start">
-                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Ketersediaan Alat</p><p className="text-3xl font-black text-green-600">{persenTersedia}%</p></div>
-                                    <div className="bg-green-100 p-3 rounded-lg text-green-600"><i className="fas fa-check-circle text-xl"></i></div>
+                                    <div><p className="text-sm text-gray-500 font-semibold mb-1 leading-tight">Total Alat Utama Survei Geomatika</p><p className="text-3xl font-black text-gray-800">{totalAlat}</p></div>
+                                    <div className="bg-blue-100 p-3 rounded-lg text-blue-600 flex-shrink-0 ml-2"><i className="fas fa-boxes text-xl"></i></div>
+                                </div>
+                            </div>
+                            <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
+                                <div className="flex justify-between items-start">
+                                    <div><p className="text-sm text-gray-500 font-semibold mb-1 leading-tight">Ketersediaan Alat Utama</p><p className="text-3xl font-black text-green-600">{persenTersedia}%</p></div>
+                                    <div className="bg-green-100 p-3 rounded-lg text-green-600 flex-shrink-0 ml-2"><i className="fas fa-check-circle text-xl"></i></div>
                                 </div>
                                 <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-green-500 h-1.5 rounded-full" style={{width: `${persenTersedia}%`}}></div></div>
                             </div>
                             <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
                                 <div className="flex justify-between items-start">
-                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Sedang Dipinjam</p><p className="text-3xl font-black text-orange-500">{persenDipinjam}%</p></div>
-                                    <div className="bg-orange-100 p-3 rounded-lg text-orange-600"><i className="fas fa-exchange-alt text-xl"></i></div>
+                                    <div><p className="text-sm text-gray-500 font-semibold mb-1 leading-tight">Sedang Dipinjam</p><p className="text-3xl font-black text-orange-500">{persenDipinjam}%</p></div>
+                                    <div className="bg-orange-100 p-3 rounded-lg text-orange-600 flex-shrink-0 ml-2"><i className="fas fa-exchange-alt text-xl"></i></div>
                                 </div>
                                 <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-orange-500 h-1.5 rounded-full" style={{width: `${persenDipinjam}%`}}></div></div>
                             </div>
                             <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
                                 <div className="flex justify-between items-start">
-                                    <div><p className="text-sm text-gray-500 font-semibold mb-1">Risiko Terlambat</p><p className="text-3xl font-black text-red-500">{persenTerlambat}%</p></div>
-                                    <div className="bg-red-100 p-3 rounded-lg text-red-600"><i className="fas fa-exclamation-triangle text-xl"></i></div>
+                                    <div><p className="text-sm text-gray-500 font-semibold mb-1 leading-tight">Risiko Terlambat</p><p className="text-3xl font-black text-red-500">{persenTerlambat}%</p></div>
+                                    <div className="bg-red-100 p-3 rounded-lg text-red-600 flex-shrink-0 ml-2"><i className="fas fa-exclamation-triangle text-xl"></i></div>
                                 </div>
                                 <div className="w-full bg-gray-100 rounded-full h-1.5 mt-4"><div className="bg-red-500 h-1.5 rounded-full" style={{width: `${persenTerlambat}%`}}></div></div>
                             </div>
@@ -683,8 +714,8 @@
                                             <tr>
                                                 <th className="p-3 font-semibold">Info Peminjam</th>
                                                 <th className="p-3 font-semibold">Ringkasan Alat</th>
-                                                <th className="p-3 font-semibold text-center">Waktu Pinjam</th>
-                                                <th className="p-3 font-semibold text-center">Deadline Pengembalian</th>
+                                                <th className="p-3 font-semibold">Waktu Pinjam</th>
+                                                <th className="p-3 font-semibold">Batas Pengembalian</th>
                                                 <th className="p-3 font-semibold text-center">Status Deadline</th>
                                             </tr>
                                         </thead>
@@ -719,13 +750,29 @@
                                                             ))}
                                                         </div>
                                                     </td>
-                                                    <td className="p-3 text-center text-xs">
-                                                        <span className="block text-gray-800 font-medium">{new Date(trx.borrowDate).toLocaleDateString('id-ID')}</span>
-                                                        <span className="block font-bold text-blue-600 mt-0.5"><i className="far fa-clock"></i> {trx.borrowTime || '-'}</span>
+                                                    <td className="p-3 text-xs">
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <div className="flex items-center text-gray-700">
+                                                                <i className="far fa-calendar-alt w-4 text-blue-500 text-center"></i>
+                                                                <span className="font-medium ml-1.5">{formatDate(trx.borrowDate)}</span>
+                                                            </div>
+                                                            <div className="flex items-center text-gray-700">
+                                                                <i className="far fa-clock w-4 text-blue-500 text-center"></i>
+                                                                <span className="font-bold ml-1.5 bg-blue-50 px-1.5 py-0.5 rounded text-blue-700">{formatTimeStr(trx.borrowTime)} WIB</span>
+                                                            </div>
+                                                        </div>
                                                     </td>
-                                                    <td className="p-3 text-center text-xs">
-                                                        <span className="block text-gray-800 font-medium">{new Date(trx.returnDateEst).toLocaleDateString('id-ID')}</span>
-                                                        <span className="block font-bold text-red-600 mt-0.5"><i className="far fa-clock"></i> {trx.returnTimeEst || '-'}</span>
+                                                    <td className="p-3 text-xs">
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <div className="flex items-center text-gray-700">
+                                                                <i className="far fa-calendar-check w-4 text-red-500 text-center"></i>
+                                                                <span className="font-medium ml-1.5">{formatDate(trx.returnDateEst)}</span>
+                                                            </div>
+                                                            <div className="flex items-center text-red-700">
+                                                                <i className="far fa-clock w-4 text-center"></i>
+                                                                <span className="font-bold ml-1.5 bg-red-50 px-1.5 py-0.5 rounded">{formatTimeStr(trx.returnTimeEst)} WIB</span>
+                                                            </div>
+                                                        </div>
                                                     </td>
                                                     <td className="p-3 text-center">
                                                         {statusBadge}
@@ -919,7 +966,7 @@
                                 <table className="w-full text-left text-sm whitespace-nowrap">
                                     <thead className="bg-gray-800 text-white">
                                         <tr>
-                                            <th className="p-4">Info Peminjam</th><th className="p-4">Waktu</th><th className="p-4">Rincian Alat</th>
+                                            <th className="p-4">Info Peminjam</th><th className="p-4">Informasi Waktu</th><th className="p-4">Rincian Alat</th>
                                             <th className="p-4 text-center">Status</th><th className="p-4 text-center">Aksi</th>
                                         </tr>
                                     </thead>
@@ -938,9 +985,23 @@
                                                         <div className="mt-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 w-max px-2 py-1 rounded-md"><i className="fas fa-file mr-1"></i> {trx.approvalFileName}</div>
                                                     )}
                                                 </td>
-                                                <td className="p-4 text-xs space-y-1">
-                                                    <p><span className="font-semibold text-gray-600">Ambil:</span> {trx.borrowDateFormatted} <span className="font-bold text-gray-800 ml-1">{trx.borrowTime || ''}</span></p>
-                                                    <p><span className="font-semibold text-red-500">Pulang:</span> {new Date(trx.returnDateEst).toLocaleDateString('id-ID')} <span className="font-bold text-red-700 ml-1">{trx.returnTimeEst || ''}</span></p>
+                                                <td className="p-4">
+                                                    <div className="flex flex-col gap-3">
+                                                        <div className="flex items-start gap-2.5">
+                                                            <div className="bg-blue-50 text-blue-600 p-1.5 rounded-md flex items-center justify-center mt-0.5"><i className="fas fa-sign-out-alt text-[10px]"></i></div>
+                                                            <div>
+                                                                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Diambil</p>
+                                                                <p className="text-xs text-gray-800 font-medium">{formatDate(trx.borrowDate)} <span className="font-bold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded ml-1">{formatTimeStr(trx.borrowTime)} WIB</span></p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-start gap-2.5">
+                                                            <div className="bg-red-50 text-red-500 p-1.5 rounded-md flex items-center justify-center mt-0.5"><i className="fas fa-sign-in-alt text-[10px]"></i></div>
+                                                            <div>
+                                                                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Tenggat Kembali</p>
+                                                                <p className="text-xs text-gray-800 font-medium">{formatDate(trx.returnDateEst)} <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded ml-1">{formatTimeStr(trx.returnTimeEst)} WIB</span></p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </td>
                                                 <td className="p-4">
                                                     <ul className="list-none space-y-1">
