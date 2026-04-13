@@ -148,17 +148,21 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
-            // LOGIKA: Format Tanggal Rapi
+            // LOGIKA: Format Tanggal Rapi (Akurat dengan Zona Waktu Lokal PC)
             const formatDate = (dateString) => {
                 if (!dateString) return '-';
-                const date = new Date(dateString);
-                return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+                const dPart = dateString.includes('T') ? dateString.split('T')[0] : dateString;
+                const parts = dPart.split('-');
+                if (parts.length === 3) {
+                    const d = new Date(parts[0], parts[1] - 1, parts[2]);
+                    return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+                }
+                return new Date(dateString).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
             };
 
-            // LOGIKA BARU: Format Jam Murni (anti error Spreadsheet) yang rapi (Contoh: 13:13)
+            // LOGIKA BARU: Format Jam Murni
             const formatTimeStr = (timeStr) => {
                 if (!timeStr) return '-';
-                // Jika dari Google Sheet berformat ISO Date string (cth: 1899-12-30T00:52:48.000Z)
                 if (typeof timeStr === 'string' && timeStr.includes('T')) {
                     try {
                         const d = new Date(timeStr);
@@ -167,14 +171,12 @@
                         }
                     } catch(e) {}
                 }
-                // Jika berbentuk string inputan HTML murni (HH:mm)
                 if (typeof timeStr === 'string') {
                     const tMatch = timeStr.match(/(\d{1,2})[:\.](\d{1,2})/);
                     if (tMatch) {
                         return `${tMatch[1].padStart(2, '0')}:${tMatch[2].padStart(2, '0')}`;
                     }
                 }
-                // Fallback default
                 try {
                     const d = new Date(timeStr);
                     if (!isNaN(d.getTime())) {
@@ -185,50 +187,127 @@
                 return String(timeStr).substring(0, 5); 
             };
 
-            // LOGIKA PENTING: Penggabung Tanggal dan Jam menjadi satu Object Date murni untuk hitung mundur
-            const parseTargetDate = (dateStr, timeStr) => {
-                // Murni mengambil tanggal dari data dengan adaptasi otomatis Zona Waktu Lokal
-                const target = new Date(dateStr || new Date()); 
-                let h = 23, m = 59;
+            // FUNGSI BANTUAN: Mengubah ms ke teks durasi (Misal: 2 Jam 15 Mnt)
+            const getLatenessString = (ms) => {
+                const totalMins = Math.floor(ms / (1000 * 60));
+                if (totalMins <= 0) return "1 Mnt"; // Minimal 1 menit agar tidak 0
+                const d = Math.floor(totalMins / (60 * 24));
+                const h = Math.floor((totalMins % (60 * 24)) / 60);
+                const m = totalMins % 60;
                 
-                if (timeStr) {
-                    if (typeof timeStr === 'string' && timeStr.includes('T')) {
-                        const timeD = new Date(timeStr);
-                        if (!isNaN(timeD.getTime())) {
-                            h = timeD.getHours();
-                            m = timeD.getMinutes();
-                        }
-                    } else {
-                        const str = String(timeStr);
-                        const match = str.match(/(\d{1,2})[:\.](\d{1,2})/);
-                        if (match) {
-                            h = parseInt(match[1], 10);
-                            m = parseInt(match[2], 10);
-                        }
+                let strArr = [];
+                if (d > 0) strArr.push(`${d} Hr`);
+                if (h > 0) strArr.push(`${h} Jam`);
+                if (m > 0 || (d === 0 && h === 0)) strArr.push(`${m} Mnt`);
+                return strArr.join(' ');
+            };
+
+            // LOGIKA SUPER PENTING: Penggabung Tanggal dan Jam menjadi satu Object Date (ANTI BUG ZONA WAKTU)
+            const parseTargetDate = (dateStr, timeStr) => {
+                let year, month, day;
+                if (dateStr) {
+                    const dPart = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+                    const parts = dPart.split('-');
+                    if (parts.length === 3) {
+                        year = parseInt(parts[0], 10);
+                        month = parseInt(parts[1], 10) - 1;
+                        day = parseInt(parts[2], 10);
                     }
                 }
+                const target = year !== undefined ? new Date(year, month, day) : new Date();
                 
-                // Menyatukan Tanggal dan Jam yang akurat ke dalam 1 waktu
+                let h = 23, m = 59;
+                const tStr = String(timeStr || '').replace(/['"]/g, '').trim();
+                
+                if (tStr.includes('T')) {
+                    const td = new Date(tStr);
+                    if (!isNaN(td.getTime())) {
+                        h = td.getHours();
+                        m = td.getMinutes();
+                    }
+                } else {
+                    const match = tStr.match(/(\d{1,2})[:\.](\d{1,2})/);
+                    if (match) {
+                        h = parseInt(match[1], 10);
+                        m = parseInt(match[2], 10);
+                    }
+                }
                 target.setHours(h, m, 0, 0);
                 return target;
             };
 
-            // Fungsi Komponen untuk membuat Badge Live Countdown
+            // FUNGSI SUPER: Menampilkan Badge Countdown atau Status Tuntas Beserta Keterlambatan
             const renderCountdownBadge = (returnDateEst, returnTimeEst, status) => {
-                if (status !== 'active') {
-                    return <span className="bg-green-100 text-green-700 px-4 py-2 rounded-full text-xs font-bold shadow-sm border border-green-200"><i className="fas fa-check-circle mr-1"></i> Tuntas</span>;
+                
+                // --- BAGIAN UNTUK ALAT YANG SUDAH DIKEMBALIKAN (TUNTAS) ---
+                if (status && status.startsWith('completed')) {
+                    let isLate = false;
+                    let latenessStr = "";
+                    let returnedDateUI = null;
+                    
+                    // Cek jika memiliki catatan waktu nyata saat pengembalian
+                    if (status.includes('|')) {
+                        const returnTimestamp = new Date(status.split('|')[1]);
+                        const targetDate = parseTargetDate(returnDateEst, returnTimeEst);
+                        const diffMs = returnTimestamp.getTime() - targetDate.getTime();
+                        
+                        returnedDateUI = (
+                            <div className="mt-2 pt-2 border-t border-gray-300/50 w-full text-center">
+                                <p className="text-[9px] text-gray-500 font-bold uppercase tracking-wider mb-1">Dikembalikan Pada:</p>
+                                <div className="flex justify-center items-center gap-1.5 text-xs text-gray-700">
+                                    <span className="font-semibold">{formatDate(returnTimestamp.toISOString())}</span>
+                                    <span className="font-mono font-black bg-white px-1.5 py-0.5 rounded shadow-sm tracking-widest">{formatTimeStr(returnTimestamp.toISOString())}</span>
+                                </div>
+                            </div>
+                        );
+
+                        if (diffMs > 0) {
+                            isLate = true;
+                            latenessStr = getLatenessString(diffMs);
+                        }
+                    }
+
+                    if (isLate) {
+                        return (
+                            <div className="flex flex-col items-center justify-center bg-red-50 p-2.5 rounded-xl border border-red-200 w-max mx-auto shadow-sm">
+                                <span className="bg-red-500 text-white px-3 py-1 rounded-md text-xs font-black shadow-sm w-full text-center tracking-wide uppercase">
+                                    <i className="fas fa-times-circle mr-1"></i> Terlambat
+                                </span>
+                                <span className="text-[10px] font-bold text-red-600 mt-1.5 bg-red-100/80 px-2 py-0.5 rounded-full border border-red-200">
+                                    Telat: {latenessStr}
+                                </span>
+                                {returnedDateUI}
+                            </div>
+                        );
+                    } else {
+                        return (
+                            <div className="flex flex-col items-center justify-center bg-green-50 p-2.5 rounded-xl border border-green-200 w-max mx-auto shadow-sm">
+                                <span className="bg-green-500 text-white px-3 py-1 rounded-md text-xs font-black shadow-sm w-full text-center tracking-wide uppercase">
+                                    <i className="fas fa-check-circle mr-1"></i> Tepat Waktu
+                                </span>
+                                {returnedDateUI}
+                                {!returnedDateUI && (
+                                    <span className="text-[9px] text-green-600 font-medium italic mt-1">(Data lama)</span>
+                                )}
+                            </div>
+                        );
+                    }
                 }
 
+                // --- BAGIAN UNTUK ALAT YANG SEDANG DIPINJAM (ACTIVE) ---
                 const targetDate = parseTargetDate(returnDateEst, returnTimeEst);
                 const diffMs = targetDate.getTime() - currentTime.getTime();
 
                 if (diffMs <= 0) {
+                    const latenessStr = getLatenessString(Math.abs(diffMs));
                     return (
                         <div className="flex flex-col items-center justify-center gap-1.5">
-                            <span className="bg-red-100 text-red-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm border border-red-200 w-max text-center">
+                            <span className="bg-red-100 text-red-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm border border-red-200 w-max text-center animate-pulse">
                                 <i className="fas fa-times-circle mr-1"></i> Terlambat
                             </span>
-                            <span className="text-[10px] font-bold text-red-600 uppercase tracking-widest mt-0.5">Waktu Habis!</span>
+                            <span className="text-[10px] font-bold text-white bg-red-500 px-2 py-0.5 rounded shadow-sm tracking-wide">
+                                Telat {latenessStr}
+                            </span>
                         </div>
                     );
                 }
@@ -237,15 +316,12 @@
                 const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
                 const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
                 const secs = Math.floor((diffMs % (1000 * 60)) / 1000);
-
                 const timeString = `${hours.toString().padStart(2,'0')}:${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
 
                 if (days > 2) {
                     return (
                         <div className="flex flex-col items-center justify-center gap-1.5">
-                            <span className="bg-green-50 text-green-700 px-3 py-1 rounded-full text-[11px] font-bold border border-green-200 w-max text-center">
-                                Aman (H-{days})
-                            </span>
+                            <span className="bg-green-50 text-green-700 px-3 py-1 rounded-full text-[11px] font-bold border border-green-200 w-max text-center">Aman (H-{days})</span>
                             <span className="bg-white border border-gray-200 text-gray-600 px-2 py-0.5 rounded shadow-sm text-[11px] font-mono font-black tracking-widest flex items-center">
                                 <i className="fas fa-hourglass-half mr-1.5 text-blue-400"></i>{timeString}
                             </span>
@@ -254,9 +330,7 @@
                 } else if (days > 0) {
                     return (
                         <div className="flex flex-col items-center justify-center gap-1.5">
-                            <span className="bg-yellow-50 text-yellow-700 px-3 py-1 rounded-full text-[11px] font-bold border border-yellow-300 w-max text-center">
-                                Mendekati (H-{days})
-                            </span>
+                            <span className="bg-yellow-50 text-yellow-700 px-3 py-1 rounded-full text-[11px] font-bold border border-yellow-300 w-max text-center">Mendekati (H-{days})</span>
                             <span className="bg-white border border-yellow-200 text-yellow-700 px-2 py-0.5 rounded shadow-sm text-[11px] font-mono font-black tracking-widest flex items-center">
                                 <i className="fas fa-hourglass-half mr-1.5 text-yellow-500"></i>{timeString}
                             </span>
@@ -295,34 +369,30 @@
                         
                         if (rawData.error) throw new Error("Server Error: " + rawData.error);
                         
-                        // Menarik data lokal paling baru sebagai pondasi
                         const currentLocalInv = JSON.parse(localStorage.getItem('lab_inventory_v2') || JSON.stringify(initialInventory));
                         let txData = [];
                         let invData = [];
 
                         if (Array.isArray(rawData)) {
-                            // FORMAT LAMA / SCRIPT BELUM DI UPDATE
                             txData = rawData;
-                            invData = currentLocalInv; // SELAMATKAN DATA LOKAL!
+                            invData = currentLocalInv; 
+                            showNotification("Info: Skrip Database di Google belum terupdate.", "error");
                         } else {
-                            // FORMAT BARU (TRANSACTIONS & INVENTORY)
                             txData = rawData.transactions || [];
                             
                             if (rawData.inventory && rawData.inventory.length > 0) {
                                 const serverInv = rawData.inventory.map(item => ({
                                     id: item.id, category: item.category, name: item.name, 
-                                    total: item.total, available: item.total
+                                    total: item.total, available: item.total, isLocalOnly: false 
                                 }));
                                 
-                                // PENGAMAN: Cek jika ada alat yang ditambahkan di web tapi belum masuk ke Spreadsheet
                                 const serverIds = new Set(serverInv.map(i => i.id));
                                 const unsyncedItems = currentLocalInv.filter(i => !serverIds.has(i.id));
-                                
-                                // Gabungkan alat dari Spreadsheet dengan alat yang baru ditambahkan
-                                invData = [...unsyncedItems, ...serverInv];
+                                const markedUnsynced = unsyncedItems.map(i => ({...i, isLocalOnly: true}));
 
-                                // Secara diam-diam (background) kirim ulang data alat yang belum masuk ke Spreadsheet
-                                unsyncedItems.forEach(item => {
+                                invData = [...markedUnsynced, ...serverInv];
+
+                                markedUnsynced.forEach(item => {
                                     fetch(GOOGLE_SCRIPT_URL, {
                                         method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                                         body: JSON.stringify({ action: "addInventory", item: item })
@@ -408,7 +478,6 @@
                 }
             };
 
-            // SIMPAN TRANSAKSI PEMINJAMAN KE SPREADSHEET
             const submitBorrow = async (e) => {
                 e.preventDefault();
                 
@@ -466,11 +535,17 @@
                 } finally { setIsSubmitting(false); }
             };
 
+            // Merekam Waktu Tuntas untuk mengetahui telat / tidak secara permanen ke Database
             const handleReturn = async (transactionId) => {
                 if (window.confirm('Apakah alat sudah dikembalikan semua dalam kondisi baik?')) {
                     const trxIndex = transactions.findIndex(t => t.id === transactionId);
                     const newTransactions = [...transactions];
-                    newTransactions[trxIndex].status = 'completed';
+                    
+                    // Mendapatkan jam saat ini langsung sebagai penanda waktu kembali
+                    const returnTimestamp = new Date().toISOString(); 
+                    const newStatusRecord = `completed|${returnTimestamp}`;
+                    
+                    newTransactions[trxIndex].status = newStatusRecord;
                     
                     setTransactions(newTransactions);
                     setInventory(calculateInventory(newTransactions, baseInventory));
@@ -479,7 +554,7 @@
                     try {
                         await fetch(GOOGLE_SCRIPT_URL, {
                             method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                            body: JSON.stringify({ action: "updateStatus", id: transactionId, status: "completed" })
+                            body: JSON.stringify({ action: "updateStatus", id: transactionId, status: newStatusRecord })
                         });
                     } catch(e) { console.error("Gagal sinkron pengembalian", e) }
                 }
@@ -515,47 +590,42 @@
                 }
             };
 
-            // TAMBAH ALAT BARU 
             const handleAddNewInventoryItem = async (e) => {
                 e.preventDefault();
                 if (!newItemForm.id || !newItemForm.category || !newItemForm.name || newItemForm.total <= 0) return showNotification('Data alat belum lengkap!', 'error');
                 if (baseInventory.some(i => i.id === newItemForm.id)) return showNotification('Kode Alat sudah digunakan!', 'error');
                 
-                const newItem = { id: newItemForm.id, category: newItemForm.category, name: newItemForm.name, total: parseInt(newItemForm.total), available: parseInt(newItemForm.total) };
+                const newItem = { id: newItemForm.id, category: newItemForm.category, name: newItemForm.name, total: parseInt(newItemForm.total), available: parseInt(newItemForm.total), isLocalOnly: true };
                 
-                // Optimistic update - Langsung tampil di UI
                 const updatedBaseInv = [newItem, ...baseInventory];
                 setBaseInventory(updatedBaseInv);
                 setInventory(calculateInventory(transactions, updatedBaseInv)); 
                 
-                showNotification('Menyimpan alat ke Database Spreadsheet...');
+                showNotification('Menyimpan alat ke Database...');
                 setNewItemForm({ id: '', category: '', name: '', total: 1 });
                 setShowAddForm(false);
 
-                // Sinkron ke Google Script
                 try {
                     await fetch(GOOGLE_SCRIPT_URL, {
                         method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: "addInventory", item: newItem })
                     });
+                    showNotification('Alat disimpan sementara. Refresh halaman untuk memastikan masuk ke Sheet.', 'success');
                 } catch(e) { 
                     console.error("Gagal simpan inv", e);
                 }
             };
 
-            // HAPUS ALAT 
             const handleDeleteInventoryItem = async (itemId) => {
                 const item = inventory.find(i => i.id === itemId);
                 if (item.available < item.total) return showNotification('Tidak bisa menghapus alat yang sedang dipinjam!', 'error');
                 
                 if (window.confirm(`Hapus alat ${item.name} permanen dari Database Spreadsheet?`)) {
-                    // Optimistic update
                     const updatedBaseInv = baseInventory.filter(i => i.id !== itemId);
                     setBaseInventory(updatedBaseInv);
                     setInventory(calculateInventory(transactions, updatedBaseInv));
 
                     showNotification('Menghapus alat dari Database...');
-                    // Sinkron ke Google Script
                     try {
                         await fetch(GOOGLE_SCRIPT_URL, {
                             method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -563,6 +633,29 @@
                         });
                     } catch(e) { console.error("Gagal hapus inv", e) }
                 }
+            };
+
+            const forceSyncToSheet = async () => {
+                const unsynced = baseInventory.filter(i => i.isLocalOnly);
+                if (unsynced.length === 0) return;
+
+                showNotification(`Mencoba sinkronisasi paksa ${unsynced.length} alat ke Spreadsheet...`);
+                let successCount = 0;
+
+                for (const item of unsynced) {
+                    try {
+                        await fetch(GOOGLE_SCRIPT_URL, {
+                            method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify({ action: "addInventory", item: item })
+                        });
+                        successCount++;
+                    } catch (e) {
+                        console.error("Gagal sinkron item", item.id, e);
+                    }
+                }
+
+                showNotification(`Selesai memproses pengiriman. Memuat ulang data...`, "success");
+                setTimeout(() => window.location.reload(), 1500);
             };
 
             const renderDashboard = () => {
@@ -620,18 +713,49 @@
                 }).join(', ');
                 const pieStyle = { background: `conic-gradient(${pieGradients})` };
 
+                // LOGIKA BARU: MENGHITUNG DURASI TOTAL PENGGUNAAN ALAT DALAM JAM
                 const itemFrequency = {};
                 transactions.forEach(trx => {
                     if (!trx.items) return;
+                    
+                    // Hitung durasi pemakaian (Jam)
+                    let durationMs = 0;
+                    const startDate = parseTargetDate(trx.borrowDate, trx.borrowTime);
+                    
+                    if (trx.status && trx.status.startsWith('completed|')) {
+                        const returnTimestamp = new Date(trx.status.split('|')[1]);
+                        durationMs = returnTimestamp.getTime() - startDate.getTime();
+                    } else {
+                        // Untuk yang masih dipinjam, hitung load berdasarkan durasi aktual hingga saat ini atau targetnya
+                        const endDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
+                        const now = currentTime.getTime();
+                        if (endDate.getTime() < now) {
+                            durationMs = now - startDate.getTime(); // Kalau telat, loadnya makin besar
+                        } else {
+                            durationMs = endDate.getTime() - startDate.getTime();
+                        }
+                    }
+                    if (durationMs < 0) durationMs = 0;
+                    const durationHours = durationMs / (1000 * 60 * 60);
+
                     trx.items.forEach(item => {
                         const itemId = item.kode || (item.name && item.name.match(/\[(.*?)\]/) ? item.name.match(/\[(.*?)\]/)[1] : item.name);
                         const itemName = item.nama ? `[${item.kode}] ${item.nama}` : item.name;
-                        if (!itemFrequency[itemId]) itemFrequency[itemId] = { count: 0, name: itemName };
-                        itemFrequency[itemId].count += parseInt(item.jumlah || item.quantity);
+                        const qty = parseInt(item.jumlah || item.quantity) || 1;
+                        
+                        if (!itemFrequency[itemId]) itemFrequency[itemId] = { count: 0, name: itemName, totalHours: 0 };
+                        itemFrequency[itemId].count += qty;
+                        itemFrequency[itemId].totalHours += (durationHours * qty);
                     });
                 });
+                
                 const topItems = Object.keys(itemFrequency)
-                    .map(id => ({ id, count: itemFrequency[id].count, name: itemFrequency[id].name }))
+                    .map(id => ({ 
+                        id, 
+                        count: itemFrequency[id].count, 
+                        name: itemFrequency[id].name,
+                        hours: Math.ceil(itemFrequency[id].totalHours) // Bulatkan ke atas
+                    }))
                     .sort((a, b) => b.count - a.count)
                     .slice(0, 5);
 
@@ -770,8 +894,11 @@
                                                     </div>
                                                     <div><p className="text-sm font-bold text-gray-800">{item.name}</p></div>
                                                 </div>
-                                                <div className="text-right">
-                                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold">{item.count}x Dipinjam</span>
+                                                
+                                                {/* UPDATE TAMPILAN: MENAMBAHKAN TOTAL PEMAKAIAN JAM */}
+                                                <div className="text-right flex flex-col items-end gap-1">
+                                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold w-max">{item.count}x Dipinjam</span>
+                                                    <span className="text-[10px] font-bold text-slate-500"><i className="fas fa-history mr-1 text-slate-400"></i>Load: {item.hours} Jam</span>
                                                 </div>
                                             </li>
                                         ))}
@@ -789,24 +916,23 @@
                                     </div>
                                 ) : (
                                     <div className="space-y-3">
-                                        {lateTx.map(trx => (
-                                            <div key={trx.id} className="bg-red-50 border-l-4 border-red-500 p-3 rounded-r-lg">
-                                                <div className="flex justify-between">
-                                                    <p className="font-bold text-red-800 text-sm">{trx.borrowerName} <span className="font-normal text-xs text-red-600">({trx.nim})</span></p>
-                                                    <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded shadow-sm animate-pulse">Telat</span>
+                                        {lateTx.map(trx => {
+                                            const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
+                                            const diffMs = currentTime.getTime() - targetDate.getTime();
+                                            const latenessStr = getLatenessString(diffMs);
+
+                                            return (
+                                            <div key={trx.id} className="flex items-center justify-between p-3 border border-red-100 bg-red-50/40 rounded-xl hover:bg-red-50 transition shadow-sm">
+                                                <div className="flex flex-col">
+                                                    <span className="font-bold text-gray-800 text-sm">{trx.borrowerName}</span>
+                                                    <span className="text-[11px] text-gray-500 font-medium mt-0.5">{trx.items.length} Macam Alat</span>
                                                 </div>
-                                                <div className="mt-2 flex flex-col gap-1">
-                                                    <div className="flex items-center text-red-700 text-xs">
-                                                        <i className="far fa-calendar-times w-4 text-center mr-1"></i>
-                                                        <span className="font-medium">{formatDate(trx.returnDateEst)}</span>
-                                                    </div>
-                                                    <div className="flex items-center text-red-700 text-xs">
-                                                        <i className="far fa-clock w-4 text-center mr-1"></i>
-                                                        <span className="font-bold bg-white px-1.5 py-0.5 rounded shadow-sm">{formatTimeStr(trx.returnTimeEst)} WIB</span>
-                                                    </div>
+                                                <div className="text-right flex flex-col items-end">
+                                                    <span className="text-xs font-black text-red-600 bg-white px-2 py-0.5 rounded shadow-sm border border-red-100">Telat {latenessStr}</span>
+                                                    <span className="text-[9px] text-red-400 mt-1 font-bold uppercase tracking-wider">Batas: {formatDate(trx.returnDateEst)} {formatTimeStr(trx.returnTimeEst)}</span>
                                                 </div>
                                             </div>
-                                        ))}
+                                        )})}
                                     </div>
                                 )}
                             </div>
@@ -915,29 +1041,37 @@
                         </div>
 
                         {isAdmin && (
-                            <div className="mb-4">
+                            <div className="mb-4 flex flex-wrap gap-3">
                                 <button onClick={() => setShowAddForm(!showAddForm)} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition flex items-center ${showAddForm ? 'bg-slate-200 text-slate-700' : 'bg-slate-800 text-white'}`}>
                                     <i className={`fas ${showAddForm ? 'fa-times' : 'fa-plus'} mr-2`}></i> {showAddForm ? 'Batal Tambah Alat' : 'Tambah Alat Baru'}
                                 </button>
-                                {showAddForm && (
-                                    <form onSubmit={handleAddNewInventoryItem} className="mt-4 bg-blue-50/50 p-5 rounded-xl border border-blue-100 shadow-sm grid grid-cols-1 md:grid-cols-5 gap-4 items-end animate-fade-in">
-                                        <div><label className="block text-xs font-bold text-blue-900 mb-1">Kode Alat</label><input type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.id} onChange={e => setNewItemForm({...newItemForm, id: e.target.value.toUpperCase()})} /></div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-blue-900 mb-1">Kategori</label>
-                                            <input type="text" required list="category-list" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.category} onChange={e => setNewItemForm({...newItemForm, category: e.target.value})} />
-                                            <datalist id="category-list">{categories.filter(c => c !== 'Semua').map(c => <option key={c} value={c} />)}</datalist>
-                                        </div>
-                                        <div className="md:col-span-2"><label className="block text-xs font-bold text-blue-900 mb-1">Nama Alat / Model</label><input type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.name} onChange={e => setNewItemForm({...newItemForm, name: e.target.value})} /></div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-blue-900 mb-1">Jumlah</label>
-                                            <div className="flex gap-2">
-                                                <input type="number" min="1" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.total} onChange={e => setNewItemForm({...newItemForm, total: e.target.value})} />
-                                                <button type="submit" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-bold"><i className="fas fa-save"></i></button>
-                                            </div>
-                                        </div>
-                                    </form>
+                                
+                                {/* TOMBOL PAKSA SINKRONISASI MUNCUL JIKA ADA ALAT YANG BELUM MASUK SHEET */}
+                                {baseInventory.some(i => i.isLocalOnly) && (
+                                    <button onClick={forceSyncToSheet} className="px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition flex items-center bg-yellow-500 hover:bg-yellow-600 text-white animate-pulse">
+                                        <i className="fas fa-cloud-upload-alt mr-2"></i> Paksa Sinkronisasi ke Sheet
+                                    </button>
                                 )}
                             </div>
+                        )}
+                        
+                        {showAddForm && isAdmin && (
+                            <form onSubmit={handleAddNewInventoryItem} className="mb-6 bg-blue-50/50 p-5 rounded-xl border border-blue-100 shadow-sm grid grid-cols-1 md:grid-cols-5 gap-4 items-end animate-fade-in">
+                                <div><label className="block text-xs font-bold text-blue-900 mb-1">Kode Alat</label><input type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.id} onChange={e => setNewItemForm({...newItemForm, id: e.target.value.toUpperCase()})} /></div>
+                                <div>
+                                    <label className="block text-xs font-bold text-blue-900 mb-1">Kategori</label>
+                                    <input type="text" required list="category-list" className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.category} onChange={e => setNewItemForm({...newItemForm, category: e.target.value})} />
+                                    <datalist id="category-list">{categories.filter(c => c !== 'Semua').map(c => <option key={c} value={c} />)}</datalist>
+                                </div>
+                                <div className="md:col-span-2"><label className="block text-xs font-bold text-blue-900 mb-1">Nama Alat / Model</label><input type="text" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.name} onChange={e => setNewItemForm({...newItemForm, name: e.target.value})} /></div>
+                                <div>
+                                    <label className="block text-xs font-bold text-blue-900 mb-1">Jumlah</label>
+                                    <div className="flex gap-2">
+                                        <input type="number" min="1" required className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={newItemForm.total} onChange={e => setNewItemForm({...newItemForm, total: e.target.value})} />
+                                        <button type="submit" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-bold"><i className="fas fa-save"></i></button>
+                                    </div>
+                                </div>
+                            </form>
                         )}
 
                         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
@@ -955,7 +1089,14 @@
                                             <tr key={item.id} className="hover:bg-gray-50">
                                                 <td className="p-4 text-sm font-bold text-slate-700">{item.id}</td>
                                                 <td className="p-4"><span className="bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded text-xs font-semibold">{item.category}</span></td>
-                                                <td className="p-4 font-medium text-gray-900">{item.name}</td>
+                                                <td className="p-4 font-medium text-gray-900">
+                                                    {item.name}
+                                                    {item.isLocalOnly && (
+                                                        <span className="block mt-1 bg-yellow-100 text-yellow-700 text-[10px] px-2 py-0.5 rounded w-max font-bold border border-yellow-200">
+                                                            <i className="fas fa-exclamation-triangle mr-1"></i>Belum Masuk Sheet
+                                                        </span>
+                                                    )}
+                                                </td>
                                                 <td className="p-4 text-center text-sm">{item.total}</td>
                                                 <td className="p-4 text-center font-black text-green-600">{item.available}</td>
                                                 <td className="p-4 text-center">
@@ -1079,7 +1220,7 @@
                                             <th className="p-4 text-left">Waktu Pinjam</th>
                                             <th className="p-4 text-left">Batas Pengembalian</th>
                                             <th className="p-4">Rincian Alat</th>
-                                            <th className="p-4 text-center">Status / Jatuh Tempo</th>
+                                            <th className="p-4 text-center">Status Pengembalian</th>
                                             <th className="p-4 text-center">Aksi</th>
                                         </tr>
                                     </thead>
@@ -1089,8 +1230,23 @@
                                             const diffMs = targetDate.getTime() - currentTime.getTime();
                                             const isLate = diffMs <= 0;
 
+                                            // PENENTU WARNA BARIS TABEL
+                                            let rowClass = "hover:bg-gray-50 transition-colors";
+                                            if (trx.status === 'active') {
+                                                if (isLate) {
+                                                    rowClass = "bg-red-50/50 hover:bg-red-50 transition-colors";
+                                                }
+                                            } else if (trx.status.startsWith('completed|')) {
+                                                const returnTimestamp = new Date(trx.status.split('|')[1]);
+                                                if (returnTimestamp.getTime() > targetDate.getTime()) {
+                                                    rowClass = "bg-red-50/30 hover:bg-red-50 transition-colors";
+                                                } else {
+                                                    rowClass = "bg-green-50/30 hover:bg-green-50 transition-colors";
+                                                }
+                                            }
+
                                             return (
-                                            <tr key={trx.id} className={trx.status === 'active' && isLate ? "bg-red-50/50 hover:bg-red-50 transition-colors" : "hover:bg-gray-50 transition-colors"}>
+                                            <tr key={trx.id} className={rowClass}>
                                                 <td className="p-4 align-top">
                                                     <p className="font-bold text-gray-900 text-base">{trx.borrowerName}</p>
                                                     <p className="text-gray-500 text-xs mt-0.5">NIM: <span className="font-semibold">{trx.nim}</span></p>
@@ -1150,7 +1306,7 @@
                                                             <span className="text-orange-500 text-xs italic font-medium block mb-2">Menunggu Pengembalian</span>
                                                         )
                                                     ) : (
-                                                        <span className="text-gray-400 text-xs italic font-medium block mb-2">Tuntas</span>
+                                                        <span className="text-gray-400 text-xs italic font-medium block mb-2">Telah Selesai</span>
                                                     )}
                                                     {isAdmin && (
                                                         <button onClick={() => handleDelete(trx.id)} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full shadow-sm"><i className="fas fa-trash-alt mr-1"></i> Hapus</button>
