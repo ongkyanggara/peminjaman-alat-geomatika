@@ -81,7 +81,11 @@
             { id: 'RB-001-030', category: 'Aksesoris', name: 'Rambu Ukur (3 m)', total: 30, available: 30 },
             { id: 'RB-001-010', category: 'Aksesoris', name: 'Rambu Ukur (4 m)', total: 10, available: 10 },
             { id: 'RB-001-009', category: 'Aksesoris', name: 'Rambu Ukur (5 m)', total: 9, available: 9 },
-            { id: 'TM-001-035', category: 'Aksesoris', name: 'Tripod / Statip', total: 35, available: 35 }
+            { id: 'TM-001-035', category: 'Aksesoris', name: 'Tripod / Statip', total: 35, available: 35 },
+            // PENAMBAHAN INVENTARIS MULTIMEDIA
+            { id: 'LP-001', category: 'Multimedia', name: 'Laptop Dell', total: 1, available: 1 },
+            { id: 'PC-001', category: 'Multimedia', name: 'PC Acer Veriton', total: 1, available: 1 },
+            { id: 'PC-002', category: 'Multimedia', name: 'PC Acer Veriton', total: 1, available: 1 }
         ];
 
         // FUNGSI UTAMA: Menghitung persediaan alat
@@ -134,8 +138,9 @@
             // MASUKKAN URL GOOGLE APPS SCRIPT ANDA DI SINI
             const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPlSeyXWP0ALhXp4VqJ_NUmB433jHqLUn4hButn2UFzHu2J9hOfEeRlj-Zdky0TA_b/exec'; 
 
+            // STATE PEMINJAMAN UPDATE DENGAN LAYANAN
             const [borrowForm, setBorrowForm] = useState({
-                borrowerName: '', nim: '', purpose: '', praktikumCourse: '', praktikumClass: '',
+                borrowerName: '', nim: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
                 borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
                 returnDateEst: '', returnTimeEst: '',
                 items: [{ itemId: '', quantity: 1 }],
@@ -150,15 +155,29 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
+            // LOGIKA PEMBACAAN WAKTU ANTI BUG-ZONA WAKTU
+            const parseRealDate = (dateString) => {
+                if (!dateString) return new Date();
+                // Jika dari input tanggal manual (Y-M-D), pastikan tidak terjadi pergeseran karena jam UTC.
+                if (typeof dateString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateString.trim())) {
+                    const parts = dateString.split('-');
+                    return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+                }
+                // Jika dari Spreadsheet (terdapat T dan Z), sistem akan menggesernya ke waktu lokal komputer secara cerdas
+                const d = new Date(dateString);
+                return isNaN(d.getTime()) ? new Date() : d;
+            };
+
             const formatDate = (dateString) => {
                 if (!dateString) return '-';
-                const dPart = dateString.includes('T') ? dateString.split('T')[0] : dateString;
-                const parts = dPart.split('-');
-                if (parts.length === 3) {
-                    const d = new Date(parts[0], parts[1] - 1, parts[2]);
-                    return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-                }
-                return new Date(dateString).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+                const d = parseRealDate(dateString);
+                return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+            };
+
+            const formatDay = (dateString) => {
+                if (!dateString) return '-';
+                const d = parseRealDate(dateString);
+                return d.toLocaleDateString('id-ID', { weekday: 'long' });
             };
 
             const formatTimeStr = (timeStr) => {
@@ -187,7 +206,6 @@
                 return String(timeStr).substring(0, 5); 
             };
 
-            // LOGIKA BARU: Teks Keterlambatan Profesional Bahasa Indonesia
             const getLatenessString = (ms) => {
                 const totalSecs = Math.floor(ms / 1000);
                 if (totalSecs <= 0) return "Beberapa detik";
@@ -214,17 +232,7 @@
             };
 
             const parseTargetDate = (dateStr, timeStr) => {
-                let year, month, day;
-                if (dateStr) {
-                    const dPart = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
-                    const parts = dPart.split('-');
-                    if (parts.length === 3) {
-                        year = parseInt(parts[0], 10);
-                        month = parseInt(parts[1], 10) - 1;
-                        day = parseInt(parts[2], 10);
-                    }
-                }
-                const target = year !== undefined ? new Date(year, month, day) : new Date();
+                const target = parseRealDate(dateStr);
                 
                 let h = 23, m = 59;
                 const tStr = String(timeStr || '').replace(/['"]/g, '').trim();
@@ -254,13 +262,11 @@
                     let returnedDateUI = null;
                     
                     if (status.includes('|')) {
-                        // Anti bug parser untuk safari/apple
                         const safeISOString = status.split('|')[1].replace(' ', 'T');
                         const returnTimestamp = new Date(safeISOString);
                         const targetDate = parseTargetDate(returnDateEst, returnTimeEst);
                         const diffMs = returnTimestamp.getTime() - targetDate.getTime();
                         
-                        // Menampilkan Jam Detik Tepat Sinkron HTML
                         const timeAccurate = returnTimestamp.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false}).replace(/\./g, ':');
 
                         returnedDateUI = (
@@ -388,7 +394,7 @@
                         if (Array.isArray(rawData)) {
                             txData = rawData;
                             invData = currentLocalInv; 
-                            // NOTIFIKASI ERROR GAGAL LOAD DIHILANGKAN SESUAI PERMINTAAN
+                            // Notifikasi error disembunyikan agar tidak mengganggu UI
                         } else {
                             txData = rawData.transactions || [];
                             
@@ -427,7 +433,7 @@
                         
                     } catch (error) {
                         console.error("Gagal terhubung ke Spreadsheet:", error);
-                        if (localSavedTx.length === 0) showNotification("Koneksi offline. Menampilkan data tersimpan.", "error");
+                        // Peringatan Offline disembunyikan secara pop-up
                     } finally {
                         setIsAppLoading(false);
                         setIsSyncing(false);
@@ -498,9 +504,14 @@
                     showNotification('Mohon lengkapi data diri, keperluan, jam, daftar alat, dan unggah surat izin', 'error'); return;
                 }
 
-                // Validasi khusus Praktikum
-                if (borrowForm.purpose === 'Praktikum' && (!borrowForm.praktikumCourse || !borrowForm.praktikumClass)) {
-                    showNotification('Mohon lengkapi Mata Kuliah dan Kelas Praktikum', 'error'); return;
+                // Validasi khusus Praktikum yang Cerdas
+                if (borrowForm.purpose === 'Praktikum') {
+                    if (!borrowForm.praktikumCourse || !borrowForm.praktikumClass) {
+                        showNotification('Mohon lengkapi Mata Kuliah dan Kelas Praktikum', 'error'); return;
+                    }
+                    if (borrowForm.praktikumCourse === 'Layanan Praktikum GT' && !borrowForm.praktikumLayanan) {
+                        showNotification('Mohon pilih jenis Layanan Praktikum', 'error'); return;
+                    }
                 }
 
                 for (let item of borrowForm.items) {
@@ -521,9 +532,14 @@
                 });
 
                 // Menggabungkan pilihan Praktikum menjadi satu text rapi untuk di-save ke database Spreadsheet
-                const finalPurpose = borrowForm.purpose === 'Praktikum' 
-                    ? `Praktikum - ${borrowForm.praktikumCourse} (Kelas ${borrowForm.praktikumClass})` 
-                    : borrowForm.purpose;
+                let finalPurpose = borrowForm.purpose;
+                if (borrowForm.purpose === 'Praktikum') {
+                    if (borrowForm.praktikumCourse === 'Layanan Praktikum GT') {
+                        finalPurpose = `Praktikum - ${borrowForm.praktikumCourse} (${borrowForm.praktikumLayanan}) - Kelas ${borrowForm.praktikumClass}`;
+                    } else {
+                        finalPurpose = `Praktikum - ${borrowForm.praktikumCourse} - Kelas ${borrowForm.praktikumClass}`;
+                    }
+                }
 
                 const payload = {
                     action: "create", id: newTransactionId, borrowerName: borrowForm.borrowerName, nim: borrowForm.nim, purpose: finalPurpose,
@@ -538,7 +554,7 @@
                     setInventory(calculateInventory(updatedTransactions, baseInventory));
                     
                     setBorrowForm({
-                        borrowerName: '', nim: '', purpose: '', praktikumCourse: '', praktikumClass: '', 
+                        borrowerName: '', nim: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
                         borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
                         returnDateEst: '', returnTimeEst: '', items: [{ itemId: '', quantity: 1 }], approvalFileName: '', fileBase64: '', mimeType: ''
                     });
@@ -567,7 +583,7 @@
                     // FORMAT JAM CLEAR SPREADSHEET (Contoh: 2026-04-13 13:49:39)
                     const now = new Date();
                     const pad = n => String(n).padStart(2, '0');
-                    const returnTimestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+                    const returnTimestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
                     
                     const newStatusRecord = `completed|${returnTimestamp}`;
                     newTransactions[trxIndex].status = newStatusRecord;
@@ -795,6 +811,13 @@
                     percent: totalPurposeCount === 0 ? 0 : Math.round((purposeStats[p] / totalPurposeCount) * 100)
                 })).sort((a, b) => b.count - a.count);
 
+                // Urutkan transaksi aktif agar terbaru di atas
+                const sortedActiveTx = [...activeTx].sort((a, b) => {
+                    const timeA = parseTargetDate(a.borrowDate, a.borrowTime).getTime();
+                    const timeB = parseTargetDate(b.borrowDate, b.borrowTime).getTime();
+                    return timeB - timeA;
+                });
+
                 return (
                     <div className="space-y-6 animate-fade-in">
                         <div className="flex justify-between items-end border-b pb-2">
@@ -962,7 +985,7 @@
                         {/* SECTION 4: Peminjaman Berjalan */}
                         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                             <h3 className="text-lg font-bold text-gray-800 mb-4"><i className="fas fa-tasks text-blue-500 mr-2"></i> Peminjaman Berjalan (Detail Peminjam)</h3>
-                            {activeTx.length === 0 ? (
+                            {sortedActiveTx.length === 0 ? (
                                 <p className="text-gray-400 text-sm italic py-6 text-center bg-gray-50 rounded-lg">Tidak ada peminjaman aktif.</p>
                             ) : (
                                 <div className="overflow-x-auto">
@@ -977,7 +1000,7 @@
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                            {activeTx.map(trx => {
+                                            {sortedActiveTx.map(trx => {
                                                 let statusClassRow = "hover:bg-slate-50 transition-colors";
 
                                                 if (trx.isLate) {
@@ -999,25 +1022,31 @@
                                                     </td>
                                                     <td className="p-3 align-top whitespace-nowrap">
                                                         <div className="flex flex-col gap-2">
-                                                            <div className="flex items-center text-slate-700 text-sm">
-                                                                <i className="far fa-calendar-alt text-blue-500 w-5 text-center"></i>
-                                                                <span className="font-medium ml-1">{formatDate(trx.borrowDate)}</span>
+                                                            <div className="flex items-start text-blue-600 font-medium">
+                                                                <i className="far fa-calendar-alt w-5 text-center mt-0.5"></i>
+                                                                <div className="flex flex-col ml-1">
+                                                                    <span className="text-gray-800 font-bold">{formatDate(trx.borrowDate)}</span>
+                                                                    <span className="text-[10px] text-gray-500 font-bold uppercase">{formatDay(trx.borrowDate)}</span>
+                                                                </div>
                                                             </div>
-                                                            <div className="flex items-center text-slate-700 text-sm">
-                                                                <i className="far fa-clock text-blue-500 w-5 text-center"></i>
-                                                                <span className="font-black ml-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md shadow-sm tracking-widest font-mono">{formatTimeStr(trx.borrowTime)} WIB</span>
+                                                            <div className="flex items-center text-blue-600 mt-0.5">
+                                                                <i className="far fa-clock w-5 text-center"></i>
+                                                                <span className="ml-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md shadow-sm font-mono font-bold tracking-widest text-xs">{formatTimeStr(trx.borrowTime)} WIB</span>
                                                             </div>
                                                         </div>
                                                     </td>
                                                     <td className="p-3 align-top whitespace-nowrap">
                                                         <div className="flex flex-col gap-2">
-                                                            <div className="flex items-center text-slate-700 text-sm">
-                                                                <i className="far fa-calendar-check text-red-500 w-5 text-center"></i>
-                                                                <span className="font-medium ml-1">{formatDate(trx.returnDateEst)}</span>
+                                                            <div className="flex items-start text-red-500 font-medium">
+                                                                <i className="far fa-calendar-check w-5 text-center mt-0.5"></i>
+                                                                <div className="flex flex-col ml-1">
+                                                                    <span className="text-gray-800 font-bold">{formatDate(trx.returnDateEst)}</span>
+                                                                    <span className="text-[10px] text-gray-500 font-bold uppercase">{formatDay(trx.returnDateEst)}</span>
+                                                                </div>
                                                             </div>
-                                                            <div className="flex items-center text-slate-700 text-sm">
-                                                                <i className="far fa-clock text-red-500 w-5 text-center"></i>
-                                                                <span className="font-black ml-1 bg-red-50 text-red-700 px-2 py-0.5 rounded-md shadow-sm tracking-widest font-mono">{formatTimeStr(trx.returnTimeEst)} WIB</span>
+                                                            <div className="flex items-center text-red-500 mt-0.5">
+                                                                <i className="far fa-clock w-5 text-center"></i>
+                                                                <span className="ml-1 bg-red-50 text-red-700 px-2 py-0.5 rounded-md shadow-sm font-mono font-bold tracking-widest text-xs">{formatTimeStr(trx.returnTimeEst)} WIB</span>
                                                             </div>
                                                         </div>
                                                     </td>
@@ -1152,49 +1181,64 @@
                                 <div><label className="block text-sm font-medium text-gray-700 mb-1">NIM / ID Anggota</label><input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.nim} onChange={e => setBorrowForm({...borrowForm, nim: e.target.value})} placeholder="Masukkan NIM" /></div>
                                 
                                 {/* LOGIKA BARU: Opsi Dropdown Praktikum Tampil Jika Dipilih */}
-                                <div className={borrowForm.purpose === 'Praktikum' ? "md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4" : "md:col-span-2"}>
-                                    <div className={borrowForm.purpose === 'Praktikum' ? "md:col-span-2" : ""}>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Keperluan Peminjaman</label>
-                                        <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer" value={borrowForm.purpose} onChange={e => setBorrowForm({...borrowForm, purpose: e.target.value, praktikumCourse: '', praktikumClass: ''})}>
-                                            <option value="" disabled>-- Pilih Keperluan --</option>
-                                            <option value="Praktikum">Praktikum</option>
-                                            <option value="Tugas akhir">Tugas Akhir</option>
-                                            <option value="Penelitian">Penelitian</option>
-                                            <option value="Proyek">Proyek</option>
-                                            <option value="Lainnya">Lainnya</option>
-                                        </select>
-                                    </div>
-                                    
-                                    {borrowForm.purpose === 'Praktikum' && (
-                                        <>
-                                            <div className="animate-fade-in">
-                                                <label className="block text-sm font-medium text-gray-700 mb-1">Mata Kuliah Praktikum</label>
-                                                <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer" value={borrowForm.praktikumCourse} onChange={e => setBorrowForm({...borrowForm, praktikumCourse: e.target.value})}>
-                                                    <option value="" disabled>-- Pilih Mata Kuliah --</option>
-                                                    <option value="Survei Kontruksi">Survei Kontruksi</option>
-                                                    <option value="Pemetaan Dasar">Pemetaan Dasar</option>
-                                                    <option value="Pemetaan Terestris">Pemetaan Terestris</option>
-                                                    <option value="Hidrografi I">Hidrografi I</option>
-                                                    <option value="Hidrografi II">Hidrografi II</option>
-                                                    <option value="Kemah Kerja">Kemah Kerja</option>
-                                                    <option value="Survei GNSS">Survei GNSS</option>
-                                                    <option value="Fotogrametri Dasar">Fotogrametri Dasar</option>
-                                                    <option value="Fotogrametri Lanjut">Fotogrametri Lanjut</option>
-                                                    <option value="Pemetaan Radar dan LiDAR">Pemetaan Radar dan LiDAR</option>
-                                                </select>
-                                            </div>
-                                            <div className="animate-fade-in">
-                                                <label className="block text-sm font-medium text-gray-700 mb-1">Kelas</label>
-                                                <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer" value={borrowForm.praktikumClass} onChange={e => setBorrowForm({...borrowForm, praktikumClass: e.target.value})}>
-                                                    <option value="" disabled>-- Pilih Kelas --</option>
-                                                    <option value="RA">RA</option>
-                                                    <option value="RB">RB</option>
-                                                    <option value="RC">RC</option>
-                                                </select>
-                                            </div>
-                                        </>
-                                    )}
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Keperluan Peminjaman</label>
+                                    <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer" value={borrowForm.purpose} onChange={e => setBorrowForm({...borrowForm, purpose: e.target.value, praktikumCourse: '', praktikumClass: '', praktikumLayanan: ''})}>
+                                        <option value="" disabled>-- Pilih Keperluan --</option>
+                                        <option value="Praktikum">Praktikum</option>
+                                        <option value="Tugas akhir">Tugas Akhir</option>
+                                        <option value="Penelitian">Penelitian</option>
+                                        <option value="Proyek">Proyek</option>
+                                        <option value="Lainnya">Lainnya</option>
+                                    </select>
                                 </div>
+                                
+                                {borrowForm.purpose === 'Praktikum' && (
+                                    <div className={`md:col-span-2 grid grid-cols-1 ${borrowForm.praktikumCourse === 'Layanan Praktikum GT' ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4 bg-blue-50/50 p-4 rounded-xl border border-blue-100 animate-fade-in`}>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Mata Kuliah Praktikum</label>
+                                            <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer" value={borrowForm.praktikumCourse} onChange={e => setBorrowForm({...borrowForm, praktikumCourse: e.target.value, praktikumLayanan: e.target.value !== 'Layanan Praktikum GT' ? '' : borrowForm.praktikumLayanan})}>
+                                                <option value="" disabled>-- Pilih Mata Kuliah --</option>
+                                                <option value="Layanan Praktikum GT" className="font-bold text-blue-700">Layanan Praktikum GT</option>
+                                                <option value="Survei Kontruksi">Survei Kontruksi</option>
+                                                <option value="Pemetaan Dasar">Pemetaan Dasar</option>
+                                                <option value="Pemetaan Terestris">Pemetaan Terestris</option>
+                                                <option value="Hidrografi I">Hidrografi I</option>
+                                                <option value="Hidrografi II">Hidrografi II</option>
+                                                <option value="Kemah Kerja">Kemah Kerja</option>
+                                                <option value="Survei GNSS">Survei GNSS</option>
+                                                <option value="Fotogrametri Dasar">Fotogrametri Dasar</option>
+                                                <option value="Fotogrametri Lanjut">Fotogrametri Lanjut</option>
+                                                <option value="Pemetaan Radar dan LiDAR">Pemetaan Radar dan LiDAR</option>
+                                            </select>
+                                        </div>
+                                        
+                                        {/* Dropdown ini HANYA MUNCUL jika "Layanan Praktikum GT" dipilih */}
+                                        {borrowForm.praktikumCourse === 'Layanan Praktikum GT' && (
+                                            <div className="animate-fade-in">
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Layanan Praktikum</label>
+                                                <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer" value={borrowForm.praktikumLayanan} onChange={e => setBorrowForm({...borrowForm, praktikumLayanan: e.target.value})}>
+                                                    <option value="" disabled>-- Pilih Layanan --</option>
+                                                    <option value="Layanan Teknik Sipil">Layanan Teknik Sipil</option>
+                                                    <option value="Layanan Teknik Kelautan">Layanan Teknik Kelautan</option>
+                                                    <option value="Layanan Teknik Perkeretaapian">Layanan Teknik Perkeretaapian</option>
+                                                    <option value="Layanan Teknik Biosistem">Layanan Teknik Biosistem</option>
+                                                    <option value="Layanan Tata Kelola Air Terpadu">Layanan Tata Kelola Air Terpadu</option>
+                                                </select>
+                                            </div>
+                                        )}
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Kelas</label>
+                                            <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer" value={borrowForm.praktikumClass} onChange={e => setBorrowForm({...borrowForm, praktikumClass: e.target.value})}>
+                                                <option value="" disabled>-- Pilih Kelas --</option>
+                                                <option value="RA">RA</option>
+                                                <option value="RB">RB</option>
+                                                <option value="RC">RC</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* LOGIKA BARU: Input Jam dengan showPicker() agar mudah di-klik */}
                                 <div>
@@ -1280,10 +1324,10 @@
                     return 'Tepat Waktu'; // Default fallback untuk completed lama
                 };
 
-                // Urutkan berdasarkan waktu paling baru
+                // Urutkan berdasarkan waktu paling baru (Kombinasi Tanggal + Waktu)
                 const sortedTx = [...transactions].sort((a, b) => {
-                    const dateA = new Date(a.borrowDate + 'T' + (a.borrowTime ? a.borrowTime.substring(0,5) : '00:00')).getTime();
-                    const dateB = new Date(b.borrowDate + 'T' + (b.borrowTime ? b.borrowTime.substring(0,5) : '00:00')).getTime();
+                    const dateA = parseTargetDate(a.borrowDate, a.borrowTime).getTime();
+                    const dateB = parseTargetDate(b.borrowDate, b.borrowTime).getTime();
                     return dateB - dateA;
                 });
 
@@ -1366,6 +1410,7 @@
                                                         <p className="text-gray-500 text-xs mt-0.5">NIM: <span className="font-semibold">{trx.nim}</span></p>
                                                         {trx.purpose && <p className="text-indigo-600 text-xs font-bold mt-1"><i className="fas fa-tag mr-1"></i> {trx.purpose}</p>}
                                                         
+                                                        {/* Link untuk membuka file jika Google Script mengembalikan URL File Google Drive */}
                                                         {trx.approvalFileUrl ? (
                                                             <a href={trx.approvalFileUrl} target="_blank" rel="noopener noreferrer" className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 w-max px-2 py-1 rounded-md shadow-sm hover:bg-blue-100 inline-flex items-center transition"><i className="fas fa-external-link-alt mr-1 text-red-500"></i> Buka Surat Izin</a>
                                                         ) : (
@@ -1374,13 +1419,16 @@
                                                     </td>
                                                     <td className="p-4 align-top whitespace-nowrap">
                                                         <div className="flex flex-col gap-2 text-sm">
-                                                            <div className="flex items-center text-blue-600 font-medium">
-                                                                <i className="far fa-calendar-alt w-5 text-center"></i>
-                                                                <span className="ml-1 text-gray-700">{formatDate(trx.borrowDate)}</span>
+                                                            <div className="flex items-start text-blue-600 font-medium">
+                                                                <i className="far fa-calendar-alt w-5 text-center mt-0.5"></i>
+                                                                <div className="flex flex-col ml-1">
+                                                                    <span className="text-gray-800 font-bold">{formatDate(trx.borrowDate)}</span>
+                                                                    <span className="text-[10px] text-gray-500 font-bold uppercase">{formatDay(trx.borrowDate)}</span>
+                                                                </div>
                                                             </div>
-                                                            <div className="flex items-center text-blue-600">
+                                                            <div className="flex items-center text-blue-600 mt-0.5">
                                                                 <i className="far fa-clock w-5 text-center"></i>
-                                                                <span className="ml-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md shadow-sm font-mono font-bold tracking-widest">
+                                                                <span className="ml-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md shadow-sm font-mono font-bold tracking-widest text-xs">
                                                                     {formatTimeStr(trx.borrowTime)} WIB
                                                                 </span>
                                                             </div>
@@ -1388,13 +1436,16 @@
                                                     </td>
                                                     <td className="p-4 align-top whitespace-nowrap">
                                                         <div className="flex flex-col gap-2 text-sm">
-                                                            <div className="flex items-center text-red-500 font-medium">
-                                                                <i className="far fa-calendar-check w-5 text-center"></i>
-                                                                <span className="ml-1 text-gray-700">{formatDate(trx.returnDateEst)}</span>
+                                                            <div className="flex items-start text-red-500 font-medium">
+                                                                <i className="far fa-calendar-check w-5 text-center mt-0.5"></i>
+                                                                <div className="flex flex-col ml-1">
+                                                                    <span className="text-gray-800 font-bold">{formatDate(trx.returnDateEst)}</span>
+                                                                    <span className="text-[10px] text-gray-500 font-bold uppercase">{formatDay(trx.returnDateEst)}</span>
+                                                                </div>
                                                             </div>
-                                                            <div className="flex items-center text-red-500">
+                                                            <div className="flex items-center text-red-500 mt-0.5">
                                                                 <i className="far fa-clock w-5 text-center"></i>
-                                                                <span className="ml-1 bg-red-50 text-red-700 px-2 py-0.5 rounded-md shadow-sm font-mono font-bold tracking-widest">
+                                                                <span className="ml-1 bg-red-50 text-red-700 px-2 py-0.5 rounded-md shadow-sm font-mono font-bold tracking-widest text-xs">
                                                                     {formatTimeStr(trx.returnTimeEst)} WIB
                                                                 </span>
                                                             </div>
