@@ -29,9 +29,8 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // Data Awal Inventaris Lab Geomatika Sesuai Kategori
+        // Data Awal Inventaris Lab Geomatika Sesuai Kategori (Sebagai Fallback)
         const initialInventory = [
-            // Total Station
             { id: 'TS-001', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
             { id: 'TS-002', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
             { id: 'TS-003', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
@@ -43,8 +42,6 @@
             { id: 'TS-013', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
             { id: 'TS-014', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
             { id: 'TS-015', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
-            
-            // Theodolite
             { id: 'DT-001', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
             { id: 'DT-002', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
             { id: 'DT-003', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
@@ -53,8 +50,6 @@
             { id: 'DT-006', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
             { id: 'DT-007', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
             { id: 'DT-008', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-            
-            // Leveling
             { id: 'AL-001', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
             { id: 'AL-002', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
             { id: 'AL-003', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
@@ -70,28 +65,18 @@
             { id: 'AL-013', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
             { id: 'AL-014', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
             { id: 'AL-015', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-            
-            // GNSS & Laser Scanner
             { id: 'G-001', category: 'GNSS', name: 'TOPCON HIPER II', total: 1, available: 1 },
             { id: 'G-002', category: 'GNSS', name: 'LEICA GS14', total: 1, available: 1 },
             { id: 'G-003', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
             { id: 'G-004', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
             { id: 'G-005', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
             { id: 'G-006', category: 'Laser Scanner', name: 'LEICA BLK360', total: 1, available: 1 },
-
-            // Fotogrametri
             { id: 'DN-001', category: 'Fotogrametri', name: 'DJI drone M3E', total: 1, available: 1 },
             { id: 'DN-002', category: 'Fotogrametri', name: 'DJI Inspire 2', total: 1, available: 1 },
-            
-            // Hidrografi
             { id: 'F-0001', category: 'Hidrografi', name: 'Fish Finder', total: 1, available: 1 },
             { id: 'PL-001-029', category: 'Hidrografi', name: 'Pelampung', total: 29, available: 29 },
-
-            // Safety
             { id: 'HL-001-100', category: 'Safety', name: 'Helm', total: 100, available: 100 },
             { id: 'RM-001-100', category: 'Safety', name: 'Rompi', total: 100, available: 100 },
-            
-            // Aksesoris
             { id: 'JL-001-020', category: 'Aksesoris', name: 'Jalon', total: 14, available: 14 },
             { id: 'RB-001-030', category: 'Aksesoris', name: 'Rambu Ukur (3 m)', total: 30, available: 30 },
             { id: 'RB-001-010', category: 'Aksesoris', name: 'Rambu Ukur (4 m)', total: 10, available: 10 },
@@ -99,18 +84,19 @@
             { id: 'TM-001-035', category: 'Aksesoris', name: 'Tripod / Statip', total: 35, available: 35 }
         ];
 
-        // FUNGSI UTAMA: Menghitung persediaan alat berdasarkan data transaksi yang aktif
-        const calculateInventory = (txData) => {
-            let currentInventory = JSON.parse(JSON.stringify(initialInventory));
+        // FUNGSI UTAMA: Menghitung persediaan alat (Dinamis dari Spreadsheet)
+        const calculateInventory = (txData, baseInv) => {
+            let currentInventory = JSON.parse(JSON.stringify(baseInv));
             txData.forEach(trx => {
                 if (trx.status === 'active' && trx.items) {
                     trx.items.forEach(bItem => {
-                        const match = bItem.name.match(/\[(.*?)\]/);
-                        if (match && match[1]) {
-                            const itemId = match[1];
+                        const itemId = bItem.kode || (bItem.name && bItem.name.match(/\[(.*?)\]/) ? bItem.name.match(/\[(.*?)\]/)[1] : null);
+                        const qty = parseInt(bItem.jumlah || bItem.quantity);
+                        
+                        if (itemId) {
                             const invIndex = currentInventory.findIndex(i => i.id === itemId);
                             if (invIndex !== -1) {
-                                currentInventory[invIndex].available -= parseInt(bItem.quantity);
+                                currentInventory[invIndex].available -= qty;
                             }
                         }
                     });
@@ -120,16 +106,17 @@
         };
 
         function App() {
-            // MENARIK DATA CADANGAN DARI MEMORI LOKAL BROWSER (Agar langsung muncul tanpa loading)
+            // Caching lokal untuk UX Cepat
             const localSavedTx = JSON.parse(localStorage.getItem('lab_transactions_v2') || '[]');
+            const localSavedInv = JSON.parse(localStorage.getItem('lab_inventory_v2') || JSON.stringify(initialInventory));
             
             const [isAppLoading, setIsAppLoading] = useState(localSavedTx.length === 0);
             const [isSyncing, setIsSyncing] = useState(true);
             const [activeTab, setActiveTab] = useState('dashboard');
             
-            // Inisialisasi state dengan data cadangan
             const [transactions, setTransactions] = useState(localSavedTx);
-            const [inventory, setInventory] = useState(() => calculateInventory(localSavedTx));
+            const [baseInventory, setBaseInventory] = useState(localSavedInv);
+            const [inventory, setInventory] = useState(() => calculateInventory(localSavedTx, localSavedInv));
             
             const [filterCategory, setFilterCategory] = useState('Semua');
             const [isAdmin, setIsAdmin] = useState(false);
@@ -138,8 +125,6 @@
             const [newItemForm, setNewItemForm] = useState({ id: '', category: '', name: '', total: 1 });
 
             const fileInputRef = useRef(null);
-
-            // Waktu berjalan untuk Dashboard
             const [currentTime, setCurrentTime] = useState(new Date());
 
             // MASUKKAN URL GOOGLE APPS SCRIPT ANDA DI SINI
@@ -147,14 +132,10 @@
 
             const [borrowForm, setBorrowForm] = useState({
                 borrowerName: '', nim: '', purpose: '',
-                borrowDate: new Date().toISOString().split('T')[0],
-                borrowTime: '',
-                returnDateEst: '',
-                returnTimeEst: '',
+                borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
+                returnDateEst: '', returnTimeEst: '',
                 items: [{ itemId: '', quantity: 1 }],
-                approvalFileName: '',
-                fileBase64: '',
-                mimeType: ''
+                approvalFileName: '', fileBase64: '', mimeType: ''
             });
 
             const [notification, setNotification] = useState(null);
@@ -165,63 +146,92 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
-            // FUNGSI HELPER: Format Tanggal Lebih Rapi (Contoh: 12 Apr 2026)
+            // LOGIKA BARU: Format Tanggal Rapi (Contoh: 13 Apr 2026)
             const formatDate = (dateString) => {
                 if (!dateString) return '-';
                 const date = new Date(dateString);
                 return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
             };
 
-            // FUNGSI HELPER: Format Jam (Mengatasi bug format 1899-12-30T...Z dari Spreadsheet)
+            // LOGIKA BARU: Format Jam Murni (anti error Spreadsheet) yang rapi (Contoh: 13:13)
             const formatTimeStr = (timeStr) => {
                 if (!timeStr) return '-';
-                if (/^\d{2}:\d{2}$/.test(timeStr)) return timeStr; // Jika sudah berformat HH:mm
+                // Jika dari Google Sheet berformat ISO Date string (cth: 1899-12-30T00:52:48.000Z)
+                if (typeof timeStr === 'string' && timeStr.includes('T')) {
+                    try {
+                        const d = new Date(timeStr);
+                        if (!isNaN(d.getTime())) {
+                            return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\./g, ':');
+                        }
+                    } catch(e) {}
+                }
+                // Jika berbentuk string inputan HTML murni (HH:mm)
+                if (typeof timeStr === 'string') {
+                    const tMatch = timeStr.match(/(\d{1,2})[:\.](\d{1,2})/);
+                    if (tMatch) {
+                        const h = tMatch[1].padStart(2, '0');
+                        const m = tMatch[2].padStart(2, '0');
+                        return `${h}:${m}`;
+                    }
+                }
+                // Fallback default
                 try {
                     const d = new Date(timeStr);
                     if (!isNaN(d.getTime())) {
-                        const hrs = d.getHours().toString().padStart(2, '0');
-                        const mins = d.getMinutes().toString().padStart(2, '0');
-                        return `${hrs}:${mins}`;
+                        return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\./g, ':');
                     }
                 } catch(e) {}
-                return String(timeStr).substring(0, 5); // Fallback jika gagal
+                
+                return String(timeStr).substring(0, 5); 
             };
 
-            // SIMPAN KE LOKAL STORAGE SETIAP ADA PERUBAHAN DATA TRANSAKSI
+            // Simpan perubahan ke LocalStorage
             useEffect(() => {
                 localStorage.setItem('lab_transactions_v2', JSON.stringify(transactions));
-            }, [transactions]);
+                localStorage.setItem('lab_inventory_v2', JSON.stringify(baseInventory));
+            }, [transactions, baseInventory]);
 
-            // EFEK SAAT PERTAMA KALI WEB DIBUKA: AMBIL DATA DARI SPREADSHEET (SINKRONISASI LATAR BELAKANG)
+            // FETCH DATA DARI SPREADSHEET (SINKRONISASI LATAR BELAKANG)
             useEffect(() => {
                 const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
                 const fetchDatabase = async () => {
                     setIsSyncing(true);
                     try {
-                        // SOLUSI ANTI-CACHE: Menambahkan waktu saat ini agar browser selalu minta data baru ke server
                         const cacheBusterUrl = GOOGLE_SCRIPT_URL + '?t=' + new Date().getTime();
-                        
                         const response = await fetch(cacheBusterUrl, { redirect: 'follow' });
                         const rawData = await response.json();
                         
-                        if (rawData.error) {
-                            throw new Error("Server Error: " + rawData.error);
-                        }
+                        if (rawData.error) throw new Error("Server Error: " + rawData.error);
                         
-                        const formattedData = rawData.map(trx => ({
+                        let txData = [];
+                        let invData = initialInventory;
+
+                        if (Array.isArray(rawData)) {
+                            txData = rawData;
+                        } else {
+                            txData = rawData.transactions || [];
+                            // Menarik Database Inventaris Dari Spreadsheet
+                            if (rawData.inventory && rawData.inventory.length > 0) {
+                                invData = rawData.inventory.map(item => ({
+                                    id: item.id, category: item.category, name: item.name, 
+                                    total: item.total, available: item.total
+                                }));
+                            }
+                        }
+
+                        const formattedTx = txData.map(trx => ({
                             ...trx,
                             borrowDateFormatted: new Date(trx.borrowDate).toLocaleDateString('id-ID')
                         }));
 
-                        setTransactions(formattedData);
-                        setInventory(calculateInventory(formattedData));
+                        setTransactions(formattedTx);
+                        setBaseInventory(invData);
+                        setInventory(calculateInventory(formattedTx, invData));
                         
                     } catch (error) {
                         console.error("Gagal terhubung ke Spreadsheet:", error);
-                        if (localSavedTx.length === 0) {
-                            showNotification("Gagal memuat data dari server.", "error");
-                        }
+                        if (localSavedTx.length === 0) showNotification("Gagal memuat data dari server.", "error");
                     } finally {
                         setIsAppLoading(false);
                         setIsSyncing(false);
@@ -238,11 +248,8 @@
                     showNotification('Tautan aplikasi berhasil disalin!', 'success');
                 }).catch(err => {
                     const textArea = document.createElement("textarea");
-                    textArea.value = url;
-                    document.body.appendChild(textArea);
-                    textArea.select();
-                    document.execCommand("copy");
-                    document.body.removeChild(textArea);
+                    textArea.value = url; document.body.appendChild(textArea); textArea.select();
+                    document.execCommand("copy"); document.body.removeChild(textArea);
                     showNotification('Tautan aplikasi berhasil disalin!', 'success');
                 });
             };
@@ -267,7 +274,6 @@
                 });
             };
             
-            // UPLOAD FILE & KONVERSI KE BASE64
             const handleFileChange = (e) => {
                 const file = e.target.files[0];
                 if (file) {
@@ -279,10 +285,7 @@
                     reader.onloadend = () => {
                         const base64String = reader.result.split(',')[1];
                         setBorrowForm(prev => ({
-                            ...prev,
-                            approvalFileName: file.name,
-                            fileBase64: base64String,
-                            mimeType: file.type
+                            ...prev, approvalFileName: file.name, fileBase64: base64String, mimeType: file.type
                         }));
                     };
                     reader.readAsDataURL(file);
@@ -291,19 +294,17 @@
                 }
             };
 
-            // SIMPAN DATA (POST)
+            // SIMPAN TRANSAKSI PEMINJAMAN KE SPREADSHEET
             const submitBorrow = async (e) => {
                 e.preventDefault();
                 
                 if (!borrowForm.borrowerName || !borrowForm.nim || !borrowForm.purpose || !borrowForm.borrowDate || !borrowForm.borrowTime || !borrowForm.returnDateEst || !borrowForm.returnTimeEst || borrowForm.items.length === 0 || !borrowForm.fileBase64) {
-                    showNotification('Mohon lengkapi data diri, keperluan, jam, daftar alat, dan unggah surat izin', 'error');
-                    return;
+                    showNotification('Mohon lengkapi data diri, keperluan, jam, daftar alat, dan unggah surat izin', 'error'); return;
                 }
 
                 for (let item of borrowForm.items) {
                     if (!item.itemId) return showNotification('Ada baris alat yang belum dipilih', 'error');
                     if (item.quantity <= 0) return showNotification('Jumlah alat tidak valid', 'error');
-                    
                     const inventoryItem = inventory.find(i => i.id === item.itemId);
                     if (item.quantity > inventoryItem.available) {
                         return showNotification(`Stok ${inventoryItem.name} tidak mencukupi! (Tersedia: ${inventoryItem.available})`, 'error');
@@ -315,107 +316,71 @@
                 
                 const alatLengkap = borrowForm.items.map(item => {
                     const invItem = inventory.find(i => i.id === item.itemId);
-                    return { name: `[${invItem.id}] ${invItem.name}`, quantity: item.quantity };
+                    return { kode: invItem.id, nama: invItem.name, jumlah: parseInt(item.quantity) };
                 });
 
                 const payload = {
-                    action: "create",
-                    id: newTransactionId,
-                    borrowerName: borrowForm.borrowerName,
-                    nim: borrowForm.nim,
-                    purpose: borrowForm.purpose,
-                    borrowDate: borrowForm.borrowDate,
-                    borrowTime: borrowForm.borrowTime,
-                    returnDateEst: borrowForm.returnDateEst,
-                    returnTimeEst: borrowForm.returnTimeEst,
-                    approvalFileName: borrowForm.approvalFileName,
-                    fileBase64: borrowForm.fileBase64,
-                    mimeType: borrowForm.mimeType,
-                    items: alatLengkap
+                    action: "create", id: newTransactionId, borrowerName: borrowForm.borrowerName, nim: borrowForm.nim, purpose: borrowForm.purpose,
+                    borrowDate: borrowForm.borrowDate, borrowTime: borrowForm.borrowTime, returnDateEst: borrowForm.returnDateEst, returnTimeEst: borrowForm.returnTimeEst,
+                    approvalFileName: borrowForm.approvalFileName, fileBase64: borrowForm.fileBase64, mimeType: borrowForm.mimeType, items: alatLengkap
                 };
 
                 try {
-                    // Update UI Secara Instan (Optimistic Update)
-                    const newTransaction = {
-                        ...payload,
-                        status: 'active',
-                        borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID'),
-                    };
-
+                    const newTransaction = { ...payload, status: 'active', borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID') };
                     const updatedTransactions = [newTransaction, ...transactions];
                     setTransactions(updatedTransactions);
-                    setInventory(calculateInventory(updatedTransactions));
+                    setInventory(calculateInventory(updatedTransactions, baseInventory));
                     
                     setBorrowForm({
-                        borrowerName: '', nim: '', purpose: '',
-                        borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
-                        returnDateEst: '', returnTimeEst: '', 
-                        items: [{ itemId: '', quantity: 1 }],
-                        approvalFileName: '', fileBase64: '', mimeType: ''
+                        borrowerName: '', nim: '', purpose: '', borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
+                        returnDateEst: '', returnTimeEst: '', items: [{ itemId: '', quantity: 1 }], approvalFileName: '', fileBase64: '', mimeType: ''
                     });
                     if (fileInputRef.current) fileInputRef.current.value = "";
                     
                     setActiveTab('transactions');
                     showNotification('Memproses peminjaman...');
 
-                    // Kirim ke server di latar belakang
                     await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify(payload)
                     });
-                    
                     showNotification('Peminjaman berhasil dicatat & tersimpan secara online!');
 
                 } catch (error) {
                     console.error('Info pengiriman fetch error:', error);
                     showNotification('Jaringan offline. Data tersimpan lokal & akan dikirim nanti.', 'error');
-                } finally {
-                    setIsSubmitting(false);
-                }
+                } finally { setIsSubmitting(false); }
             };
 
-            // KEMBALIKAN ALAT & UPDATE DI SPREADSHEET
             const handleReturn = async (transactionId) => {
                 if (window.confirm('Apakah alat sudah dikembalikan semua dalam kondisi baik?')) {
                     const trxIndex = transactions.findIndex(t => t.id === transactionId);
-                    
-                    // Update UI Instan
                     const newTransactions = [...transactions];
                     newTransactions[trxIndex].status = 'completed';
                     
                     setTransactions(newTransactions);
-                    setInventory(calculateInventory(newTransactions));
+                    setInventory(calculateInventory(newTransactions, baseInventory));
                     showNotification('Mensinkronisasi pengembalian ke sistem...');
 
-                    // Update Spreadsheet di latar belakang
                     try {
                         await fetch(GOOGLE_SCRIPT_URL, {
-                            method: 'POST',
-                            mode: 'no-cors',
-                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({ action: "updateStatus", id: transactionId, status: "completed" })
                         });
                     } catch(e) { console.error("Gagal sinkron pengembalian", e) }
                 }
             };
 
-            // HAPUS ALAT & HAPUS BARIS DI SPREADSHEET
             const handleDelete = async (transactionId) => {
                 if (window.confirm('PERINGATAN: Transaksi ini akan dihapus permanen dari memori DAN Google Spreadsheet Anda. Lanjutkan?')) {
-                    // Update UI Instan
                     const newTransactions = transactions.filter(t => t.id !== transactionId);
                     setTransactions(newTransactions);
-                    setInventory(calculateInventory(newTransactions));
+                    setInventory(calculateInventory(newTransactions, baseInventory));
                     showNotification('Menghapus data dari server...');
 
-                    // Hapus dari Spreadsheet
                     try {
                         await fetch(GOOGLE_SCRIPT_URL, {
-                            method: 'POST',
-                            mode: 'no-cors',
-                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({ action: "delete", id: transactionId })
                         });
                     } catch(e) { console.error("Gagal sinkron hapus", e) }
@@ -436,31 +401,62 @@
                 }
             };
 
-            const handleAddNewInventoryItem = (e) => {
+            // TAMBAH ALAT BARU (Update Frontend & Backend Spreadsheet)
+            const handleAddNewInventoryItem = async (e) => {
                 e.preventDefault();
                 if (!newItemForm.id || !newItemForm.category || !newItemForm.name || newItemForm.total <= 0) return showNotification('Data alat belum lengkap!', 'error');
-                if (inventory.some(i => i.id === newItemForm.id)) return showNotification('Kode Alat sudah digunakan!', 'error');
+                if (baseInventory.some(i => i.id === newItemForm.id)) return showNotification('Kode Alat sudah digunakan!', 'error');
                 
                 const newItem = { id: newItemForm.id, category: newItemForm.category, name: newItemForm.name, total: parseInt(newItemForm.total), available: parseInt(newItemForm.total) };
-                setInventory([newItem, ...inventory]); 
-                showNotification('Alat ditambahkan ke sesi ini', 'success');
+                
+                // Optimistic update
+                const updatedBaseInv = [newItem, ...baseInventory];
+                setBaseInventory(updatedBaseInv);
+                setInventory(calculateInventory(transactions, updatedBaseInv)); 
+                
+                showNotification('Menyimpan alat ke Database Spreadsheet...');
                 setNewItemForm({ id: '', category: '', name: '', total: 1 });
                 setShowAddForm(false);
+
+                // Sinkron ke Google Script
+                try {
+                    await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: "addInventory", item: newItem })
+                    });
+                    showNotification('Alat baru berhasil disimpan ke Database Spreadsheet!', 'success');
+                } catch(e) { 
+                    console.error("Gagal simpan inv", e);
+                    showNotification('Gagal tersimpan ke server, namun tersimpan lokal sementara.', 'error');
+                }
             };
 
-            const handleDeleteInventoryItem = (itemId) => {
+            // HAPUS ALAT (Update Frontend & Backend Spreadsheet)
+            const handleDeleteInventoryItem = async (itemId) => {
                 const item = inventory.find(i => i.id === itemId);
-                if (item.available < item.total) return showNotification('Tidak bisa menghapus alat yang dipinjam!', 'error');
-                if (window.confirm(`Hapus alat ${item.name}?`)) {
-                    setInventory(inventory.filter(i => i.id !== itemId));
+                if (item.available < item.total) return showNotification('Tidak bisa menghapus alat yang sedang dipinjam!', 'error');
+                
+                if (window.confirm(`Hapus alat ${item.name} permanen dari Database Spreadsheet?`)) {
+                    // Optimistic update
+                    const updatedBaseInv = baseInventory.filter(i => i.id !== itemId);
+                    setBaseInventory(updatedBaseInv);
+                    setInventory(calculateInventory(transactions, updatedBaseInv));
+
+                    showNotification('Menghapus alat dari Database...');
+                    // Sinkron ke Google Script
+                    try {
+                        await fetch(GOOGLE_SCRIPT_URL, {
+                            method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify({ action: "deleteInventory", id: itemId })
+                        });
+                        showNotification('Alat dihapus dari Database Spreadsheet.', 'success');
+                    } catch(e) { console.error("Gagal hapus inv", e) }
                 }
             };
 
             const renderDashboard = () => {
-                // Menghitung Grand Total Semua Inventaris
                 const grandTotalAlat = inventory.reduce((sum, item) => sum + item.total, 0);
 
-                // Hanya menghitung ketersediaan untuk kategori Alat Utama sesuai permintaan pengguna
                 const mainCategories = ['Total Station', 'GNSS', 'Laser Scanner', 'Hidrografi', 'Theodolite', 'Leveling', 'Fotogrametri'];
                 const dashboardInventory = inventory.filter(item => mainCategories.includes(item.category));
 
@@ -479,25 +475,22 @@
                 let mendekatiDeadlineCount = 0;
                 const lateTx = [];
 
-                // Hitung status hari untuk tabel Peminjaman Berjalan & Hitung Keterlambatan / Mendekati
                 activeTx.forEach(trx => {
                     const rDate = new Date(trx.returnDateEst);
                     rDate.setHours(0,0,0,0);
-                    const diffTime = rDate.getTime() - today.getTime();
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    const diffDays = Math.ceil((rDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
                     
                     trx.diffDays = diffDays; 
                     
                     if (diffDays < 0) {
                         lateTx.push(trx);
                     } else if (diffDays === 1 || diffDays === 2) {
-                        mendekatiDeadlineCount += trx.items.reduce((acc, item) => acc + parseInt(item.quantity), 0);
+                        mendekatiDeadlineCount += trx.items.reduce((acc, item) => acc + parseInt(item.jumlah || item.quantity), 0);
                     }
                 });
 
                 const persenTerlambat = activeTx.length === 0 ? 0 : Math.round((lateTx.length / activeTx.length) * 100);
 
-                // --- 1. Statistik Kategori Alat ---
                 const categories = [...new Set(dashboardInventory.map(i => i.category))];
                 const categoryStats = categories.map(cat => {
                     const itemsInCat = dashboardInventory.filter(i => i.category === cat);
@@ -517,15 +510,14 @@
                 }).join(', ');
                 const pieStyle = { background: `conic-gradient(${pieGradients})` };
 
-                // --- 2. Statistik Alat Paling Sering Dipinjam ---
                 const itemFrequency = {};
                 transactions.forEach(trx => {
                     if (!trx.items) return;
                     trx.items.forEach(item => {
-                        const match = item.name.match(/\[(.*?)\]/);
-                        const itemId = match ? match[1] : item.name;
-                        if (!itemFrequency[itemId]) itemFrequency[itemId] = { count: 0, name: item.name };
-                        itemFrequency[itemId].count += parseInt(item.quantity);
+                        const itemId = item.kode || (item.name && item.name.match(/\[(.*?)\]/) ? item.name.match(/\[(.*?)\]/)[1] : item.name);
+                        const itemName = item.nama ? `[${item.kode}] ${item.nama}` : item.name;
+                        if (!itemFrequency[itemId]) itemFrequency[itemId] = { count: 0, name: itemName };
+                        itemFrequency[itemId].count += parseInt(item.jumlah || item.quantity);
                     });
                 });
                 const topItems = Object.keys(itemFrequency)
@@ -533,7 +525,6 @@
                     .sort((a, b) => b.count - a.count)
                     .slice(0, 5);
 
-                // --- 3. Analisis Jenis Peminjaman ---
                 const purposeStats = {};
                 let totalPurposeCount = 0;
                 transactions.forEach(trx => {
@@ -572,7 +563,6 @@
                             </div>
                         )}
 
-                        {/* SECTION 1: Quick Stats */}
                         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                             <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
                                 <div className="flex justify-between items-start">
@@ -609,7 +599,6 @@
                             </div>
                         </div>
 
-                        {/* SECTION 2: Distribusi & Analisis Jenis */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
                                 <h3 className="text-lg font-bold text-gray-800 mb-6">Distribusi Alat Utama</h3>
@@ -653,7 +642,6 @@
                             </div>
                         </div>
 
-                        {/* SECTION 3: Paling Sering & Monitor Terlambat */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                                 <h3 className="text-lg font-bold text-gray-800 mb-4"><i className="fas fa-fire text-orange-500 mr-2"></i> Alat Paling Sering Dipinjam</h3>
@@ -692,9 +680,18 @@
                                             <div key={trx.id} className="bg-red-50 border-l-4 border-red-500 p-3 rounded-r-lg">
                                                 <div className="flex justify-between">
                                                     <p className="font-bold text-red-800 text-sm">{trx.borrowerName} <span className="font-normal text-xs text-red-600">({trx.nim})</span></p>
-                                                    <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded">Telat</span>
+                                                    <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded shadow-sm">Telat</span>
                                                 </div>
-                                                <p className="text-xs text-red-700 mt-1">Batas: {new Date(trx.returnDateEst).toLocaleDateString('id-ID')} {trx.returnTimeEst}</p>
+                                                <div className="mt-2 flex flex-col gap-1.5">
+                                                    <div className="flex items-center text-red-700 text-xs">
+                                                        <i className="far fa-calendar-times w-4 text-center mr-1.5"></i>
+                                                        <span className="font-medium">{formatDate(trx.returnDateEst)}</span>
+                                                    </div>
+                                                    <div className="flex items-center text-red-700 text-xs">
+                                                        <i className="far fa-clock w-4 text-center mr-1.5"></i>
+                                                        <span className="font-bold bg-white px-2 py-0.5 rounded shadow-sm font-mono tracking-widest">{formatTimeStr(trx.returnTimeEst)} WIB</span>
+                                                    </div>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -713,9 +710,9 @@
                                         <thead className="bg-slate-50 text-slate-600 border-y border-slate-200">
                                             <tr>
                                                 <th className="p-3 font-semibold">Info Peminjam</th>
+                                                <th className="p-3 font-semibold text-left">Waktu Pinjam</th>
+                                                <th className="p-3 font-semibold text-left">Batas Pengembalian</th>
                                                 <th className="p-3 font-semibold">Ringkasan Alat</th>
-                                                <th className="p-3 font-semibold">Waktu Pinjam</th>
-                                                <th className="p-3 font-semibold">Batas Pengembalian</th>
                                                 <th className="p-3 font-semibold text-center">Status Deadline</th>
                                             </tr>
                                         </thead>
@@ -738,43 +735,47 @@
 
                                                 return (
                                                 <tr key={trx.id} className={statusClassRow}>
-                                                    <td className="p-3">
+                                                    <td className="p-3 align-top">
                                                         <p className="font-bold text-gray-800">{trx.borrowerName}</p>
                                                         <p className="text-xs text-gray-500 mb-1">{trx.nim}</p>
                                                         <span className="inline-block bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">{trx.purpose || 'Lainnya'}</span>
                                                     </td>
-                                                    <td className="p-3 text-gray-700 whitespace-normal min-w-[200px]">
+                                                    {/* UPDATE TAMPILAN WAKTU PEMINJAMAN DI TAB TRANSAKSI */}
+                                                    <td className="p-3 align-top whitespace-nowrap">
+                                                        <div className="flex flex-col gap-2">
+                                                            <div className="flex items-center text-slate-700 text-sm">
+                                                                <i className="far fa-calendar-alt text-blue-500 w-5 text-center"></i>
+                                                                <span className="font-medium ml-1">{formatDate(trx.borrowDate)}</span>
+                                                            </div>
+                                                            <div className="flex items-center text-slate-700 text-sm">
+                                                                <i className="far fa-clock text-blue-500 w-5 text-center"></i>
+                                                                <span className="font-black ml-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md shadow-sm tracking-widest font-mono">{formatTimeStr(trx.borrowTime)} WIB</span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    {/* UPDATE TAMPILAN WAKTU PENGEMBALIAN DI TAB TRANSAKSI */}
+                                                    <td className="p-3 align-top whitespace-nowrap">
+                                                        <div className="flex flex-col gap-2">
+                                                            <div className="flex items-center text-slate-700 text-sm">
+                                                                <i className="far fa-calendar-check text-red-500 w-5 text-center"></i>
+                                                                <span className="font-medium ml-1">{formatDate(trx.returnDateEst)}</span>
+                                                            </div>
+                                                            <div className="flex items-center text-slate-700 text-sm">
+                                                                <i className="far fa-clock text-red-500 w-5 text-center"></i>
+                                                                <span className="font-black ml-1 bg-red-50 text-red-700 px-2 py-0.5 rounded-md shadow-sm tracking-widest font-mono">{formatTimeStr(trx.returnTimeEst)} WIB</span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-3 text-gray-700 whitespace-normal min-w-[200px] align-top">
                                                         <div className="flex flex-wrap gap-1">
                                                             {trx.items && trx.items.map((i, idx) => (
-                                                                <span key={idx} className="bg-white border border-gray-200 text-xs px-2 py-1 rounded text-gray-600 font-semibold shadow-sm">{i.name} ({i.quantity}x)</span>
+                                                                <span key={idx} className="bg-white border border-gray-200 text-xs px-2 py-1 rounded text-gray-600 font-semibold shadow-sm">
+                                                                    {i.nama ? `[${i.kode}] ${i.nama}` : i.name} ({i.jumlah || i.quantity}x)
+                                                                </span>
                                                             ))}
                                                         </div>
                                                     </td>
-                                                    <td className="p-3 text-xs">
-                                                        <div className="flex flex-col gap-1.5">
-                                                            <div className="flex items-center text-gray-700">
-                                                                <i className="far fa-calendar-alt w-4 text-blue-500 text-center"></i>
-                                                                <span className="font-medium ml-1.5">{formatDate(trx.borrowDate)}</span>
-                                                            </div>
-                                                            <div className="flex items-center text-gray-700">
-                                                                <i className="far fa-clock w-4 text-blue-500 text-center"></i>
-                                                                <span className="font-bold ml-1.5 bg-blue-50 px-1.5 py-0.5 rounded text-blue-700">{formatTimeStr(trx.borrowTime)} WIB</span>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-3 text-xs">
-                                                        <div className="flex flex-col gap-1.5">
-                                                            <div className="flex items-center text-gray-700">
-                                                                <i className="far fa-calendar-check w-4 text-red-500 text-center"></i>
-                                                                <span className="font-medium ml-1.5">{formatDate(trx.returnDateEst)}</span>
-                                                            </div>
-                                                            <div className="flex items-center text-red-700">
-                                                                <i className="far fa-clock w-4 text-center"></i>
-                                                                <span className="font-bold ml-1.5 bg-red-50 px-1.5 py-0.5 rounded">{formatTimeStr(trx.returnTimeEst)} WIB</span>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-3 text-center">
+                                                    <td className="p-3 text-center align-top">
                                                         {statusBadge}
                                                     </td>
                                                 </tr>
@@ -808,7 +809,7 @@
                         {isAdmin && (
                             <div className="mb-4">
                                 <button onClick={() => setShowAddForm(!showAddForm)} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition flex items-center ${showAddForm ? 'bg-slate-200 text-slate-700' : 'bg-slate-800 text-white'}`}>
-                                    <i className={`fas ${showAddForm ? 'fa-times' : 'fa-plus'} mr-2`}></i> {showAddForm ? 'Batal Tambah Alat' : 'Tambah Alat Baru (Sesi Ini)'}
+                                    <i className={`fas ${showAddForm ? 'fa-times' : 'fa-plus'} mr-2`}></i> {showAddForm ? 'Batal Tambah Alat' : 'Tambah Alat Baru'}
                                 </button>
                                 {showAddForm && (
                                     <form onSubmit={handleAddNewInventoryItem} className="mt-4 bg-blue-50/50 p-5 rounded-xl border border-blue-100 shadow-sm grid grid-cols-1 md:grid-cols-5 gap-4 items-end animate-fade-in">
@@ -966,58 +967,92 @@
                                 <table className="w-full text-left text-sm whitespace-nowrap">
                                     <thead className="bg-gray-800 text-white">
                                         <tr>
-                                            <th className="p-4">Info Peminjam</th><th className="p-4">Informasi Waktu</th><th className="p-4">Rincian Alat</th>
-                                            <th className="p-4 text-center">Status</th><th className="p-4 text-center">Aksi</th>
+                                            <th className="p-4">Info Peminjam</th>
+                                            <th className="p-4 text-left">Waktu Pinjam</th>
+                                            <th className="p-4 text-left">Batas Pengembalian</th>
+                                            <th className="p-4">Rincian Alat</th>
+                                            <th className="p-4 text-center">Status</th>
+                                            <th className="p-4 text-center">Aksi</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
-                                        {transactions.map(trx => (
-                                            <tr key={trx.id} className="hover:bg-gray-50">
-                                                <td className="p-4">
+                                        {transactions.map(trx => {
+                                            
+                                            // LOGIKA BARU: Status Terlambat di Tab Pengembalian
+                                            const today = new Date();
+                                            today.setHours(0,0,0,0);
+                                            const rDate = new Date(trx.returnDateEst);
+                                            rDate.setHours(0,0,0,0);
+                                            const diffDays = Math.ceil((rDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                                            
+                                            let badge;
+                                            if (trx.status === 'active') {
+                                                if (diffDays < 0) {
+                                                    badge = <span className="bg-red-100 text-red-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm border border-red-200"><i className="fas fa-times-circle mr-1"></i> Terlambat</span>;
+                                                } else {
+                                                    badge = <span className="bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm border border-orange-200">Dipinjam</span>;
+                                                }
+                                            } else {
+                                                badge = <span className="bg-green-100 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm border border-green-200">Selesai</span>;
+                                            }
+
+                                            return (
+                                            <tr key={trx.id} className={trx.status === 'active' && diffDays < 0 ? "bg-red-50/50 hover:bg-red-50 transition-colors" : "hover:bg-gray-50 transition-colors"}>
+                                                <td className="p-4 align-top">
                                                     <p className="font-bold text-gray-900 text-base">{trx.borrowerName}</p>
                                                     <p className="text-gray-500 text-xs mt-0.5">NIM: <span className="font-semibold">{trx.nim}</span></p>
-                                                    {trx.purpose && <p className="text-blue-600 text-xs font-semibold mt-1"><i className="fas fa-tag mr-1"></i> {trx.purpose}</p>}
+                                                    {trx.purpose && <p className="text-indigo-600 text-xs font-bold mt-1"><i className="fas fa-tag mr-1"></i> {trx.purpose}</p>}
                                                     
-                                                    {/* Link untuk membuka file jika Google Script mengembalikan URL File Google Drive */}
                                                     {trx.approvalFileUrl ? (
                                                         <a href={trx.approvalFileUrl} target="_blank" rel="noopener noreferrer" className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 w-max px-2 py-1 rounded-md shadow-sm hover:bg-blue-100 inline-flex items-center transition"><i className="fas fa-external-link-alt mr-1 text-red-500"></i> Buka Surat Izin</a>
                                                     ) : (
                                                         <div className="mt-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 w-max px-2 py-1 rounded-md"><i className="fas fa-file mr-1"></i> {trx.approvalFileName}</div>
                                                     )}
                                                 </td>
-                                                <td className="p-4">
-                                                    <div className="flex flex-col gap-3">
-                                                        <div className="flex items-start gap-2.5">
-                                                            <div className="bg-blue-50 text-blue-600 p-1.5 rounded-md flex items-center justify-center mt-0.5"><i className="fas fa-sign-out-alt text-[10px]"></i></div>
-                                                            <div>
-                                                                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Diambil</p>
-                                                                <p className="text-xs text-gray-800 font-medium">{formatDate(trx.borrowDate)} <span className="font-bold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded ml-1">{formatTimeStr(trx.borrowTime)} WIB</span></p>
-                                                            </div>
+                                                {/* UPDATE TAMPILAN WAKTU PEMINJAMAN DI TAB PENGEMBALIAN */}
+                                                <td className="p-4 align-top whitespace-nowrap">
+                                                    <div className="flex flex-col gap-2">
+                                                        <div className="flex items-center text-slate-700 text-sm">
+                                                            <i className="far fa-calendar-alt text-blue-500 w-5 text-center"></i>
+                                                            <span className="font-medium ml-1">{formatDate(trx.borrowDate)}</span>
                                                         </div>
-                                                        <div className="flex items-start gap-2.5">
-                                                            <div className="bg-red-50 text-red-500 p-1.5 rounded-md flex items-center justify-center mt-0.5"><i className="fas fa-sign-in-alt text-[10px]"></i></div>
-                                                            <div>
-                                                                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Tenggat Kembali</p>
-                                                                <p className="text-xs text-gray-800 font-medium">{formatDate(trx.returnDateEst)} <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded ml-1">{formatTimeStr(trx.returnTimeEst)} WIB</span></p>
-                                                            </div>
+                                                        <div className="flex items-center text-slate-700 text-sm">
+                                                            <i className="far fa-clock text-blue-500 w-5 text-center"></i>
+                                                            <span className="font-black ml-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md shadow-sm tracking-widest font-mono">{formatTimeStr(trx.borrowTime)} WIB</span>
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td className="p-4">
+                                                {/* UPDATE TAMPILAN WAKTU PENGEMBALIAN DI TAB PENGEMBALIAN */}
+                                                <td className="p-4 align-top whitespace-nowrap">
+                                                    <div className="flex flex-col gap-2">
+                                                        <div className="flex items-center text-slate-700 text-sm">
+                                                            <i className="far fa-calendar-check text-red-500 w-5 text-center"></i>
+                                                            <span className="font-medium ml-1">{formatDate(trx.returnDateEst)}</span>
+                                                        </div>
+                                                        <div className="flex items-center text-slate-700 text-sm">
+                                                            <i className="far fa-clock text-red-500 w-5 text-center"></i>
+                                                            <span className="font-black ml-1 bg-red-50 text-red-700 px-2 py-0.5 rounded-md shadow-sm tracking-widest font-mono">{formatTimeStr(trx.returnTimeEst)} WIB</span>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="p-4 align-top">
                                                     <ul className="list-none space-y-1">
                                                         {trx.items && trx.items.map((item, idx) => (
-                                                            <li key={idx} className="text-xs bg-slate-100 border border-slate-200 px-2 py-1 rounded">
-                                                                <span className="font-bold text-slate-700">{item.name}</span> <span className="font-bold text-blue-600 ml-1">x{item.quantity}</span>
+                                                            <li key={idx} className="text-xs bg-white border border-gray-200 px-2 py-1.5 rounded shadow-sm flex flex-col justify-center">
+                                                                <span className="font-bold text-slate-700">
+                                                                    {item.nama ? `[${item.kode}] ${item.nama}` : item.name}
+                                                                </span> 
+                                                                <span className="font-bold text-blue-600 mt-0.5 text-[10px] uppercase">
+                                                                    Jumlah: {item.jumlah || item.quantity} Unit
+                                                                </span>
                                                             </li>
                                                         ))}
                                                     </ul>
                                                 </td>
-                                                <td className="p-4 text-center">
-                                                    {trx.status === 'active' 
-                                                        ? <span className="bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm">Dipinjam</span>
-                                                        : <span className="bg-green-100 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm">Selesai</span>}
+                                                <td className="p-4 text-center align-top">
+                                                    {badge}
                                                 </td>
-                                                <td className="p-4 text-center">
+                                                <td className="p-4 text-center align-top">
                                                     {trx.status === 'active' ? (
                                                         isAdmin ? (
                                                             <button onClick={() => handleReturn(trx.id)} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full mb-2 shadow-sm"><i className="fas fa-undo mr-1"></i> Kembalikan</button>
@@ -1032,7 +1067,7 @@
                                                     )}
                                                 </td>
                                             </tr>
-                                        ))}
+                                        )})}
                                     </tbody>
                                 </table>
                             </div>
@@ -1041,7 +1076,6 @@
                 </div>
             );
 
-            // Layar loading putih murni hanya saat aplikasi PERTAMA KALI dibuka dan belum ada cache lokal
             if (isAppLoading) {
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
@@ -1071,7 +1105,7 @@
                         </div>
                         <div className="flex-grow p-4 space-y-2">
                             <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-chart-pie w-5"></i> <span className="font-medium">Dashboard</span></button>
-                            <button onClick={() => setActiveTab('inventory')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'inventory' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-clipboard-list w-5"></i> <span className="font-medium">Stok Alat</span></button>
+                            <button onClick={() => setActiveTab('inventory')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'inventory' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-clipboard-list w-5"></i> <span className="font-medium">Database Alat</span></button>
                             <button onClick={() => setActiveTab('borrow')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'borrow' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-edit w-5"></i> <span className="font-medium">Form Peminjaman</span></button>
                             <button onClick={() => setActiveTab('transactions')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'transactions' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800'}`}><i className="fas fa-history w-5"></i> <span className="font-medium">Pengembalian</span></button>
                         </div>
