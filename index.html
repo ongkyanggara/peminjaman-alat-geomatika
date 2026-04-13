@@ -282,9 +282,8 @@
                 localStorage.setItem('lab_inventory_v2', JSON.stringify(baseInventory));
             }, [transactions, baseInventory]);
 
-            // FETCH DATA DARI SPREADSHEET (SINKRONISASI LATAR BELAKANG & TRIGGER ANIMASI JAM)
+            // FETCH DATA DARI SPREADSHEET (SINKRONISASI LATAR BELAKANG)
             useEffect(() => {
-                // Update state currentTime setiap 1 detik. Ini men-trigger hitungan mundur agar beranimasi.
                 const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
                 const fetchDatabase = async () => {
@@ -296,19 +295,42 @@
                         
                         if (rawData.error) throw new Error("Server Error: " + rawData.error);
                         
+                        // Menarik data lokal paling baru sebagai pondasi
+                        const currentLocalInv = JSON.parse(localStorage.getItem('lab_inventory_v2') || JSON.stringify(initialInventory));
                         let txData = [];
-                        let invData = initialInventory;
+                        let invData = [];
 
                         if (Array.isArray(rawData)) {
+                            // FORMAT LAMA / SCRIPT BELUM DI UPDATE
                             txData = rawData;
+                            invData = currentLocalInv; // SELAMATKAN DATA LOKAL!
                         } else {
+                            // FORMAT BARU (TRANSACTIONS & INVENTORY)
                             txData = rawData.transactions || [];
-                            // Menarik Database Inventaris Dari Spreadsheet
+                            
                             if (rawData.inventory && rawData.inventory.length > 0) {
-                                invData = rawData.inventory.map(item => ({
+                                const serverInv = rawData.inventory.map(item => ({
                                     id: item.id, category: item.category, name: item.name, 
                                     total: item.total, available: item.total
                                 }));
+                                
+                                // PENGAMAN: Cek jika ada alat yang ditambahkan di web tapi belum masuk ke Spreadsheet
+                                const serverIds = new Set(serverInv.map(i => i.id));
+                                const unsyncedItems = currentLocalInv.filter(i => !serverIds.has(i.id));
+                                
+                                // Gabungkan alat dari Spreadsheet dengan alat yang baru ditambahkan
+                                invData = [...unsyncedItems, ...serverInv];
+
+                                // Secara diam-diam (background) kirim ulang data alat yang belum masuk ke Spreadsheet
+                                unsyncedItems.forEach(item => {
+                                    fetch(GOOGLE_SCRIPT_URL, {
+                                        method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                        body: JSON.stringify({ action: "addInventory", item: item })
+                                    }).catch(() => {});
+                                });
+
+                            } else {
+                                invData = currentLocalInv;
                             }
                         }
 
@@ -493,7 +515,7 @@
                 }
             };
 
-            // TAMBAH ALAT BARU (Update Frontend & Backend Spreadsheet)
+            // TAMBAH ALAT BARU 
             const handleAddNewInventoryItem = async (e) => {
                 e.preventDefault();
                 if (!newItemForm.id || !newItemForm.category || !newItemForm.name || newItemForm.total <= 0) return showNotification('Data alat belum lengkap!', 'error');
@@ -501,7 +523,7 @@
                 
                 const newItem = { id: newItemForm.id, category: newItemForm.category, name: newItemForm.name, total: parseInt(newItemForm.total), available: parseInt(newItemForm.total) };
                 
-                // Optimistic update
+                // Optimistic update - Langsung tampil di UI
                 const updatedBaseInv = [newItem, ...baseInventory];
                 setBaseInventory(updatedBaseInv);
                 setInventory(calculateInventory(transactions, updatedBaseInv)); 
@@ -516,14 +538,12 @@
                         method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: "addInventory", item: newItem })
                     });
-                    showNotification('Alat baru berhasil disimpan ke Database Spreadsheet!', 'success');
                 } catch(e) { 
                     console.error("Gagal simpan inv", e);
-                    showNotification('Gagal tersimpan ke server, namun tersimpan lokal sementara.', 'error');
                 }
             };
 
-            // HAPUS ALAT (Update Frontend & Backend Spreadsheet)
+            // HAPUS ALAT 
             const handleDeleteInventoryItem = async (itemId) => {
                 const item = inventory.find(i => i.id === itemId);
                 if (item.available < item.total) return showNotification('Tidak bisa menghapus alat yang sedang dipinjam!', 'error');
@@ -541,7 +561,6 @@
                             method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({ action: "deleteInventory", id: itemId })
                         });
-                        showNotification('Alat dihapus dari Database Spreadsheet.', 'success');
                     } catch(e) { console.error("Gagal hapus inv", e) }
                 }
             };
@@ -812,17 +831,16 @@
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {activeTx.map(trx => {
-                                                // Tentukan ulang live styling baris
-                                                const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
-                                                const diffMs = targetDate.getTime() - currentTime.getTime();
-                                                const isLate = diffMs <= 0;
-                                                const daysLeft = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                                                
                                                 let statusClassRow = "hover:bg-slate-50 transition-colors";
-                                                if (isLate) {
+
+                                                if (trx.isLate) {
                                                     statusClassRow = "bg-red-50/30 hover:bg-red-50 transition-colors";
-                                                } else if (daysLeft >= 0 && daysLeft <= 2) {
-                                                    statusClassRow = "bg-yellow-50/30 hover:bg-yellow-50 transition-colors";
+                                                } else {
+                                                    const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
+                                                    const diffDays = Math.floor((targetDate.getTime() - currentTime.getTime()) / (1000 * 60 * 60 * 24));
+                                                    if (diffDays >= 0 && diffDays <= 2) {
+                                                        statusClassRow = "bg-yellow-50/30 hover:bg-yellow-50 transition-colors";
+                                                    }
                                                 }
 
                                                 return (
@@ -1067,8 +1085,6 @@
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
                                         {transactions.map(trx => {
-                                            
-                                            // Tentukan apakah item terlambat secara live
                                             const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
                                             const diffMs = targetDate.getTime() - currentTime.getTime();
                                             const isLate = diffMs <= 0;
@@ -1115,21 +1131,15 @@
                                                     </div>
                                                 </td>
                                                 <td className="p-4 align-top">
-                                                    <ul className="list-none space-y-1.5 w-max">
+                                                    <div className="flex flex-col gap-1.5 w-max">
                                                         {trx.items && trx.items.map((item, idx) => (
-                                                            <li key={idx} className="text-xs bg-white border border-gray-200 px-2.5 py-1.5 rounded shadow-sm flex items-center justify-between gap-3">
-                                                                <span className="font-semibold text-gray-700">
-                                                                    {item.nama ? `[${item.kode}] ${item.nama}` : item.name}
-                                                                </span> 
-                                                                <span className="font-bold text-blue-600 bg-blue-50 px-1.5 rounded text-[10px]">
-                                                                    {item.jumlah || item.quantity}x
-                                                                </span>
-                                                            </li>
+                                                            <span key={idx} className="bg-white border border-gray-200 text-[11px] px-2.5 py-1 rounded shadow-sm text-gray-700 font-semibold w-full block">
+                                                                {item.nama ? `[${item.kode}] ${item.nama}` : item.name} <span className="text-blue-600 ml-1">({item.jumlah || item.quantity}x)</span>
+                                                            </span>
                                                         ))}
-                                                    </ul>
+                                                    </div>
                                                 </td>
                                                 <td className="p-4 text-center align-top">
-                                                    {/* MEMANGGIL BADGE LIVE ANIMASI HITUNG MUNDUR */}
                                                     {renderCountdownBadge(trx.returnDateEst, trx.returnTimeEst, trx.status)}
                                                 </td>
                                                 <td className="p-4 text-center align-top">
