@@ -84,7 +84,7 @@
             { id: 'TM-001-035', category: 'Aksesoris', name: 'Tripod / Statip', total: 35, available: 35 }
         ];
 
-        // FUNGSI UTAMA: Menghitung persediaan alat (Dinamis dari Spreadsheet)
+        // FUNGSI UTAMA: Menghitung persediaan alat
         const calculateInventory = (txData, baseInv) => {
             let currentInventory = JSON.parse(JSON.stringify(baseInv));
             txData.forEach(trx => {
@@ -124,16 +124,18 @@
             const [showAddForm, setShowAddForm] = useState(false);
             const [newItemForm, setNewItemForm] = useState({ id: '', category: '', name: '', total: 1 });
 
+            // Variabel state untuk Pengaturan Tabel Pengembalian (Filter & Paginasi)
+            const [txFilter, setTxFilter] = useState('Semua');
+            const [txLimit, setTxLimit] = useState(10);
+
             const fileInputRef = useRef(null);
-            
-            // WAKTU LIVE untuk jam dan trigger re-render perhitungan animasi mundur
             const [currentTime, setCurrentTime] = useState(new Date());
 
             // MASUKKAN URL GOOGLE APPS SCRIPT ANDA DI SINI
             const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPlSeyXWP0ALhXp4VqJ_NUmB433jHqLUn4hButn2UFzHu2J9hOfEeRlj-Zdky0TA_b/exec'; 
 
             const [borrowForm, setBorrowForm] = useState({
-                borrowerName: '', nim: '', purpose: '',
+                borrowerName: '', nim: '', purpose: '', praktikumCourse: '', praktikumClass: '',
                 borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
                 returnDateEst: '', returnTimeEst: '',
                 items: [{ itemId: '', quantity: 1 }],
@@ -148,7 +150,6 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
-            // LOGIKA: Format Tanggal Rapi (Akurat dengan Zona Waktu Lokal PC)
             const formatDate = (dateString) => {
                 if (!dateString) return '-';
                 const dPart = dateString.includes('T') ? dateString.split('T')[0] : dateString;
@@ -160,7 +161,6 @@
                 return new Date(dateString).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
             };
 
-            // LOGIKA BARU: Format Jam Murni
             const formatTimeStr = (timeStr) => {
                 if (!timeStr) return '-';
                 if (typeof timeStr === 'string' && timeStr.includes('T')) {
@@ -187,22 +187,32 @@
                 return String(timeStr).substring(0, 5); 
             };
 
-            // FUNGSI BANTUAN: Mengubah ms ke teks durasi (Misal: 2 Jam 15 Mnt)
+            // LOGIKA BARU: Teks Keterlambatan Profesional Bahasa Indonesia
             const getLatenessString = (ms) => {
-                const totalMins = Math.floor(ms / (1000 * 60));
-                if (totalMins <= 0) return "1 Mnt"; // Minimal 1 menit agar tidak 0
-                const d = Math.floor(totalMins / (60 * 24));
-                const h = Math.floor((totalMins % (60 * 24)) / 60);
-                const m = totalMins % 60;
+                const totalSecs = Math.floor(ms / 1000);
+                if (totalSecs <= 0) return "Beberapa detik";
+                
+                const d = Math.floor(totalSecs / (60 * 60 * 24));
+                const h = Math.floor((totalSecs % (60 * 60 * 24)) / (60 * 60));
+                const m = Math.floor((totalSecs % (60 * 60)) / 60);
+                const s = totalSecs % 60;
                 
                 let strArr = [];
-                if (d > 0) strArr.push(`${d} Hr`);
-                if (h > 0) strArr.push(`${h} Jam`);
-                if (m > 0 || (d === 0 && h === 0)) strArr.push(`${m} Mnt`);
+                if (d > 0) {
+                    strArr.push(`${d} Hari`);
+                    if (h > 0) strArr.push(`${h} Jam`);
+                } else if (h > 0) {
+                    strArr.push(`${h} Jam`);
+                    if (m > 0) strArr.push(`${m} Menit`);
+                } else if (m > 0) {
+                    strArr.push(`${m} Menit`);
+                    if (s > 0) strArr.push(`${s} Detik`);
+                } else {
+                    strArr.push(`${s} Detik`);
+                }
                 return strArr.join(' ');
             };
 
-            // LOGIKA SUPER PENTING: Penggabung Tanggal dan Jam menjadi satu Object Date (ANTI BUG ZONA WAKTU)
             const parseTargetDate = (dateStr, timeStr) => {
                 let year, month, day;
                 if (dateStr) {
@@ -236,27 +246,29 @@
                 return target;
             };
 
-            // FUNGSI SUPER: Menampilkan Badge Countdown atau Status Tuntas Beserta Keterlambatan
             const renderCountdownBadge = (returnDateEst, returnTimeEst, status) => {
-                
                 // --- BAGIAN UNTUK ALAT YANG SUDAH DIKEMBALIKAN (TUNTAS) ---
                 if (status && status.startsWith('completed')) {
                     let isLate = false;
                     let latenessStr = "";
                     let returnedDateUI = null;
                     
-                    // Cek jika memiliki catatan waktu nyata saat pengembalian
                     if (status.includes('|')) {
-                        const returnTimestamp = new Date(status.split('|')[1]);
+                        // Anti bug parser untuk safari/apple
+                        const safeISOString = status.split('|')[1].replace(' ', 'T');
+                        const returnTimestamp = new Date(safeISOString);
                         const targetDate = parseTargetDate(returnDateEst, returnTimeEst);
                         const diffMs = returnTimestamp.getTime() - targetDate.getTime();
                         
+                        // Menampilkan Jam Detik Tepat Sinkron HTML
+                        const timeAccurate = returnTimestamp.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false}).replace(/\./g, ':');
+
                         returnedDateUI = (
                             <div className="mt-2 pt-2 border-t border-gray-300/50 w-full text-center">
                                 <p className="text-[9px] text-gray-500 font-bold uppercase tracking-wider mb-1">Dikembalikan Pada:</p>
                                 <div className="flex justify-center items-center gap-1.5 text-xs text-gray-700">
                                     <span className="font-semibold">{formatDate(returnTimestamp.toISOString())}</span>
-                                    <span className="font-mono font-black bg-white px-1.5 py-0.5 rounded shadow-sm tracking-widest">{formatTimeStr(returnTimestamp.toISOString())}</span>
+                                    <span className="font-mono font-black bg-white px-1.5 py-0.5 rounded shadow-sm tracking-widest text-[10px]">{timeAccurate} WIB</span>
                                 </div>
                             </div>
                         );
@@ -376,7 +388,7 @@
                         if (Array.isArray(rawData)) {
                             txData = rawData;
                             invData = currentLocalInv; 
-                            showNotification("Info: Skrip Database di Google belum terupdate.", "error");
+                            // NOTIFIKASI ERROR GAGAL LOAD DIHILANGKAN SESUAI PERMINTAAN
                         } else {
                             txData = rawData.transactions || [];
                             
@@ -415,7 +427,7 @@
                         
                     } catch (error) {
                         console.error("Gagal terhubung ke Spreadsheet:", error);
-                        if (localSavedTx.length === 0) showNotification("Gagal memuat data dari server.", "error");
+                        if (localSavedTx.length === 0) showNotification("Koneksi offline. Menampilkan data tersimpan.", "error");
                     } finally {
                         setIsAppLoading(false);
                         setIsSyncing(false);
@@ -481,8 +493,14 @@
             const submitBorrow = async (e) => {
                 e.preventDefault();
                 
+                // Validasi data utama
                 if (!borrowForm.borrowerName || !borrowForm.nim || !borrowForm.purpose || !borrowForm.borrowDate || !borrowForm.borrowTime || !borrowForm.returnDateEst || !borrowForm.returnTimeEst || borrowForm.items.length === 0 || !borrowForm.fileBase64) {
                     showNotification('Mohon lengkapi data diri, keperluan, jam, daftar alat, dan unggah surat izin', 'error'); return;
+                }
+
+                // Validasi khusus Praktikum
+                if (borrowForm.purpose === 'Praktikum' && (!borrowForm.praktikumCourse || !borrowForm.praktikumClass)) {
+                    showNotification('Mohon lengkapi Mata Kuliah dan Kelas Praktikum', 'error'); return;
                 }
 
                 for (let item of borrowForm.items) {
@@ -502,8 +520,13 @@
                     return { kode: invItem.id, nama: invItem.name, jumlah: parseInt(item.quantity) };
                 });
 
+                // Menggabungkan pilihan Praktikum menjadi satu text rapi untuk di-save ke database Spreadsheet
+                const finalPurpose = borrowForm.purpose === 'Praktikum' 
+                    ? `Praktikum - ${borrowForm.praktikumCourse} (Kelas ${borrowForm.praktikumClass})` 
+                    : borrowForm.purpose;
+
                 const payload = {
-                    action: "create", id: newTransactionId, borrowerName: borrowForm.borrowerName, nim: borrowForm.nim, purpose: borrowForm.purpose,
+                    action: "create", id: newTransactionId, borrowerName: borrowForm.borrowerName, nim: borrowForm.nim, purpose: finalPurpose,
                     borrowDate: borrowForm.borrowDate, borrowTime: borrowForm.borrowTime, returnDateEst: borrowForm.returnDateEst, returnTimeEst: borrowForm.returnTimeEst,
                     approvalFileName: borrowForm.approvalFileName, fileBase64: borrowForm.fileBase64, mimeType: borrowForm.mimeType, items: alatLengkap
                 };
@@ -515,7 +538,8 @@
                     setInventory(calculateInventory(updatedTransactions, baseInventory));
                     
                     setBorrowForm({
-                        borrowerName: '', nim: '', purpose: '', borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
+                        borrowerName: '', nim: '', purpose: '', praktikumCourse: '', praktikumClass: '', 
+                        borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
                         returnDateEst: '', returnTimeEst: '', items: [{ itemId: '', quantity: 1 }], approvalFileName: '', fileBase64: '', mimeType: ''
                     });
                     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -535,16 +559,17 @@
                 } finally { setIsSubmitting(false); }
             };
 
-            // Merekam Waktu Tuntas untuk mengetahui telat / tidak secara permanen ke Database
             const handleReturn = async (transactionId) => {
                 if (window.confirm('Apakah alat sudah dikembalikan semua dalam kondisi baik?')) {
                     const trxIndex = transactions.findIndex(t => t.id === transactionId);
                     const newTransactions = [...transactions];
                     
-                    // Mendapatkan jam saat ini langsung sebagai penanda waktu kembali
-                    const returnTimestamp = new Date().toISOString(); 
-                    const newStatusRecord = `completed|${returnTimestamp}`;
+                    // FORMAT JAM CLEAR SPREADSHEET (Contoh: 2026-04-13 13:49:39)
+                    const now = new Date();
+                    const pad = n => String(n).padStart(2, '0');
+                    const returnTimestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
                     
+                    const newStatusRecord = `completed|${returnTimestamp}`;
                     newTransactions[trxIndex].status = newStatusRecord;
                     
                     setTransactions(newTransactions);
@@ -713,24 +738,21 @@
                 }).join(', ');
                 const pieStyle = { background: `conic-gradient(${pieGradients})` };
 
-                // LOGIKA BARU: MENGHITUNG DURASI TOTAL PENGGUNAAN ALAT DALAM JAM
                 const itemFrequency = {};
                 transactions.forEach(trx => {
                     if (!trx.items) return;
                     
-                    // Hitung durasi pemakaian (Jam)
                     let durationMs = 0;
                     const startDate = parseTargetDate(trx.borrowDate, trx.borrowTime);
                     
                     if (trx.status && trx.status.startsWith('completed|')) {
-                        const returnTimestamp = new Date(trx.status.split('|')[1]);
+                        const returnTimestamp = new Date(trx.status.split('|')[1].replace(' ', 'T'));
                         durationMs = returnTimestamp.getTime() - startDate.getTime();
                     } else {
-                        // Untuk yang masih dipinjam, hitung load berdasarkan durasi aktual hingga saat ini atau targetnya
                         const endDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
                         const now = currentTime.getTime();
                         if (endDate.getTime() < now) {
-                            durationMs = now - startDate.getTime(); // Kalau telat, loadnya makin besar
+                            durationMs = now - startDate.getTime();
                         } else {
                             durationMs = endDate.getTime() - startDate.getTime();
                         }
@@ -754,7 +776,7 @@
                         id, 
                         count: itemFrequency[id].count, 
                         name: itemFrequency[id].name,
-                        hours: Math.ceil(itemFrequency[id].totalHours) // Bulatkan ke atas
+                        hours: Math.ceil(itemFrequency[id].totalHours)
                     }))
                     .sort((a, b) => b.count - a.count)
                     .slice(0, 5);
@@ -895,7 +917,6 @@
                                                     <div><p className="text-sm font-bold text-gray-800">{item.name}</p></div>
                                                 </div>
                                                 
-                                                {/* UPDATE TAMPILAN: MENAMBAHKAN TOTAL PEMAKAIAN JAM */}
                                                 <div className="text-right flex flex-col items-end gap-1">
                                                     <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold w-max">{item.count}x Dipinjam</span>
                                                     <span className="text-[10px] font-bold text-slate-500"><i className="fas fa-history mr-1 text-slate-400"></i>Load: {item.hours} Jam</span>
@@ -1130,49 +1151,83 @@
                                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Nama Peminjam / Kelompok</label><input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowerName} onChange={e => setBorrowForm({...borrowForm, borrowerName: e.target.value})} placeholder="Contoh: Kelompok 1 - Budi" /></div>
                                 <div><label className="block text-sm font-medium text-gray-700 mb-1">NIM / ID Anggota</label><input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.nim} onChange={e => setBorrowForm({...borrowForm, nim: e.target.value})} placeholder="Masukkan NIM" /></div>
                                 
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Keperluan Peminjaman</label>
-                                    <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white" value={borrowForm.purpose} onChange={e => setBorrowForm({...borrowForm, purpose: e.target.value})}>
-                                        <option value="" disabled>-- Pilih Keperluan --</option>
-                                        <option value="Praktikum">Praktikum</option>
-                                        <option value="Tugas akhir">Tugas Akhir</option>
-                                        <option value="Penelitian">Penelitian</option>
-                                        <option value="Proyek">Proyek</option>
-                                        <option value="Lainnya">Lainnya</option>
-                                    </select>
+                                {/* LOGIKA BARU: Opsi Dropdown Praktikum Tampil Jika Dipilih */}
+                                <div className={borrowForm.purpose === 'Praktikum' ? "md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4" : "md:col-span-2"}>
+                                    <div className={borrowForm.purpose === 'Praktikum' ? "md:col-span-2" : ""}>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Keperluan Peminjaman</label>
+                                        <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer" value={borrowForm.purpose} onChange={e => setBorrowForm({...borrowForm, purpose: e.target.value, praktikumCourse: '', praktikumClass: ''})}>
+                                            <option value="" disabled>-- Pilih Keperluan --</option>
+                                            <option value="Praktikum">Praktikum</option>
+                                            <option value="Tugas akhir">Tugas Akhir</option>
+                                            <option value="Penelitian">Penelitian</option>
+                                            <option value="Proyek">Proyek</option>
+                                            <option value="Lainnya">Lainnya</option>
+                                        </select>
+                                    </div>
+                                    
+                                    {borrowForm.purpose === 'Praktikum' && (
+                                        <>
+                                            <div className="animate-fade-in">
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Mata Kuliah Praktikum</label>
+                                                <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer" value={borrowForm.praktikumCourse} onChange={e => setBorrowForm({...borrowForm, praktikumCourse: e.target.value})}>
+                                                    <option value="" disabled>-- Pilih Mata Kuliah --</option>
+                                                    <option value="Survei Kontruksi">Survei Kontruksi</option>
+                                                    <option value="Pemetaan Dasar">Pemetaan Dasar</option>
+                                                    <option value="Pemetaan Terestris">Pemetaan Terestris</option>
+                                                    <option value="Hidrografi I">Hidrografi I</option>
+                                                    <option value="Hidrografi II">Hidrografi II</option>
+                                                    <option value="Kemah Kerja">Kemah Kerja</option>
+                                                    <option value="Survei GNSS">Survei GNSS</option>
+                                                    <option value="Fotogrametri Dasar">Fotogrametri Dasar</option>
+                                                    <option value="Fotogrametri Lanjut">Fotogrametri Lanjut</option>
+                                                    <option value="Pemetaan Radar dan LiDAR">Pemetaan Radar dan LiDAR</option>
+                                                </select>
+                                            </div>
+                                            <div className="animate-fade-in">
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Kelas</label>
+                                                <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer" value={borrowForm.praktikumClass} onChange={e => setBorrowForm({...borrowForm, praktikumClass: e.target.value})}>
+                                                    <option value="" disabled>-- Pilih Kelas --</option>
+                                                    <option value="RA">RA</option>
+                                                    <option value="RB">RB</option>
+                                                    <option value="RC">RC</option>
+                                                </select>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
 
+                                {/* LOGIKA BARU: Input Jam dengan showPicker() agar mudah di-klik */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal & Jam Pengambilan</label>
-                                    <div className="flex gap-2">
-                                        <input type="date" required className="w-3/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={borrowForm.borrowDate} onChange={e => setBorrowForm({...borrowForm, borrowDate: e.target.value})} />
-                                        <input type="time" required className="w-2/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm font-bold" value={borrowForm.borrowTime} onChange={e => setBorrowForm({...borrowForm, borrowTime: e.target.value})} />
+                                    <div className="flex gap-2 relative">
+                                        <input type="date" required className="w-3/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm cursor-pointer" value={borrowForm.borrowDate} onChange={e => setBorrowForm({...borrowForm, borrowDate: e.target.value})} onClick={(e) => e.target.showPicker && e.target.showPicker()} />
+                                        <input type="time" required className="w-2/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm font-bold cursor-pointer" value={borrowForm.borrowTime} onChange={e => setBorrowForm({...borrowForm, borrowTime: e.target.value})} onClick={(e) => e.target.showPicker && e.target.showPicker()} title="Klik untuk memilih jam" />
                                     </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Estimasi Tanggal & Jam Pemulangan</label>
-                                    <div className="flex gap-2">
-                                        <input type="date" required className="w-3/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" value={borrowForm.returnDateEst} onChange={e => setBorrowForm({...borrowForm, returnDateEst: e.target.value})} />
-                                        <input type="time" required className="w-2/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm font-bold" value={borrowForm.returnTimeEst} onChange={e => setBorrowForm({...borrowForm, returnTimeEst: e.target.value})} />
+                                    <div className="flex gap-2 relative">
+                                        <input type="date" required className="w-3/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm cursor-pointer" value={borrowForm.returnDateEst} onChange={e => setBorrowForm({...borrowForm, returnDateEst: e.target.value})} onClick={(e) => e.target.showPicker && e.target.showPicker()} />
+                                        <input type="time" required className="w-2/5 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm font-bold cursor-pointer" value={borrowForm.returnTimeEst} onChange={e => setBorrowForm({...borrowForm, returnTimeEst: e.target.value})} onClick={(e) => e.target.showPicker && e.target.showPicker()} title="Klik untuk memilih jam" />
                                     </div>
                                 </div>
                                 
                                 <div className="md:col-span-2 bg-blue-50 p-4 rounded-xl border border-blue-200 mt-2">
                                     <label className="block text-sm font-bold text-blue-900 mb-2"><i className="fas fa-file-upload mr-2"></i> Unggah Surat Izin Peminjaman (PDF/Gambar, Max 3MB)</label>
-                                    <input type="file" accept=".pdf, image/jpeg, image/png" ref={fileInputRef} required onChange={handleFileChange} className="w-full text-sm text-gray-600 bg-white border border-blue-300 rounded-lg p-2" />
+                                    <input type="file" accept=".pdf, image/jpeg, image/png" ref={fileInputRef} required onChange={handleFileChange} className="w-full text-sm text-gray-600 bg-white border border-blue-300 rounded-lg p-2 cursor-pointer" />
                                 </div>
                             </div>
 
                             <div className="border-t pt-4">
                                 <div className="flex justify-between items-center mb-3">
                                     <label className="block text-sm font-bold text-gray-800">Daftar Alat yang Dipinjam</label>
-                                    <button type="button" onClick={handleAddBorrowItem} className="text-sm bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold"><i className="fas fa-plus mr-1"></i> Tambah Alat</button>
+                                    <button type="button" onClick={handleAddBorrowItem} className="text-sm bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-200 transition-colors"><i className="fas fa-plus mr-1"></i> Tambah Alat</button>
                                 </div>
                                 <div className="space-y-3">
                                     {borrowForm.items.map((item, index) => (
                                         <div key={index} className="flex flex-col md:flex-row gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 items-center">
                                             <span className="font-bold text-slate-400 hidden md:block">{index + 1}.</span>
-                                            <select className="flex-grow w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={item.itemId} onChange={e => handleBorrowItemChange(index, 'itemId', e.target.value)} required>
+                                            <select className="flex-grow w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 cursor-pointer" value={item.itemId} onChange={e => handleBorrowItemChange(index, 'itemId', e.target.value)} required>
                                                 <option value="" disabled>-- Pilih Alat Sesuai Kategori --</option>
                                                 {Object.keys(inventoryByCategory).map(category => (
                                                     <optgroup key={category} label={`--- KATEGORI: ${category.toUpperCase()} ---`}>
@@ -1188,7 +1243,7 @@
                                                 <label className="text-xs font-bold text-slate-600 md:hidden">Jumlah:</label>
                                                 <input type="number" min="1" className="w-full md:w-24 p-2 border border-slate-300 rounded-lg text-center font-bold" value={item.quantity} onChange={e => handleBorrowItemChange(index, 'quantity', e.target.value)} required />
                                                 {borrowForm.items.length > 1 && (
-                                                    <button type="button" onClick={() => handleRemoveBorrowItem(index)} className="p-2 text-red-500 bg-red-50 rounded-lg"><i className="fas fa-trash-alt"></i></button>
+                                                    <button type="button" onClick={() => handleRemoveBorrowItem(index)} className="p-2 text-red-500 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"><i className="fas fa-trash-alt"></i></button>
                                                 )}
                                             </div>
                                         </div>
@@ -1205,128 +1260,188 @@
                 );
             };
 
-            const renderTransactions = () => (
-                <div className="space-y-6 animate-fade-in">
-                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Status & Pengembalian Alat</h2>
-                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                        {transactions.length === 0 ? (
-                            <div className="p-10 text-center text-gray-400"><i className="fas fa-clipboard-check text-5xl mb-4 opacity-30"></i><p className="font-medium text-lg">Belum ada histori peminjaman.</p></div>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left text-sm whitespace-nowrap">
-                                    <thead className="bg-gray-800 text-white">
-                                        <tr>
-                                            <th className="p-4">Info Peminjam</th>
-                                            <th className="p-4 text-left">Waktu Pinjam</th>
-                                            <th className="p-4 text-left">Batas Pengembalian</th>
-                                            <th className="p-4">Rincian Alat</th>
-                                            <th className="p-4 text-center">Status Pengembalian</th>
-                                            <th className="p-4 text-center">Aksi</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-100">
-                                        {transactions.map(trx => {
-                                            const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
-                                            const diffMs = targetDate.getTime() - currentTime.getTime();
-                                            const isLate = diffMs <= 0;
+            const renderTransactions = () => {
+                // LOGIKA BARU: Helper untuk menentukan kategori status
+                const getTxCategory = (trx) => {
+                    if (trx.status === 'active') {
+                        const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
+                        if (targetDate.getTime() - currentTime.getTime() <= 0) return 'Terlambat';
+                        return 'Dipinjam';
+                    } else if (trx.status && trx.status.startsWith('completed')) {
+                        let isLate = false;
+                        if (trx.status.includes('|')) {
+                            const safeISOString = trx.status.split('|')[1].replace(' ', 'T');
+                            const returnTimestamp = new Date(safeISOString);
+                            const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
+                            if (returnTimestamp.getTime() > targetDate.getTime()) isLate = true;
+                        }
+                        return isLate ? 'Terlambat' : 'Tepat Waktu';
+                    }
+                    return 'Tepat Waktu'; // Default fallback untuk completed lama
+                };
 
-                                            // PENENTU WARNA BARIS TABEL
-                                            let rowClass = "hover:bg-gray-50 transition-colors";
-                                            if (trx.status === 'active') {
-                                                if (isLate) {
-                                                    rowClass = "bg-red-50/50 hover:bg-red-50 transition-colors";
-                                                }
-                                            } else if (trx.status.startsWith('completed|')) {
-                                                const returnTimestamp = new Date(trx.status.split('|')[1]);
-                                                if (returnTimestamp.getTime() > targetDate.getTime()) {
-                                                    rowClass = "bg-red-50/30 hover:bg-red-50 transition-colors";
-                                                } else {
-                                                    rowClass = "bg-green-50/30 hover:bg-green-50 transition-colors";
-                                                }
-                                            }
+                // Urutkan berdasarkan waktu paling baru
+                const sortedTx = [...transactions].sort((a, b) => {
+                    const dateA = new Date(a.borrowDate + 'T' + (a.borrowTime ? a.borrowTime.substring(0,5) : '00:00')).getTime();
+                    const dateB = new Date(b.borrowDate + 'T' + (b.borrowTime ? b.borrowTime.substring(0,5) : '00:00')).getTime();
+                    return dateB - dateA;
+                });
 
-                                            return (
-                                            <tr key={trx.id} className={rowClass}>
-                                                <td className="p-4 align-top">
-                                                    <p className="font-bold text-gray-900 text-base">{trx.borrowerName}</p>
-                                                    <p className="text-gray-500 text-xs mt-0.5">NIM: <span className="font-semibold">{trx.nim}</span></p>
-                                                    {trx.purpose && <p className="text-indigo-600 text-xs font-bold mt-1"><i className="fas fa-tag mr-1"></i> {trx.purpose}</p>}
-                                                    
-                                                    {trx.approvalFileUrl ? (
-                                                        <a href={trx.approvalFileUrl} target="_blank" rel="noopener noreferrer" className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 w-max px-2 py-1 rounded-md shadow-sm hover:bg-blue-100 inline-flex items-center transition"><i className="fas fa-external-link-alt mr-1 text-red-500"></i> Buka Surat Izin</a>
-                                                    ) : (
-                                                        <div className="mt-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 w-max px-2 py-1 rounded-md"><i className="fas fa-file mr-1"></i> {trx.approvalFileName}</div>
-                                                    )}
-                                                </td>
-                                                <td className="p-4 align-top whitespace-nowrap">
-                                                    <div className="flex flex-col gap-2 text-sm">
-                                                        <div className="flex items-center text-blue-600 font-medium">
-                                                            <i className="far fa-calendar-alt w-5 text-center"></i>
-                                                            <span className="ml-1 text-gray-700">{formatDate(trx.borrowDate)}</span>
-                                                        </div>
-                                                        <div className="flex items-center text-blue-600">
-                                                            <i className="far fa-clock w-5 text-center"></i>
-                                                            <span className="ml-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md shadow-sm font-mono font-bold tracking-widest">
-                                                                {formatTimeStr(trx.borrowTime)} WIB
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="p-4 align-top whitespace-nowrap">
-                                                    <div className="flex flex-col gap-2 text-sm">
-                                                        <div className="flex items-center text-red-500 font-medium">
-                                                            <i className="far fa-calendar-check w-5 text-center"></i>
-                                                            <span className="ml-1 text-gray-700">{formatDate(trx.returnDateEst)}</span>
-                                                        </div>
-                                                        <div className="flex items-center text-red-500">
-                                                            <i className="far fa-clock w-5 text-center"></i>
-                                                            <span className="ml-1 bg-red-50 text-red-700 px-2 py-0.5 rounded-md shadow-sm font-mono font-bold tracking-widest">
-                                                                {formatTimeStr(trx.returnTimeEst)} WIB
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="p-4 align-top">
-                                                    <div className="flex flex-col gap-1.5 w-max">
-                                                        {trx.items && trx.items.map((item, idx) => (
-                                                            <span key={idx} className="bg-white border border-gray-200 text-[11px] px-2.5 py-1 rounded shadow-sm text-gray-700 font-semibold w-full block">
-                                                                {item.nama ? `[${item.kode}] ${item.nama}` : item.name} <span className="text-blue-600 ml-1">({item.jumlah || item.quantity}x)</span>
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                </td>
-                                                <td className="p-4 text-center align-top">
-                                                    {renderCountdownBadge(trx.returnDateEst, trx.returnTimeEst, trx.status)}
-                                                </td>
-                                                <td className="p-4 text-center align-top">
-                                                    {trx.status === 'active' ? (
-                                                        isAdmin ? (
-                                                            <button onClick={() => handleReturn(trx.id)} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full mb-2 shadow-sm"><i className="fas fa-undo mr-1"></i> Kembalikan</button>
-                                                        ) : (
-                                                            <span className="text-orange-500 text-xs italic font-medium block mb-2">Menunggu Pengembalian</span>
-                                                        )
-                                                    ) : (
-                                                        <span className="text-gray-400 text-xs italic font-medium block mb-2">Telah Selesai</span>
-                                                    )}
-                                                    {isAdmin && (
-                                                        <button onClick={() => handleDelete(trx.id)} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full shadow-sm"><i className="fas fa-trash-alt mr-1"></i> Hapus</button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        )})}
-                                    </tbody>
-                                </table>
+                // Terapkan Filter
+                const filteredTx = sortedTx.filter(trx => {
+                    if (txFilter === 'Semua') return true;
+                    return getTxCategory(trx) === txFilter;
+                });
+
+                // Terapkan Paginasi/Limit Baris
+                const displayedTx = txLimit === 'Semua' ? filteredTx : filteredTx.slice(0, txLimit);
+
+                return (
+                    <div className="space-y-6 animate-fade-in">
+                        <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Status & Pengembalian Alat</h2>
+                        
+                        {/* PANEL PENGATURAN FILTER & PAGINASI */}
+                        <div className="flex flex-col md:flex-row justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                            <div className="flex items-center gap-3">
+                                <label className="text-sm font-bold text-gray-700 w-24 md:w-auto"><i className="fas fa-filter mr-1 text-blue-500"></i> Filter:</label>
+                                <select className="w-full md:w-auto p-2 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer" value={txFilter} onChange={(e) => setTxFilter(e.target.value)}>
+                                    <option value="Semua">Semua Peminjaman</option>
+                                    <option value="Dipinjam">Sedang Dipinjam</option>
+                                    <option value="Tepat Waktu">Dikembalikan (Tepat Waktu)</option>
+                                    <option value="Terlambat">Terlambat (Belum/Sudah Kembali)</option>
+                                </select>
                             </div>
-                        )}
+                            <div className="flex items-center gap-3">
+                                <label className="text-sm font-bold text-gray-700 w-24 md:w-auto"><i className="fas fa-list-ol mr-1 text-blue-500"></i> Tampilkan:</label>
+                                <select className="w-full md:w-auto p-2 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer" value={txLimit} onChange={(e) => setTxLimit(e.target.value === 'Semua' ? 'Semua' : parseInt(e.target.value))}>
+                                    <option value={10}>10 Baris Teratas</option>
+                                    <option value={25}>25 Baris Teratas</option>
+                                    <option value={50}>50 Baris Teratas</option>
+                                    <option value="Semua">Semua Data</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                            {displayedTx.length === 0 ? (
+                                <div className="p-10 text-center text-gray-400">
+                                    <i className="fas fa-clipboard-check text-5xl mb-4 opacity-30"></i>
+                                    <p className="font-medium text-lg">Tidak ada data yang sesuai filter.</p>
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm whitespace-nowrap">
+                                        <thead className="bg-gray-800 text-white">
+                                            <tr>
+                                                <th className="p-4">Info Peminjam</th>
+                                                <th className="p-4 text-left">Waktu Pinjam</th>
+                                                <th className="p-4 text-left">Batas Pengembalian</th>
+                                                <th className="p-4">Rincian Alat</th>
+                                                <th className="p-4 text-center">Status Pengembalian</th>
+                                                <th className="p-4 text-center">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {displayedTx.map(trx => {
+                                                const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
+                                                const diffMs = targetDate.getTime() - currentTime.getTime();
+                                                const isLate = diffMs <= 0;
+
+                                                let rowClass = "hover:bg-gray-50 transition-colors";
+                                                if (trx.status === 'active') {
+                                                    if (isLate) rowClass = "bg-red-50/50 hover:bg-red-50 transition-colors";
+                                                } else if (trx.status.startsWith('completed|')) {
+                                                    const returnTimestamp = new Date(trx.status.split('|')[1].replace(' ', 'T'));
+                                                    if (returnTimestamp.getTime() > targetDate.getTime()) {
+                                                        rowClass = "bg-red-50/30 hover:bg-red-50 transition-colors";
+                                                    } else {
+                                                        rowClass = "bg-green-50/30 hover:bg-green-50 transition-colors";
+                                                    }
+                                                }
+
+                                                return (
+                                                <tr key={trx.id} className={rowClass}>
+                                                    <td className="p-4 align-top">
+                                                        <p className="font-bold text-gray-900 text-base">{trx.borrowerName}</p>
+                                                        <p className="text-gray-500 text-xs mt-0.5">NIM: <span className="font-semibold">{trx.nim}</span></p>
+                                                        {trx.purpose && <p className="text-indigo-600 text-xs font-bold mt-1"><i className="fas fa-tag mr-1"></i> {trx.purpose}</p>}
+                                                        
+                                                        {trx.approvalFileUrl ? (
+                                                            <a href={trx.approvalFileUrl} target="_blank" rel="noopener noreferrer" className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 w-max px-2 py-1 rounded-md shadow-sm hover:bg-blue-100 inline-flex items-center transition"><i className="fas fa-external-link-alt mr-1 text-red-500"></i> Buka Surat Izin</a>
+                                                        ) : (
+                                                            <div className="mt-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 w-max px-2 py-1 rounded-md"><i className="fas fa-file mr-1"></i> {trx.approvalFileName}</div>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-4 align-top whitespace-nowrap">
+                                                        <div className="flex flex-col gap-2 text-sm">
+                                                            <div className="flex items-center text-blue-600 font-medium">
+                                                                <i className="far fa-calendar-alt w-5 text-center"></i>
+                                                                <span className="ml-1 text-gray-700">{formatDate(trx.borrowDate)}</span>
+                                                            </div>
+                                                            <div className="flex items-center text-blue-600">
+                                                                <i className="far fa-clock w-5 text-center"></i>
+                                                                <span className="ml-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md shadow-sm font-mono font-bold tracking-widest">
+                                                                    {formatTimeStr(trx.borrowTime)} WIB
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-4 align-top whitespace-nowrap">
+                                                        <div className="flex flex-col gap-2 text-sm">
+                                                            <div className="flex items-center text-red-500 font-medium">
+                                                                <i className="far fa-calendar-check w-5 text-center"></i>
+                                                                <span className="ml-1 text-gray-700">{formatDate(trx.returnDateEst)}</span>
+                                                            </div>
+                                                            <div className="flex items-center text-red-500">
+                                                                <i className="far fa-clock w-5 text-center"></i>
+                                                                <span className="ml-1 bg-red-50 text-red-700 px-2 py-0.5 rounded-md shadow-sm font-mono font-bold tracking-widest">
+                                                                    {formatTimeStr(trx.returnTimeEst)} WIB
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-4 align-top">
+                                                        <div className="flex flex-col gap-1.5 w-max">
+                                                            {trx.items && trx.items.map((item, idx) => (
+                                                                <span key={idx} className="bg-white border border-gray-200 text-[11px] px-2.5 py-1 rounded shadow-sm text-gray-700 font-semibold w-full block">
+                                                                    {item.nama ? `[${item.kode}] ${item.nama}` : item.name} <span className="text-blue-600 ml-1">({item.jumlah || item.quantity}x)</span>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-4 text-center align-top">
+                                                        {renderCountdownBadge(trx.returnDateEst, trx.returnTimeEst, trx.status)}
+                                                    </td>
+                                                    <td className="p-4 text-center align-top">
+                                                        {trx.status === 'active' ? (
+                                                            isAdmin ? (
+                                                                <button onClick={() => handleReturn(trx.id)} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full mb-2 shadow-sm"><i className="fas fa-undo mr-1"></i> Kembalikan</button>
+                                                            ) : (
+                                                                <span className="text-orange-500 text-xs italic font-medium block mb-2">Menunggu Pengembalian</span>
+                                                            )
+                                                        ) : (
+                                                            <span className="text-gray-400 text-xs italic font-medium block mb-2">Telah Selesai</span>
+                                                        )}
+                                                        {isAdmin && (
+                                                            <button onClick={() => handleDelete(trx.id)} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold w-full shadow-sm"><i className="fas fa-trash-alt mr-1"></i> Hapus</button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            )})}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
-            );
+                );
+            };
 
             if (isAppLoading) {
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
                         <i className="fas fa-sync fa-spin text-4xl text-blue-600 mb-4"></i>
-                        <h2 className="text-xl font-bold text-gray-800">Menghubungkan ke Database...</h2>
+                        <h2 className="text-xl font-bold text-gray-800">Memuat Aplikasi...</h2>
                         <p className="text-gray-500 text-sm mt-2">Membaca riwayat peminjaman dari Spreadsheet</p>
                     </div>
                 )
