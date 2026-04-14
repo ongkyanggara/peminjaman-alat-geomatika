@@ -29,7 +29,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // Data Awal Inventaris Lab Geomatika Sesuai Kategori (Sebagai Fallback)
+        // Data Awal Inventaris Lab Geomatika Sesuai Kategori
         const initialInventory = [
             { id: 'TS-001', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
             { id: 'TS-002', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
@@ -82,13 +82,11 @@
             { id: 'RB-001-010', category: 'Aksesoris', name: 'Rambu Ukur (4 m)', total: 10, available: 10 },
             { id: 'RB-001-009', category: 'Aksesoris', name: 'Rambu Ukur (5 m)', total: 9, available: 9 },
             { id: 'TM-001-035', category: 'Aksesoris', name: 'Tripod / Statip', total: 35, available: 35 },
-            // PENAMBAHAN INVENTARIS MULTIMEDIA
             { id: 'LP-001', category: 'Multimedia', name: 'Laptop Dell', total: 1, available: 1 },
             { id: 'PC-001', category: 'Multimedia', name: 'PC Acer Veriton', total: 1, available: 1 },
             { id: 'PC-002', category: 'Multimedia', name: 'PC Acer Veriton', total: 1, available: 1 }
         ];
 
-        // FUNGSI UTAMA: Menghitung persediaan alat
         const calculateInventory = (txData, baseInv) => {
             let currentInventory = JSON.parse(JSON.stringify(baseInv));
             txData.forEach(trx => {
@@ -110,7 +108,6 @@
         };
 
         function App() {
-            // Caching lokal untuk UX Cepat
             const localSavedTx = JSON.parse(localStorage.getItem('lab_transactions_v2') || '[]');
             const localSavedInv = JSON.parse(localStorage.getItem('lab_inventory_v2') || JSON.stringify(initialInventory));
             
@@ -128,17 +125,19 @@
             const [showAddForm, setShowAddForm] = useState(false);
             const [newItemForm, setNewItemForm] = useState({ id: '', category: '', name: '', total: 1 });
 
-            // Variabel state untuk Pengaturan Tabel Pengembalian (Filter & Paginasi)
+            // Fitur Filter Tab Pengembalian
             const [txFilter, setTxFilter] = useState('Semua');
             const [txLimit, setTxLimit] = useState(10);
+
+            // STATE BARU: Fitur Filter Bulan Dashboard Analisis
+            const [analysisMonth, setAnalysisMonth] = useState('Semua');
 
             const fileInputRef = useRef(null);
             const [currentTime, setCurrentTime] = useState(new Date());
 
-            // MASUKKAN URL GOOGLE APPS SCRIPT ANDA DI SINI
+            // URL GOOGLE SCRIPT
             const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPlSeyXWP0ALhXp4VqJ_NUmB433jHqLUn4hButn2UFzHu2J9hOfEeRlj-Zdky0TA_b/exec'; 
 
-            // STATE PEMINJAMAN UPDATE DENGAN LAYANAN
             const [borrowForm, setBorrowForm] = useState({
                 borrowerName: '', nim: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
                 borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
@@ -155,15 +154,12 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
-            // LOGIKA PEMBACAAN WAKTU ANTI BUG-ZONA WAKTU
             const parseRealDate = (dateString) => {
                 if (!dateString) return new Date();
-                // Jika dari input tanggal manual (Y-M-D), pastikan tidak terjadi pergeseran karena jam UTC.
                 if (typeof dateString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateString.trim())) {
                     const parts = dateString.split('-');
                     return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
                 }
-                // Jika dari Spreadsheet (terdapat T dan Z), sistem akan menggesernya ke waktu lokal komputer secara cerdas
                 const d = new Date(dateString);
                 return isNaN(d.getTime()) ? new Date() : d;
             };
@@ -233,7 +229,6 @@
 
             const parseTargetDate = (dateStr, timeStr) => {
                 const target = parseRealDate(dateStr);
-                
                 let h = 23, m = 59;
                 const tStr = String(timeStr || '').replace(/['"]/g, '').trim();
                 
@@ -254,8 +249,20 @@
                 return target;
             };
 
+            const getMonthYear = (dateStr) => {
+                if (!dateStr) return '';
+                const d = parseRealDate(dateStr);
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            };
+
+            const formatMonthYearText = (yyyymm) => {
+                if (!yyyymm || yyyymm === 'Semua') return 'Keseluruhan Waktu';
+                const [y, m] = yyyymm.split('-');
+                const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+                return `${monthNames[parseInt(m) - 1]} ${y}`;
+            };
+
             const renderCountdownBadge = (returnDateEst, returnTimeEst, status) => {
-                // --- BAGIAN UNTUK ALAT YANG SUDAH DIKEMBALIKAN (TUNTAS) ---
                 if (status && status.startsWith('completed')) {
                     let isLate = false;
                     let latenessStr = "";
@@ -312,7 +319,6 @@
                     }
                 }
 
-                // --- BAGIAN UNTUK ALAT YANG SEDANG DIPINJAM (ACTIVE) ---
                 const targetDate = parseTargetDate(returnDateEst, returnTimeEst);
                 const diffMs = targetDate.getTime() - currentTime.getTime();
 
@@ -368,13 +374,11 @@
                 }
             };
 
-            // Simpan perubahan ke LocalStorage
             useEffect(() => {
                 localStorage.setItem('lab_transactions_v2', JSON.stringify(transactions));
                 localStorage.setItem('lab_inventory_v2', JSON.stringify(baseInventory));
             }, [transactions, baseInventory]);
 
-            // FETCH DATA DARI SPREADSHEET (SINKRONISASI LATAR BELAKANG)
             useEffect(() => {
                 const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
@@ -394,7 +398,6 @@
                         if (Array.isArray(rawData)) {
                             txData = rawData;
                             invData = currentLocalInv; 
-                            // Notifikasi error disembunyikan agar tidak mengganggu UI
                         } else {
                             txData = rawData.transactions || [];
                             
@@ -433,7 +436,6 @@
                         
                     } catch (error) {
                         console.error("Gagal terhubung ke Spreadsheet:", error);
-                        // Peringatan Offline disembunyikan secara pop-up
                     } finally {
                         setIsAppLoading(false);
                         setIsSyncing(false);
@@ -499,12 +501,10 @@
             const submitBorrow = async (e) => {
                 e.preventDefault();
                 
-                // Validasi data utama
                 if (!borrowForm.borrowerName || !borrowForm.nim || !borrowForm.purpose || !borrowForm.borrowDate || !borrowForm.borrowTime || !borrowForm.returnDateEst || !borrowForm.returnTimeEst || borrowForm.items.length === 0 || !borrowForm.fileBase64) {
                     showNotification('Mohon lengkapi data diri, keperluan, jam, daftar alat, dan unggah surat izin', 'error'); return;
                 }
 
-                // Validasi khusus Praktikum yang Cerdas
                 if (borrowForm.purpose === 'Praktikum') {
                     if (!borrowForm.praktikumCourse || !borrowForm.praktikumClass) {
                         showNotification('Mohon lengkapi Mata Kuliah dan Kelas Praktikum', 'error'); return;
@@ -531,7 +531,6 @@
                     return { kode: invItem.id, nama: invItem.name, jumlah: parseInt(item.quantity) };
                 });
 
-                // Menggabungkan pilihan Praktikum menjadi satu text rapi untuk di-save ke database Spreadsheet
                 let finalPurpose = borrowForm.purpose;
                 if (borrowForm.purpose === 'Praktikum') {
                     if (borrowForm.praktikumCourse === 'Layanan Praktikum GT') {
@@ -580,7 +579,6 @@
                     const trxIndex = transactions.findIndex(t => t.id === transactionId);
                     const newTransactions = [...transactions];
                     
-                    // FORMAT JAM CLEAR SPREADSHEET (Contoh: 2026-04-13 13:49:39)
                     const now = new Date();
                     const pad = n => String(n).padStart(2, '0');
                     const returnTimestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
@@ -797,19 +795,83 @@
                     .sort((a, b) => b.count - a.count)
                     .slice(0, 5);
 
-                const purposeStats = {};
-                let totalPurposeCount = 0;
-                transactions.forEach(trx => {
-                    const purpose = trx.purpose || 'Lainnya';
-                    purposeStats[purpose] = (purposeStats[purpose] || 0) + 1;
-                    totalPurposeCount++;
-                });
+                // --- LOGIKA BARU: ANALISIS CERDAS JENIS PEMINJAMAN ---
+
+                // 1. Ekstrak data berdasar Bulan yang tersedia
+                const availableMonths = [...new Set(transactions.map(t => getMonthYear(t.borrowDate)))].sort().reverse();
                 
-                const purposeArray = Object.keys(purposeStats).map(p => ({
-                    purpose: p,
-                    count: purposeStats[p],
-                    percent: totalPurposeCount === 0 ? 0 : Math.round((purposeStats[p] / totalPurposeCount) * 100)
+                const currentPeriod = analysisMonth === 'Semua' ? '' : analysisMonth;
+                let prevPeriod = '';
+                if (currentPeriod) {
+                    const [y, m] = currentPeriod.split('-');
+                    let prevM = parseInt(m) - 1;
+                    let prevY = parseInt(y);
+                    if (prevM === 0) { prevM = 12; prevY -= 1; }
+                    prevPeriod = `${prevY}-${String(prevM).padStart(2, '0')}`;
+                }
+
+                // 2. Filter transaksi sesuai Dropdown Bulan
+                const filteredAnalysisTx = transactions.filter(t => currentPeriod === '' || getMonthYear(t.borrowDate) === currentPeriod);
+                const prevAnalysisTx = transactions.filter(t => prevPeriod !== '' && getMonthYear(t.borrowDate) === prevPeriod);
+
+                // 3. Proses Kategori Level 1 dan Level 2
+                const categoryData = {};
+                let totalFilteredTx = filteredAnalysisTx.length;
+                
+                filteredAnalysisTx.forEach(trx => {
+                    const purposeStr = trx.purpose || 'Lainnya';
+                    let mainCat = purposeStr;
+                    let subCat = '';
+                    
+                    if (purposeStr.startsWith('Praktikum - ')) {
+                        mainCat = 'Praktikum';
+                        subCat = purposeStr.replace('Praktikum - ', ''); // Level 2 (Matkul + Kelas)
+                    }
+
+                    if (!categoryData[mainCat]) {
+                        categoryData[mainCat] = { count: 0, subs: {}, tools: {} };
+                    }
+                    categoryData[mainCat].count += 1;
+                    
+                    if (subCat) {
+                        categoryData[mainCat].subs[subCat] = (categoryData[mainCat].subs[subCat] || 0) + 1;
+                    }
+
+                    // Deteksi alat yang paling sering digunakan pada kategori ini
+                    trx.items.forEach(item => {
+                        const toolName = item.nama ? `[${item.kode}] ${item.nama}` : item.name;
+                        const qty = parseInt(item.jumlah || item.quantity) || 1;
+                        categoryData[mainCat].tools[toolName] = (categoryData[mainCat].tools[toolName] || 0) + qty;
+                    });
+                });
+
+                // 4. Sorting & Formatting
+                const sortedCategoriesList = Object.keys(categoryData).map(key => ({
+                    name: key,
+                    count: categoryData[key].count,
+                    subs: Object.keys(categoryData[key].subs).map(sub => ({ name: sub, count: categoryData[key].subs[sub] })).sort((a,b) => b.count - a.count),
+                    topTool: Object.keys(categoryData[key].tools).sort((a,b) => categoryData[key].tools[b] - categoryData[key].tools[a])[0] || '-',
+                    percent: totalFilteredTx === 0 ? 0 : Math.round((categoryData[key].count / totalFilteredTx) * 100)
                 })).sort((a, b) => b.count - a.count);
+
+                // 5. Analisis Narasi Otomatis (Insight AI)
+                const trendPercent = prevAnalysisTx.length === 0 
+                    ? (totalFilteredTx > 0 ? 100 : 0) 
+                    : Math.round(((totalFilteredTx - prevAnalysisTx.length) / prevAnalysisTx.length) * 100);
+                    
+                const dominant = sortedCategoriesList.length > 0 ? sortedCategoriesList[0] : null;
+                const least = sortedCategoriesList.length > 0 ? sortedCategoriesList[sortedCategoriesList.length - 1] : null;
+                
+                let narrative = "Belum ada data peminjaman alat pada periode ini.";
+                if (dominant) {
+                    narrative = `Aktivitas laboratorium saat ini didominasi secara kuat oleh kebutuhan ${dominant.name}, yang menyumbang ${dominant.percent}% dari total ${totalFilteredTx} peminjaman. `;
+                    if (dominant.name === 'Praktikum' && dominant.subs.length > 0) {
+                        narrative += `Fokus utama kegiatan mahasiswa berada pada kelas ${dominant.subs[0].name.split('-')[0].trim()}. `;
+                    }
+                    if (dominant.topTool !== '-') {
+                        narrative += `Lonjakan penggunaan alat paling terpusat pada ${dominant.topTool.split(']')[1]?.trim() || dominant.topTool}. Rekomendasi: Pastikan ketersediaan alat tersebut selalu optimal.`;
+                    }
+                }
 
                 // Urutkan transaksi aktif agar terbaru di atas
                 const sortedActiveTx = [...activeTx].sort((a, b) => {
@@ -881,7 +943,8 @@
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            {/* Distribusi Alat */}
                             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
                                 <h3 className="text-lg font-bold text-gray-800 mb-6">Distribusi Alat Utama</h3>
                                 <div className="flex flex-col md:flex-row items-center gap-8 my-auto">
@@ -905,26 +968,7 @@
                                 </div>
                             </div>
 
-                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                                <h3 className="text-lg font-bold text-gray-800 mb-6"><i className="fas fa-chart-bar text-indigo-500 mr-2"></i> Analisis Jenis Peminjaman</h3>
-                                <div className="space-y-4 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                                    {purposeArray.map((stat) => (
-                                        <div key={stat.purpose}>
-                                            <div className="flex justify-between text-sm mb-1">
-                                                <span className="font-semibold text-gray-700">{stat.purpose}</span>
-                                                <span className="text-gray-500 font-bold text-indigo-600">{stat.percent}% <span className="font-medium text-gray-400 text-xs">({stat.count}x)</span></span>
-                                            </div>
-                                            <div className="w-full bg-gray-100 rounded-full h-2.5">
-                                                <div className="bg-indigo-500 h-2.5 rounded-full" style={{width: `${stat.percent}%`}}></div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {purposeArray.length === 0 && <p className="text-gray-400 text-sm italic">Belum ada data peminjaman.</p>}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Top Alat */}
                             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                                 <h3 className="text-lg font-bold text-gray-800 mb-4"><i className="fas fa-fire text-orange-500 mr-2"></i> Alat Paling Sering Dipinjam</h3>
                                 {topItems.length === 0 ? (
@@ -949,41 +993,140 @@
                                     </ul>
                                 )}
                             </div>
+                        </div>
 
-                            <div className="bg-white p-6 rounded-xl border border-red-200 shadow-sm relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-red-50 rounded-bl-full -z-10"></div>
-                                <h3 className="text-lg font-bold text-red-700 mb-4"><i className="fas fa-bell mr-2"></i> Monitor Keterlambatan</h3>
-                                {lateTx.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center py-8 text-green-500">
-                                        <i className="fas fa-shield-check text-4xl mb-3 opacity-50"></i>
-                                        <p className="text-sm font-medium">Luar biasa! Tidak ada yang terlambat.</p>
+                        {/* --- BAGIAN BARU: ANALISIS CERDAS JENIS PEMINJAMAN --- */}
+                        <div className="mt-6 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                            <div className="flex flex-col md:flex-row justify-between md:items-center mb-6 gap-4">
+                                <h3 className="text-lg font-bold text-gray-800">
+                                    <i className="fas fa-chart-line text-indigo-500 mr-2"></i> Analisis Cerdas Jenis Peminjaman
+                                </h3>
+                                <div className="flex gap-3 items-center">
+                                    <span className="text-sm font-bold text-gray-500">Filter Periode:</span>
+                                    <select className="p-2 border border-gray-300 rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer" value={analysisMonth} onChange={e => setAnalysisMonth(e.target.value)}>
+                                        <option value="Semua">Keseluruhan Waktu</option>
+                                        {availableMonths.map(m => (
+                                            <option key={m} value={m}>{formatMonthYearText(m)}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl flex flex-col justify-center items-start">
+                                    <p className="text-[10px] text-indigo-500 font-bold uppercase tracking-wider mb-1">Total Peminjaman</p>
+                                    <div className="flex items-end gap-2">
+                                        <span className="text-3xl font-black text-indigo-700">{totalFilteredTx}</span>
+                                        {analysisMonth !== 'Semua' && (
+                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded mb-1.5 ${trendPercent >= 0 ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
+                                                {trendPercent > 0 ? '+' : ''}{trendPercent}% vs bulan lalu
+                                            </span>
+                                        )}
                                     </div>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {lateTx.map(trx => {
-                                            const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
-                                            const diffMs = currentTime.getTime() - targetDate.getTime();
-                                            const latenessStr = getLatenessString(diffMs);
+                                </div>
+                                
+                                <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl md:col-span-2 flex flex-col justify-center">
+                                    <p className="text-[10px] text-blue-500 font-bold uppercase tracking-wider mb-1">Aktivitas Paling Dominan</p>
+                                    <p className="text-lg font-bold text-blue-800 leading-tight">{dominant ? dominant.name : '-'}</p>
+                                    <p className="text-xs text-blue-600 font-medium mt-1"><i className="fas fa-wrench mr-1"></i>Alat andalan: <span className="font-bold">{dominant ? dominant.topTool.split(']')[1] || dominant.topTool : '-'}</span></p>
+                                </div>
 
-                                            return (
-                                            <div key={trx.id} className="flex items-center justify-between p-3 border border-red-100 bg-red-50/40 rounded-xl hover:bg-red-50 transition shadow-sm">
+                                <div className="bg-orange-50 border border-orange-100 p-4 rounded-xl flex flex-col justify-center">
+                                    <p className="text-[10px] text-orange-500 font-bold uppercase tracking-wider mb-1">Aktivitas Terendah</p>
+                                    <p className="text-lg font-bold text-orange-800 leading-tight">{least && least.name !== dominant?.name ? least.name : '-'}</p>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-800 text-white p-4 rounded-xl mb-6 shadow-sm flex items-start gap-3">
+                                <i className="fas fa-robot text-yellow-400 text-2xl mt-0.5 animate-pulse"></i>
+                                <div>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">AI Insight & Rekomendasi</p>
+                                    <p className="text-sm font-medium leading-relaxed text-slate-200">{narrative}</p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                {sortedCategoriesList.map((cat, i) => {
+                                    const bgColors = ['bg-blue-500', 'bg-purple-500', 'bg-teal-500', 'bg-orange-500', 'bg-rose-500', 'bg-emerald-500'];
+                                    const textColors = ['text-blue-700', 'text-purple-700', 'text-teal-700', 'text-orange-700', 'text-rose-700', 'text-emerald-700'];
+                                    
+                                    return (
+                                        <div key={cat.name}>
+                                            <div className="flex justify-between items-end mb-1.5">
+                                                <span className="font-bold text-gray-800 text-base">{cat.name}</span>
+                                                <div className="text-right">
+                                                    <span className={`font-black ${textColors[i % 6]} text-lg`}>{cat.percent}%</span>
+                                                    <span className="text-gray-400 font-semibold text-xs ml-1">({cat.count} trx)</span>
+                                                </div>
+                                            </div>
+                                            <div className="w-full bg-gray-100 rounded-full h-3 mb-3 shadow-inner">
+                                                <div className={`h-3 rounded-full ${bgColors[i % 6]}`} style={{width: `${cat.percent}%`}}></div>
+                                            </div>
+                                            
+                                            {/* Level 2 details - Rincian Kategori */}
+                                            {cat.subs.length > 0 && (
+                                                <div className="pl-3 border-l-2 border-gray-200 space-y-2 mt-2">
+                                                    {cat.subs.slice(0, 4).map((sub, j) => {
+                                                        const subPercent = Math.round((sub.count / cat.count) * 100);
+                                                        return (
+                                                            <div key={j} className="flex justify-between items-center text-xs">
+                                                                <span className="text-gray-600 truncate pr-2" title={sub.name}>{sub.name}</span>
+                                                                <span className="text-gray-800 font-bold flex-shrink-0">{sub.count}x <span className="text-gray-400 font-medium text-[10px] w-8 inline-block text-right">{subPercent}%</span></span>
+                                                            </div>
+                                                        )
+                                                    })}
+                                                    {cat.subs.length > 4 && <div className="text-[10px] text-gray-400 italic">...dan {cat.subs.length - 4} jenis lainnya</div>}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                                {sortedCategoriesList.length === 0 && <p className="text-gray-400 text-sm italic">Tidak ada data untuk dianalisis pada periode ini.</p>}
+                            </div>
+                        </div>
+
+                        {/* Monitor Keterlambatan FULL WIDTH */}
+                        <div className="mt-6 bg-white p-6 rounded-xl border border-red-200 shadow-sm relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-red-50 rounded-bl-full -z-10"></div>
+                            <h3 className="text-lg font-bold text-red-700 mb-4"><i className="fas fa-bell mr-2"></i> Peringatan Sistem: Monitor Keterlambatan Aktif</h3>
+                            {lateTx.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-8 text-green-500">
+                                    <i className="fas fa-shield-check text-4xl mb-3 opacity-50"></i>
+                                    <p className="text-sm font-medium">Luar biasa! Tidak ada yang terlambat hari ini.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {lateTx.map(trx => {
+                                        const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
+                                        const diffMs = currentTime.getTime() - targetDate.getTime();
+                                        const latenessStr = getLatenessString(diffMs);
+
+                                        return (
+                                        <div key={trx.id} className="flex flex-col p-4 border border-red-100 bg-red-50/40 rounded-xl hover:bg-red-50 transition shadow-sm">
+                                            <div className="flex justify-between items-start mb-2">
                                                 <div className="flex flex-col">
                                                     <span className="font-bold text-gray-800 text-sm">{trx.borrowerName}</span>
                                                     <span className="text-[11px] text-gray-500 font-medium mt-0.5">{trx.items.length} Macam Alat</span>
                                                 </div>
-                                                <div className="text-right flex flex-col items-end">
-                                                    <span className="text-xs font-black text-red-600 bg-white px-2 py-0.5 rounded shadow-sm border border-red-100">Telat {latenessStr}</span>
-                                                    <span className="text-[9px] text-red-400 mt-1 font-bold uppercase tracking-wider">Batas: {formatDate(trx.returnDateEst)} {formatTimeStr(trx.returnTimeEst)}</span>
+                                                <span className="text-[10px] font-black text-white bg-red-500 px-2 py-1 rounded shadow-sm">
+                                                    Telat {latenessStr}
+                                                </span>
+                                            </div>
+                                            <div className="mt-auto border-t border-red-100 pt-2 flex flex-col gap-1">
+                                                <span className="text-[9px] text-red-400 font-bold uppercase tracking-wider">Target Pengembalian Semula:</span>
+                                                <div className="flex gap-2">
+                                                    <span className="text-xs font-bold text-red-700"><i className="far fa-calendar-times mr-1"></i>{formatDate(trx.returnDateEst)}</span>
+                                                    <span className="text-xs font-bold text-red-700 bg-white px-1.5 rounded shadow-sm font-mono"><i className="far fa-clock mr-1"></i>{formatTimeStr(trx.returnTimeEst)}</span>
                                                 </div>
                                             </div>
-                                        )})}
-                                    </div>
-                                )}
-                            </div>
+                                        </div>
+                                    )})}
+                                </div>
+                            )}
                         </div>
 
                         {/* SECTION 4: Peminjaman Berjalan */}
-                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                        <div className="mt-6 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                             <h3 className="text-lg font-bold text-gray-800 mb-4"><i className="fas fa-tasks text-blue-500 mr-2"></i> Peminjaman Berjalan (Detail Peminjam)</h3>
                             {sortedActiveTx.length === 0 ? (
                                 <p className="text-gray-400 text-sm italic py-6 text-center bg-gray-50 rounded-lg">Tidak ada peminjaman aktif.</p>
@@ -1023,7 +1166,7 @@
                                                     <td className="p-3 align-top whitespace-nowrap">
                                                         <div className="flex flex-col gap-2">
                                                             <div className="flex items-start text-blue-600 font-medium">
-                                                                <i className="far fa-calendar-alt w-5 text-center mt-0.5"></i>
+                                                                <i className="far fa-calendar-alt text-blue-500 w-5 text-center mt-0.5"></i>
                                                                 <div className="flex flex-col ml-1">
                                                                     <span className="text-gray-800 font-bold">{formatDate(trx.borrowDate)}</span>
                                                                     <span className="text-[10px] text-gray-500 font-bold uppercase">{formatDay(trx.borrowDate)}</span>
@@ -1038,7 +1181,7 @@
                                                     <td className="p-3 align-top whitespace-nowrap">
                                                         <div className="flex flex-col gap-2">
                                                             <div className="flex items-start text-red-500 font-medium">
-                                                                <i className="far fa-calendar-check w-5 text-center mt-0.5"></i>
+                                                                <i className="far fa-calendar-check text-red-500 w-5 text-center mt-0.5"></i>
                                                                 <div className="flex flex-col ml-1">
                                                                     <span className="text-gray-800 font-bold">{formatDate(trx.returnDateEst)}</span>
                                                                     <span className="text-[10px] text-gray-500 font-bold uppercase">{formatDay(trx.returnDateEst)}</span>
