@@ -29,7 +29,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // Data Awal Inventaris Lab Geomatika Sesuai Kategori
+        // Data Awal Inventaris Lab Geomatika
         const initialInventory = [
             { id: 'TS-001', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
             { id: 'TS-002', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
@@ -74,7 +74,7 @@
             { id: 'DN-001', category: 'Fotogrametri', name: 'DJI drone M3E', total: 1, available: 1 },
             { id: 'DN-002', category: 'Fotogrametri', name: 'DJI Inspire 2', total: 1, available: 1 },
             { id: 'F-0001', category: 'Hidrografi', name: 'Fish Finder', total: 1, available: 1 },
-            { id: 'PL-001-029', category: 'Hidrografi', name: 'Pelampung', total: 29, available: 29 },
+            { id: 'PL-001-029', category: 'Safety', name: 'Pelampung', total: 29, available: 29 },
             { id: 'HL-001-100', category: 'Safety', name: 'Helm', total: 100, available: 100 },
             { id: 'RM-001-100', category: 'Safety', name: 'Rompi', total: 100, available: 100 },
             { id: 'JL-001-020', category: 'Aksesoris', name: 'Jalon', total: 14, available: 14 },
@@ -82,9 +82,9 @@
             { id: 'RB-001-010', category: 'Aksesoris', name: 'Rambu Ukur (4 m)', total: 10, available: 10 },
             { id: 'RB-001-009', category: 'Aksesoris', name: 'Rambu Ukur (5 m)', total: 9, available: 9 },
             { id: 'TM-001-035', category: 'Aksesoris', name: 'Tripod / Statip', total: 35, available: 35 },
-            { id: 'LP-001', category: 'Multimedia', name: 'Laptop Dell', total: 1, available: 1 },
             { id: 'PC-001', category: 'Multimedia', name: 'PC Acer Veriton', total: 1, available: 1 },
-            { id: 'PC-002', category: 'Multimedia', name: 'PC Acer Veriton', total: 1, available: 1 }
+            { id: 'PC-002', category: 'Multimedia', name: 'PC Acer Veriton', total: 1, available: 1 },
+            { id: 'LP-001', category: 'Multimedia', name: 'Laptop Dell', total: 1, available: 1 }
         ];
 
         const calculateInventory = (txData, baseInv) => {
@@ -125,18 +125,19 @@
             const [showAddForm, setShowAddForm] = useState(false);
             const [newItemForm, setNewItemForm] = useState({ id: '', category: '', name: '', total: 1 });
 
-            // Fitur Filter Tab Pengembalian
             const [txFilter, setTxFilter] = useState('Semua');
             const [txLimit, setTxLimit] = useState(10);
-
-            // STATE BARU: Fitur Filter Bulan Dashboard Analisis
             const [analysisMonth, setAnalysisMonth] = useState('Semua');
 
             const fileInputRef = useRef(null);
+            const feedbackFileInputRef = useRef(null);
             const [currentTime, setCurrentTime] = useState(new Date());
 
-            // URL GOOGLE SCRIPT
+            // --- PENGATURAN LINK DATABASE ---
             const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPlSeyXWP0ALhXp4VqJ_NUmB433jHqLUn4hButn2UFzHu2J9hOfEeRlj-Zdky0TA_b/exec'; 
+            const GOOGLE_SCRIPT_INV_FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwGry5HOdHq2v6NmPoOIdDbQYAXAjupfbyeHwRyIK1ymGVJMf2-g0S8CiwjOZm-JF6v/exec'; 
+            
+            const ACTIVE_INV_URL = GOOGLE_SCRIPT_INV_FEEDBACK_URL || GOOGLE_SCRIPT_URL;
 
             const [borrowForm, setBorrowForm] = useState({
                 borrowerName: '', nim: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
@@ -145,6 +146,10 @@
                 items: [{ itemId: '', quantity: 1 }],
                 approvalFileName: '', fileBase64: '', mimeType: ''
             });
+
+            // STATE KOTAK SARAN
+            const [feedbackForm, setFeedbackForm] = useState({ name: '', category: '', message: '' });
+            const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
             const [notification, setNotification] = useState(null);
             const [isSubmitting, setIsSubmitting] = useState(false);
@@ -379,50 +384,68 @@
                 localStorage.setItem('lab_inventory_v2', JSON.stringify(baseInventory));
             }, [transactions, baseInventory]);
 
+            // FETCH DATA DARI KEDUA SPREADSHEET
             useEffect(() => {
                 const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
                 const fetchDatabase = async () => {
                     setIsSyncing(true);
                     try {
-                        const cacheBusterUrl = GOOGLE_SCRIPT_URL + '?t=' + new Date().getTime();
-                        const response = await fetch(cacheBusterUrl, { redirect: 'follow' });
-                        const rawData = await response.json();
+                        const cacheBuster = '?t=' + new Date().getTime();
                         
-                        if (rawData.error) throw new Error("Server Error: " + rawData.error);
+                        const txResponsePromise = fetch(GOOGLE_SCRIPT_URL + cacheBuster).then(res => res.json()).catch(() => ({ error: "Fetch TX failed" }));
+                        
+                        let invResponsePromise;
+                        if (GOOGLE_SCRIPT_INV_FEEDBACK_URL) {
+                            invResponsePromise = fetch(GOOGLE_SCRIPT_INV_FEEDBACK_URL + cacheBuster).then(res => res.json()).catch(() => null);
+                        } else {
+                            invResponsePromise = Promise.resolve(null);
+                        }
+
+                        const [txRawData, invRawData] = await Promise.all([txResponsePromise, invResponsePromise]);
                         
                         const currentLocalInv = JSON.parse(localStorage.getItem('lab_inventory_v2') || JSON.stringify(initialInventory));
                         let txData = [];
                         let invData = [];
 
-                        if (Array.isArray(rawData)) {
-                            txData = rawData;
-                            invData = currentLocalInv; 
-                        } else {
-                            txData = rawData.transactions || [];
-                            
-                            if (rawData.inventory && rawData.inventory.length > 0) {
-                                const serverInv = rawData.inventory.map(item => ({
-                                    id: item.id, category: item.category, name: item.name, 
-                                    total: item.total, available: item.total, isLocalOnly: false 
-                                }));
-                                
-                                const serverIds = new Set(serverInv.map(i => i.id));
-                                const unsyncedItems = currentLocalInv.filter(i => !serverIds.has(i.id));
-                                const markedUnsynced = unsyncedItems.map(i => ({...i, isLocalOnly: true}));
-
-                                invData = [...markedUnsynced, ...serverInv];
-
-                                markedUnsynced.forEach(item => {
-                                    fetch(GOOGLE_SCRIPT_URL, {
-                                        method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                                        body: JSON.stringify({ action: "addInventory", item: item })
-                                    }).catch(() => {});
-                                });
-
+                        if (txRawData && !txRawData.error) {
+                            if (Array.isArray(txRawData)) {
+                                txData = txRawData;
                             } else {
-                                invData = currentLocalInv;
+                                txData = txRawData.transactions || [];
                             }
+                        }
+
+                        let activeInvSource = invRawData && invRawData.inventory ? invRawData.inventory : (txRawData && txRawData.inventory ? txRawData.inventory : null);
+
+                        if (activeInvSource && activeInvSource.length > 0) {
+                            const serverInv = activeInvSource.map(item => ({
+                                id: item.id, category: item.category, name: item.name, 
+                                total: item.total, available: item.total, isLocalOnly: false 
+                            }));
+                            
+                            // Ambil seluruh item lokal yang belum ada di server (spreadsheet)
+                            const unsyncedItems = currentLocalInv.filter(i => !serverInv.some(s => s.id === i.id));
+                            const markedUnsynced = unsyncedItems.map(i => ({...i, isLocalOnly: true}));
+
+                            invData = [...serverInv, ...markedUnsynced];
+
+                            markedUnsynced.forEach(item => {
+                                fetch(ACTIVE_INV_URL, {
+                                    method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                    body: JSON.stringify({ action: "addInventory", item: item })
+                                }).catch(() => {});
+                            });
+                        } else {
+                            const markedUnsynced = currentLocalInv.map(i => ({...i, isLocalOnly: true}));
+                            invData = markedUnsynced;
+                            
+                            markedUnsynced.forEach(item => {
+                                fetch(ACTIVE_INV_URL, {
+                                    method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                    body: JSON.stringify({ action: "addInventory", item: item })
+                                }).catch(() => {});
+                            });
                         }
 
                         const formattedTx = txData.map(trx => ({
@@ -615,6 +638,43 @@
                 }
             };
 
+            const handleFeedbackSubmit = async (e) => {
+                e.preventDefault();
+                if (!feedbackForm.category || !feedbackForm.message) {
+                    showNotification('Mohon lengkapi Kategori dan Isi Pesan Saran', 'error');
+                    return;
+                }
+
+                if (!GOOGLE_SCRIPT_INV_FEEDBACK_URL) {
+                    showNotification('Sistem Saran belum dikonfigurasi. Harap hubungi Admin.', 'error');
+                    return;
+                }
+
+                setIsSubmittingFeedback(true);
+                
+                try {
+                    await fetch(GOOGLE_SCRIPT_INV_FEEDBACK_URL, {
+                        method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ 
+                            action: "addFeedback", 
+                            name: feedbackForm.name,
+                            category: feedbackForm.category,
+                            message: feedbackForm.message,
+                            fileBase64: feedbackForm.fileBase64,
+                            fileName: feedbackForm.fileName,
+                            mimeType: feedbackForm.mimeType
+                        })
+                    });
+                    showNotification('Saran Anda berhasil dikirim! Terima kasih atas masukannya.', 'success');
+                    setFeedbackForm({ name: '', category: '', message: '', fileBase64: '', fileName: '', mimeType: '' });
+                    if (feedbackFileInputRef.current) feedbackFileInputRef.current.value = "";
+                } catch (error) {
+                    showNotification('Gagal mengirim saran. Periksa koneksi internet Anda.', 'error');
+                } finally {
+                    setIsSubmittingFeedback(false);
+                }
+            };
+
             const handleAdminToggle = () => {
                 if (isAdmin) {
                     setIsAdmin(false); setShowAddForm(false);
@@ -645,7 +705,7 @@
                 setShowAddForm(false);
 
                 try {
-                    await fetch(GOOGLE_SCRIPT_URL, {
+                    await fetch(ACTIVE_INV_URL, {
                         method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: "addInventory", item: newItem })
                     });
@@ -666,7 +726,7 @@
 
                     showNotification('Menghapus alat dari Database...');
                     try {
-                        await fetch(GOOGLE_SCRIPT_URL, {
+                        await fetch(ACTIVE_INV_URL, {
                             method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({ action: "deleteInventory", id: itemId })
                         });
@@ -683,7 +743,7 @@
 
                 for (const item of unsynced) {
                     try {
-                        await fetch(GOOGLE_SCRIPT_URL, {
+                        await fetch(ACTIVE_INV_URL, {
                             method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({ action: "addInventory", item: item })
                         });
@@ -795,9 +855,6 @@
                     .sort((a, b) => b.count - a.count)
                     .slice(0, 5);
 
-                // --- LOGIKA BARU: ANALISIS CERDAS JENIS PEMINJAMAN ---
-
-                // 1. Ekstrak data berdasar Bulan yang tersedia
                 const availableMonths = [...new Set(transactions.map(t => getMonthYear(t.borrowDate)))].sort().reverse();
                 
                 const currentPeriod = analysisMonth === 'Semua' ? '' : analysisMonth;
@@ -810,11 +867,9 @@
                     prevPeriod = `${prevY}-${String(prevM).padStart(2, '0')}`;
                 }
 
-                // 2. Filter transaksi sesuai Dropdown Bulan
                 const filteredAnalysisTx = transactions.filter(t => currentPeriod === '' || getMonthYear(t.borrowDate) === currentPeriod);
                 const prevAnalysisTx = transactions.filter(t => prevPeriod !== '' && getMonthYear(t.borrowDate) === prevPeriod);
 
-                // 3. Proses Kategori Level 1 dan Level 2
                 const categoryData = {};
                 let totalFilteredTx = filteredAnalysisTx.length;
                 
@@ -825,7 +880,7 @@
                     
                     if (purposeStr.startsWith('Praktikum - ')) {
                         mainCat = 'Praktikum';
-                        subCat = purposeStr.replace('Praktikum - ', ''); // Level 2 (Matkul + Kelas)
+                        subCat = purposeStr.replace('Praktikum - ', ''); 
                     }
 
                     if (!categoryData[mainCat]) {
@@ -837,7 +892,6 @@
                         categoryData[mainCat].subs[subCat] = (categoryData[mainCat].subs[subCat] || 0) + 1;
                     }
 
-                    // Deteksi alat yang paling sering digunakan pada kategori ini
                     trx.items.forEach(item => {
                         const toolName = item.nama ? `[${item.kode}] ${item.nama}` : item.name;
                         const qty = parseInt(item.jumlah || item.quantity) || 1;
@@ -845,7 +899,6 @@
                     });
                 });
 
-                // 4. Sorting & Formatting
                 const sortedCategoriesList = Object.keys(categoryData).map(key => ({
                     name: key,
                     count: categoryData[key].count,
@@ -854,7 +907,6 @@
                     percent: totalFilteredTx === 0 ? 0 : Math.round((categoryData[key].count / totalFilteredTx) * 100)
                 })).sort((a, b) => b.count - a.count);
 
-                // 5. Analisis Narasi Otomatis (Insight AI)
                 const trendPercent = prevAnalysisTx.length === 0 
                     ? (totalFilteredTx > 0 ? 100 : 0) 
                     : Math.round(((totalFilteredTx - prevAnalysisTx.length) / prevAnalysisTx.length) * 100);
@@ -873,12 +925,167 @@
                     }
                 }
 
-                // Urutkan transaksi aktif agar terbaru di atas
                 const sortedActiveTx = [...activeTx].sort((a, b) => {
                     const timeA = parseTargetDate(a.borrowDate, a.borrowTime).getTime();
                     const timeB = parseTargetDate(b.borrowDate, b.borrowTime).getTime();
                     return timeB - timeA;
                 });
+
+                // --- DATA JADWAL PRAKTIKUM ---
+                const MONDAY = 1, TUESDAY = 2, WEDNESDAY = 3, THURSDAY = 4, FRIDAY = 5;
+                const rawSchedule = [
+                    { id: 'm1', day: MONDAY, course: 'GNSS', class: 'RC', start: '07:30', end: '10:10' },
+                    { id: 'm2', day: MONDAY, course: 'Hidrografi II', class: 'RA', start: '10:15', end: '13:50' },
+                    { id: 'm3', day: MONDAY, course: 'Survei Konstruksi', class: 'RC', start: '12:30', end: '15:40' },
+                    { id: 'm4', day: MONDAY, course: 'Pemetaan Terestris', class: 'RA', start: '15:00', end: '17:40' },
+                    
+                    { id: 't1', day: TUESDAY, course: 'Hidrografi II', class: 'RB', start: '07:30', end: '10:10' },
+                    { id: 't2', day: TUESDAY, course: 'Pemetaan Terestris', class: 'RB', start: '07:30', end: '10:10' },
+                    { id: 't3', day: TUESDAY, course: 'Survei Konstruksi', class: 'RB', start: '10:10', end: '13:50' },
+
+                    { id: 'w1', day: WEDNESDAY, course: 'Survei GNSS', class: 'RB', start: '07:30', end: '10:10' },
+                    { id: 'w2', day: WEDNESDAY, course: 'Survei Konstruksi', class: 'RA', start: '10:15', end: '13:50' },
+                    { id: 'w3', day: WEDNESDAY, course: 'Hidrografi II', class: 'RC', start: '13:55', end: '16:35' },
+
+                    { id: 'th1', day: THURSDAY, course: 'Survei GNSS', class: 'RA', start: '15:45', end: '17:40' },
+
+                    { id: 'f1', day: FRIDAY, course: 'Indraja Biosistem', class: 'RA', start: '07:30', end: '09:15' },
+                    { id: 'f2', day: FRIDAY, course: 'Pemetaan Terestris', class: 'RC', start: '13:55', end: '17:40' },
+                    { id: 'f3', day: FRIDAY, course: 'Indraja Biosistem', class: 'RB', start: '15:00', end: '17:00' }
+                ];
+
+                const timeToMins = (t) => {
+                    const [h, m] = t.split(':').map(Number);
+                    return h * 60 + m;
+                };
+
+                const processedSchedule = rawSchedule.map(item => {
+                    const startMins = timeToMins(item.start);
+                    const endMins = timeToMins(item.end);
+                    const overlaps = rawSchedule.filter(other => 
+                        other.day === item.day && 
+                        other.id !== item.id &&
+                        timeToMins(other.start) < endMins && 
+                        timeToMins(other.end) > startMins
+                    );
+                    return { ...item, startMins, endMins, isOverlap: overlaps.length > 0 };
+                }).sort((a, b) => a.startMins - b.startMins);
+
+                const todayDay = currentTime.getDay() || 7; // Sunday = 7
+                const currentMins = currentTime.getHours() * 60 + currentTime.getMinutes();
+
+                let nextPracticum = null;
+                let minMinsAway = Infinity;
+                const activePracticums = [];
+
+                processedSchedule.forEach(item => {
+                    if (item.day === todayDay && currentMins >= item.startMins && currentMins <= item.endMins) {
+                        activePracticums.push(item);
+                    }
+
+                    let dayDiff = item.day - todayDay;
+                    if (dayDiff < 0) dayDiff += 7;
+                    let minsAway = (dayDiff * 24 * 60) + item.startMins - currentMins;
+                    
+                    if (dayDiff === 0 && item.startMins <= currentMins) {
+                        minsAway += 7 * 24 * 60;
+                    }
+
+                    if (minsAway > 0 && minsAway < minMinsAway) {
+                        minMinsAway = minsAway;
+                        nextPracticum = item;
+                    }
+                });
+
+                const formatCountdown = (totalMins) => {
+                    const d = Math.floor(totalMins / (24 * 60));
+                    const h = Math.floor((totalMins % (24 * 60)) / 60);
+                    const m = totalMins % 60;
+                    let str = [];
+                    if (d > 0) str.push(`${d} Hari`);
+                    if (h > 0) str.push(`${h} Jam`);
+                    str.push(`${m} Menit`);
+                    return str.join(' ');
+                };
+
+                const daysOfWeek = [
+                    { id: MONDAY, name: 'Senin' },
+                    { id: TUESDAY, name: 'Selasa' },
+                    { id: WEDNESDAY, name: 'Rabu' },
+                    { id: THURSDAY, name: 'Kamis' },
+                    { id: FRIDAY, name: 'Jumat' }
+                ];
+
+                const renderDayColumn = (dayId, dayName) => {
+                    const isToday = todayDay === dayId;
+                    const dayItems = processedSchedule.filter(i => i.day === dayId);
+
+                    return (
+                        <div key={dayId} className={`flex flex-col rounded-xl border ${isToday ? 'border-blue-400 bg-blue-50/20 shadow-md ring-1 ring-blue-400' : 'border-gray-200 bg-gray-50/50'} overflow-hidden`}>
+                            <div className={`p-3 text-center font-bold text-sm ${isToday ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}>
+                                {dayName} {isToday && <span className="ml-2 text-[10px] bg-white/20 px-2 py-0.5 rounded-full tracking-wider">HARI INI</span>}
+                            </div>
+                            <div className="p-3 flex flex-col gap-3">
+                                {dayItems.length === 0 ? (
+                                    <p className="text-center text-xs text-gray-400 italic py-4">Kosong</p>
+                                ) : dayItems.map(item => {
+                                    let status = 'upcoming';
+                                    if (dayId < todayDay || (dayId === todayDay && item.endMins < currentMins)) status = 'past';
+                                    else if (dayId === todayDay && currentMins >= item.startMins && currentMins <= item.endMins) status = 'current';
+
+                                    let bg = 'bg-white hover:bg-blue-50/50 transition-colors';
+                                    let border = 'border-blue-200';
+                                    let iconColor = 'text-blue-500';
+                                    let badgeBg = 'bg-blue-100 text-blue-700';
+                                    let badgeText = 'Akan Datang';
+                                    let extraClasses = '';
+
+                                    if (status === 'past') {
+                                        bg = 'bg-gray-50 opacity-50';
+                                        border = 'border-gray-200';
+                                        badgeBg = 'bg-gray-200 text-gray-500';
+                                        iconColor = 'text-gray-400';
+                                        badgeText = 'Selesai';
+                                    } else if (item.isOverlap) {
+                                        bg = 'bg-red-50';
+                                        border = 'border-red-300';
+                                        iconColor = 'text-red-500';
+                                        badgeBg = 'bg-red-500 text-white';
+                                        badgeText = status === 'current' ? 'BERLANGSUNG (BENTROK)' : 'BENTROK';
+                                        extraClasses = status === 'current' ? 'relative z-10 transform scale-[1.02] transition-all shadow-md' : '';
+                                    } else if (status === 'current') {
+                                        bg = 'bg-gradient-to-br from-green-50 to-green-100';
+                                        border = 'border-green-400';
+                                        iconColor = 'text-green-700';
+                                        badgeBg = 'bg-green-600 text-white animate-pulse shadow-sm';
+                                        badgeText = 'SEDANG BERLANGSUNG';
+                                        extraClasses = 'relative z-10 transform scale-[1.02] transition-all shadow-md ring-2 ring-green-500';
+                                    }
+
+                                    return (
+                                        <div key={item.id} className={`p-3 rounded-lg border ${bg} ${border} shadow-sm relative flex flex-col ${extraClasses}`}>
+                                            {status === 'current' && <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-ping"></div>}
+                                            
+                                            <div className="flex justify-between items-start mb-1">
+                                                <span className="text-xs font-black text-gray-800 leading-tight pr-2">{item.course}</span>
+                                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-white border shadow-sm flex-shrink-0">{item.class}</span>
+                                            </div>
+                                            <div className={`flex items-center text-[11px] font-mono font-bold mt-1 ${iconColor}`}>
+                                                <i className="far fa-clock mr-1.5"></i>
+                                                {item.start} - {item.end}
+                                            </div>
+                                            <div className="mt-2 pt-2 border-t border-black/5">
+                                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded shadow-sm w-max block text-center ${badgeBg}`}>
+                                                    {badgeText}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    );
+                };
 
                 return (
                     <div className="space-y-6 animate-fade-in">
@@ -943,6 +1150,61 @@
                             </div>
                         </div>
 
+                        {/* --- BAGIAN BARU: JADWAL PRAKTIKUM --- */}
+                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                            <div className="flex flex-col md:flex-row justify-between md:items-end mb-6 gap-4">
+                                <h3 className="text-lg font-bold text-gray-800">
+                                    <i className="fas fa-calendar-week text-indigo-500 mr-2"></i> Jadwal Praktikum Laboratorium Geomatika
+                                </h3>
+                                <div className="flex gap-3 text-[10px] font-bold uppercase tracking-wider">
+                                    <div className="flex items-center"><span className="w-3 h-3 bg-gray-200 rounded-sm mr-1.5"></span> Selesai</div>
+                                    <div className="flex items-center"><span className="w-3 h-3 bg-green-500 rounded-sm mr-1.5"></span> Berjalan</div>
+                                    <div className="flex items-center"><span className="w-3 h-3 bg-white border border-blue-200 rounded-sm mr-1.5"></span> Mendatang</div>
+                                    <div className="flex items-center"><span className="w-3 h-3 bg-red-500 rounded-sm mr-1.5"></span> Bentrok</div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                <div className="bg-green-50 border border-green-200 p-4 rounded-xl flex items-center shadow-sm">
+                                    <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center text-white text-xl mr-4 shadow-md relative">
+                                        <i className="fas fa-play"></i>
+                                        {activePracticums.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-green-300 rounded-full animate-ping"></span>}
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] text-green-700 font-bold uppercase tracking-wider mb-1">Status Real-Time</p>
+                                        <p className="text-sm font-black text-green-900 leading-tight">
+                                            {activePracticums.length > 0 
+                                                ? `${activePracticums.length} Praktikum Sedang Berlangsung` 
+                                                : 'Tidak ada praktikum yang berjalan saat ini'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-center shadow-sm">
+                                    <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-white text-xl mr-4 shadow-md">
+                                        <i className="fas fa-forward"></i>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] text-blue-700 font-bold uppercase tracking-wider mb-1">Praktikum Berikutnya</p>
+                                        <p className="text-sm font-black text-blue-900 leading-tight">
+                                            {nextPracticum 
+                                                ? `${nextPracticum.course} (${nextPracticum.class})` 
+                                                : 'Tidak ada jadwal tersisa minggu ini'}
+                                        </p>
+                                        {nextPracticum && (
+                                            <p className="text-[10px] text-blue-800 font-bold mt-1 bg-white px-2 py-0.5 w-max rounded shadow-sm">
+                                                Mulai dalam {formatCountdown(minMinsAway)}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                                {daysOfWeek.map(d => renderDayColumn(d.id, d.name))}
+                            </div>
+                        </div>
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                             {/* Distribusi Alat */}
                             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
@@ -985,7 +1247,7 @@
                                                 </div>
                                                 
                                                 <div className="text-right flex flex-col items-end gap-1">
-                                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold w-max">{item.count}x Dipinjam</span>
+                                                    <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-bold w-max">{item.count} (kali)</span>
                                                     <span className="text-[10px] font-bold text-slate-500"><i className="fas fa-history mr-1 text-slate-400"></i>Load: {item.hours} Jam</span>
                                                 </div>
                                             </li>
@@ -995,7 +1257,7 @@
                             </div>
                         </div>
 
-                        {/* --- BAGIAN BARU: ANALISIS CERDAS JENIS PEMINJAMAN --- */}
+                        {/* --- ANALISIS CERDAS JENIS PEMINJAMAN --- */}
                         <div className="mt-6 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                             <div className="flex flex-col md:flex-row justify-between md:items-center mb-6 gap-4">
                                 <h3 className="text-lg font-bold text-gray-800">
@@ -1040,7 +1302,7 @@
                             <div className="bg-slate-800 text-white p-4 rounded-xl mb-6 shadow-sm flex items-start gap-3">
                                 <i className="fas fa-robot text-yellow-400 text-2xl mt-0.5 animate-pulse"></i>
                                 <div>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">AI Insight & Rekomendasi</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Analisis Penggunaan Alat Lab</p>
                                     <p className="text-sm font-medium leading-relaxed text-slate-200">{narrative}</p>
                                 </div>
                             </div>
@@ -1056,14 +1318,13 @@
                                                 <span className="font-bold text-gray-800 text-base">{cat.name}</span>
                                                 <div className="text-right">
                                                     <span className={`font-black ${textColors[i % 6]} text-lg`}>{cat.percent}%</span>
-                                                    <span className="text-gray-400 font-semibold text-xs ml-1">({cat.count} trx)</span>
+                                                    <span className="text-gray-400 font-semibold text-xs ml-1">({cat.count} kali)</span>
                                                 </div>
                                             </div>
                                             <div className="w-full bg-gray-100 rounded-full h-3 mb-3 shadow-inner">
                                                 <div className={`h-3 rounded-full ${bgColors[i % 6]}`} style={{width: `${cat.percent}%`}}></div>
                                             </div>
                                             
-                                            {/* Level 2 details - Rincian Kategori */}
                                             {cat.subs.length > 0 && (
                                                 <div className="pl-3 border-l-2 border-gray-200 space-y-2 mt-2">
                                                     {cat.subs.slice(0, 4).map((sub, j) => {
@@ -1212,6 +1473,49 @@
                                 </div>
                             )}
                         </div>
+
+                        {/* --- KOTAK SARAN & MASUKAN --- */}
+                        <div className="mt-8 bg-indigo-50/50 p-6 rounded-xl border border-indigo-100 shadow-sm relative overflow-hidden">
+                            <div className="absolute -right-10 -top-10 text-indigo-100 opacity-50">
+                                <i className="fas fa-comments text-[150px]"></i>
+                            </div>
+                            <h3 className="text-lg font-bold text-indigo-900 mb-2 relative z-10">
+                                <i className="fas fa-envelope-open-text text-indigo-600 mr-2"></i> Kotak Saran & Masukan
+                            </h3>
+                            <p className="text-xs text-indigo-700 mb-6 relative z-10">Bantu kami meningkatkan kualitas layanan Laboratorium Geomatika. Setiap masukan Anda sangat berarti bagi kami.</p>
+                            
+                            <form onSubmit={handleFeedbackSubmit} className="relative z-10 bg-white p-5 rounded-lg border border-indigo-50 shadow-sm">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 mb-1">Nama Lengkap (Opsional)</label>
+                                        <input type="text" className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" value={feedbackForm.name} onChange={e => setFeedbackForm({...feedbackForm, name: e.target.value})} placeholder="Boleh berikan nama atau anonim" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 mb-1">Kategori Saran <span className="text-red-500">*</span></label>
+                                        <select required className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm bg-white cursor-pointer" value={feedbackForm.category} onChange={e => setFeedbackForm({...feedbackForm, category: e.target.value})}>
+                                            <option value="" disabled>-- Pilih Kategori --</option>
+                                            <option value="Kondisi & Kelengkapan Alat">Kondisi & Kelengkapan Alat</option>
+                                            <option value="Fasilitas Laboratorium">Fasilitas Laboratorium</option>
+                                            <option value="Pelayanan Staff/Asisten">Pelayanan Staff/Asisten</option>
+                                            <option value="Sistem Peminjaman (Web)">Sistem Peminjaman (Aplikasi Web)</option>
+                                            <option value="Lainnya">Lainnya</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-xs font-bold text-gray-700 mb-1">Pesan / Masukan <span className="text-red-500">*</span></label>
+                                    <textarea required rows="4" className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm" value={feedbackForm.message} onChange={e => setFeedbackForm({...feedbackForm, message: e.target.value})} placeholder="Tuliskan saran, kritik, atau masukan Anda di sini..."></textarea>
+                                </div>
+                                <div className="flex justify-end">
+                                    <button type="submit" disabled={isSubmittingFeedback || !GOOGLE_SCRIPT_INV_FEEDBACK_URL} className={`px-6 py-2.5 rounded-lg text-sm font-bold text-white shadow-sm transition-all flex items-center ${isSubmittingFeedback ? 'bg-indigo-400 cursor-wait' : (!GOOGLE_SCRIPT_INV_FEEDBACK_URL ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700')}`}>
+                                        {isSubmittingFeedback ? <><i className="fas fa-spinner fa-spin mr-2"></i> Mengirim...</> : <><i className="fas fa-paper-plane mr-2"></i> Kirim Saran</>}
+                                    </button>
+                                </div>
+                                {!GOOGLE_SCRIPT_INV_FEEDBACK_URL && (
+                                    <p className="text-[10px] text-red-500 text-right mt-2 font-medium italic">*Sistem belum dikonfigurasi oleh Admin.</p>
+                                )}
+                            </form>
+                        </div>
                     </div>
                 );
             };
@@ -1239,7 +1543,6 @@
                                     <i className={`fas ${showAddForm ? 'fa-times' : 'fa-plus'} mr-2`}></i> {showAddForm ? 'Batal Tambah Alat' : 'Tambah Alat Baru'}
                                 </button>
                                 
-                                {/* TOMBOL PAKSA SINKRONISASI MUNCUL JIKA ADA ALAT YANG BELUM MASUK SHEET */}
                                 {baseInventory.some(i => i.isLocalOnly) && (
                                     <button onClick={forceSyncToSheet} className="px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition flex items-center bg-yellow-500 hover:bg-yellow-600 text-white animate-pulse">
                                         <i className="fas fa-cloud-upload-alt mr-2"></i> Paksa Sinkronisasi ke Sheet
@@ -1284,11 +1587,6 @@
                                                 <td className="p-4"><span className="bg-slate-100 border border-slate-200 text-slate-600 px-2 py-1 rounded text-xs font-semibold">{item.category}</span></td>
                                                 <td className="p-4 font-medium text-gray-900">
                                                     {item.name}
-                                                    {item.isLocalOnly && (
-                                                        <span className="block mt-1 bg-yellow-100 text-yellow-700 text-[10px] px-2 py-0.5 rounded w-max font-bold border border-yellow-200">
-                                                            <i className="fas fa-exclamation-triangle mr-1"></i>Belum Masuk Sheet
-                                                        </span>
-                                                    )}
                                                 </td>
                                                 <td className="p-4 text-center text-sm">{item.total}</td>
                                                 <td className="p-4 text-center font-black text-green-600">{item.available}</td>
@@ -1323,7 +1621,6 @@
                                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Nama Peminjam / Kelompok</label><input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.borrowerName} onChange={e => setBorrowForm({...borrowForm, borrowerName: e.target.value})} placeholder="Contoh: Kelompok 1 - Budi" /></div>
                                 <div><label className="block text-sm font-medium text-gray-700 mb-1">NIM / ID Anggota</label><input type="text" required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={borrowForm.nim} onChange={e => setBorrowForm({...borrowForm, nim: e.target.value})} placeholder="Masukkan NIM" /></div>
                                 
-                                {/* LOGIKA BARU: Opsi Dropdown Praktikum Tampil Jika Dipilih */}
                                 <div className="md:col-span-2">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Keperluan Peminjaman</label>
                                     <select required className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer" value={borrowForm.purpose} onChange={e => setBorrowForm({...borrowForm, purpose: e.target.value, praktikumCourse: '', praktikumClass: '', praktikumLayanan: ''})}>
@@ -1356,7 +1653,6 @@
                                             </select>
                                         </div>
                                         
-                                        {/* Dropdown ini HANYA MUNCUL jika "Layanan Praktikum GT" dipilih */}
                                         {borrowForm.praktikumCourse === 'Layanan Praktikum GT' && (
                                             <div className="animate-fade-in">
                                                 <label className="block text-sm font-medium text-gray-700 mb-1">Layanan Praktikum</label>
@@ -1383,7 +1679,6 @@
                                     </div>
                                 )}
 
-                                {/* LOGIKA BARU: Input Jam dengan showPicker() agar mudah di-klik */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal & Jam Pengambilan</label>
                                     <div className="flex gap-2 relative">
@@ -1448,7 +1743,6 @@
             };
 
             const renderTransactions = () => {
-                // LOGIKA BARU: Helper untuk menentukan kategori status
                 const getTxCategory = (trx) => {
                     if (trx.status === 'active') {
                         const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
@@ -1464,30 +1758,26 @@
                         }
                         return isLate ? 'Terlambat' : 'Tepat Waktu';
                     }
-                    return 'Tepat Waktu'; // Default fallback untuk completed lama
+                    return 'Tepat Waktu'; 
                 };
 
-                // Urutkan berdasarkan waktu paling baru (Kombinasi Tanggal + Waktu)
                 const sortedTx = [...transactions].sort((a, b) => {
                     const dateA = parseTargetDate(a.borrowDate, a.borrowTime).getTime();
                     const dateB = parseTargetDate(b.borrowDate, b.borrowTime).getTime();
                     return dateB - dateA;
                 });
 
-                // Terapkan Filter
                 const filteredTx = sortedTx.filter(trx => {
                     if (txFilter === 'Semua') return true;
                     return getTxCategory(trx) === txFilter;
                 });
 
-                // Terapkan Paginasi/Limit Baris
                 const displayedTx = txLimit === 'Semua' ? filteredTx : filteredTx.slice(0, txLimit);
 
                 return (
                     <div className="space-y-6 animate-fade-in">
                         <h2 className="text-2xl font-bold text-gray-800 border-b pb-2">Status & Pengembalian Alat</h2>
                         
-                        {/* PANEL PENGATURAN FILTER & PAGINASI */}
                         <div className="flex flex-col md:flex-row justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
                             <div className="flex items-center gap-3">
                                 <label className="text-sm font-bold text-gray-700 w-24 md:w-auto"><i className="fas fa-filter mr-1 text-blue-500"></i> Filter:</label>
@@ -1562,7 +1852,7 @@
                                                     </td>
                                                     <td className="p-4 align-top whitespace-nowrap">
                                                         <div className="flex flex-col gap-2 text-sm">
-                                                            <div className="flex items-start text-blue-600 font-medium">
+                                                            <div className="flex items-center text-blue-600 font-medium">
                                                                 <i className="far fa-calendar-alt w-5 text-center mt-0.5"></i>
                                                                 <div className="flex flex-col ml-1">
                                                                     <span className="text-gray-800 font-bold">{formatDate(trx.borrowDate)}</span>
@@ -1579,7 +1869,7 @@
                                                     </td>
                                                     <td className="p-4 align-top whitespace-nowrap">
                                                         <div className="flex flex-col gap-2 text-sm">
-                                                            <div className="flex items-start text-red-500 font-medium">
+                                                            <div className="flex items-center text-red-500 font-medium">
                                                                 <i className="far fa-calendar-check w-5 text-center mt-0.5"></i>
                                                                 <div className="flex flex-col ml-1">
                                                                     <span className="text-gray-800 font-bold">{formatDate(trx.returnDateEst)}</span>
