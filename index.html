@@ -678,33 +678,27 @@ const handleAdminToggle = () => {
     if (isAdmin) {
         setIsAdmin(false); 
         setShowAddForm(false);
-              showNotification(unescape('%41%6B%73%65%73%20%64%69%74%75%74%75%70'), 'success'); 
+        showNotification(String.fromCharCode(65, 107, 115, 101, 115, 32, 100, 105, 116, 117, 116, 117, 112), String.fromCharCode(115, 117, 99, 99, 101, 115, 115)); 
     } else {
-        const _0x1337 = prompt(unescape('%4B%6F%64%65%20%41%75%74%65%6E%74%69%6B%61%73%69%3A'));
-        if (_0x1337 !== null) { 
+        const _0xInput = prompt(String.fromCharCode(75, 111, 100, 101, 32, 65, 117, 116, 101, 110, 116, 105, 107, 97, 115, 105, 58));
+        if (_0xInput !== null) { 
+            const _0xClean = _0xInput.trim(); 
             
-            const _0x5f9a = (function(_0x88d1){
-                if(!_0x88d1 || (_0x88d1.length ^ 0x7B) !== 0x70) return !1; 
+            const _0xCheck = function(_0xStr) {
+                const _0xTarget = [0xC7, 0xCD, 0xDF, 0xD7, 0xE1, 0x59, 0xDD, 0xC7, 0xC9, 0x6D, 0x6D];
+                if (_0xStr.length !== 0xB) return false;
                 
-                const _0x9b11 = [0x7D, 0x81, 0x8B, 0x86, 0x86, 0x4B, 0x86, 0x82, 0x86, 0x59, 0x5A];
-                let _0x4c21 = 0x0;
-                
-                for (let _0x3e44 = 0x0; _0x3e44 < 0xB; _0x3e44++) {
-                    let _0x77c2 = _0x88d1.charCodeAt(_0x3e44);
-                    
-                    if (((_0x77c2 ^ _0x3e44) + 0x1C) !== _0x9b11[_0x3e44]) return !1;
-                    
-                    _0x4c21 += (_0x77c2 * 0x03) ^ 0x07;
+                for (let i = 0x0; i < 0xB; i++) {
+                    if (((_0xStr.charCodeAt(i) * 0x2) + 0x5) !== _0xTarget[i]) return false;
                 }
-                
-                return _0x4c21 === (0x5F0 + 0x557);
-            });
+                return true;
+            };
             
-            if (_0x5f9a(_0x1337)) { 
-                setIsAdmin(!0); 
-                showNotification(unescape('%41%6B%73%65%73%20%44%69%62%65%72%69%6B%61%6E%21'), 'success'); // "Akses Diberikan!"
+            if (_0xCheck(_0xClean)) { 
+                setIsAdmin(true); 
+                showNotification(String.fromCharCode(65, 107, 115, 101, 115, 32, 68, 105, 98, 101, 114, 105, 107, 97, 110, 33), String.fromCharCode(115, 117, 99, 99, 101, 115, 115));
             } else {
-                showNotification(unescape('%4B%6F%64%65%20%74%69%64%61%6B%20%76%61%6C%69%64%21'), 'error'); // "Kode tidak valid!"
+                showNotification(String.fromCharCode(75, 111, 100, 101, 32, 116, 105, 100, 97, 107, 32, 118, 97, 108, 105, 100, 33), String.fromCharCode(101, 114, 114, 111, 114));
             }
         }
     }
