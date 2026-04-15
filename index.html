@@ -1971,11 +1971,9 @@ const handleAdminToggle = () => {
                         <div className="p-4 border-t border-slate-800">
                             <button onClick={handleShareLink} className="w-full flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-lg transition text-sm font-semibold mb-5"><i className="fas fa-share-alt"></i> <span>Salin Tautan Web</span></button>
                             <div className="text-[11px] text-slate-500 text-center leading-relaxed relative">
-                                &copy; 2026 Laboratorium Geomatika <br/>Institut Teknologi Sumatera
-                                <button onClick={handleAdminToggle} className="absolute -bottom-2 -right-2 p-2 text-slate-700 hover:text-slate-400 transition" title="Admin Access">
-                                    <i className={`fas ${isAdmin ? 'fa-lock-open text-red-500' : 'fa-lock'}`}></i>
-                                </button>
-                            </div>
+                                &copy; 2026 Laboratorium Geomatika <br/>
+                                Institut <span onClick={handleAdminToggle} className="cursor-default">Teknologi</span> Sumatera
+                                </div>
                         </div>
                     </nav>
 
