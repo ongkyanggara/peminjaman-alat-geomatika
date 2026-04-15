@@ -678,28 +678,33 @@ const handleAdminToggle = () => {
     if (isAdmin) {
         setIsAdmin(false); 
         setShowAddForm(false);
-        showNotification('Akses ditutup', 'success');
+              showNotification(unescape('%41%6B%73%65%73%20%64%69%74%75%74%75%70'), 'success'); 
     } else {
-        const _0x1a2b = prompt('');
-        if (_0x1a2b !== null) { 
-            const _0x4c5d = [0xF4, 0xFF, 0x102, 0x10F, 0xFA, 0x7F, 0xF8, 0x113, 0x11E, 0x77, 0x8C];
-            let _0x9e8f = (_0x1a2b.length === 0xB);
+        const _0x1337 = prompt(unescape('%4B%6F%64%65%20%41%75%74%65%6E%74%69%6B%61%73%69%3A'));
+        if (_0x1337 !== null) { 
             
-            if (_0x9e8f) {
-                for (let _0x3b4c = 0; _0x3b4c < 0xB; _0x3b4c++) {
-                    const _0x7d8e = ((_0x1a2b.charCodeAt(_0x3b4c) << 1) ^ (_0x3b4c * 5)) + 0x32;
-                    if (_0x7d8e !== _0x4c5d[_0x3b4c]) {
-                        _0x9e8f = false; 
-                        break;
-                    }
+            const _0x5f9a = (function(_0x88d1){
+                if(!_0x88d1 || (_0x88d1.length ^ 0x7B) !== 0x70) return !1; 
+                
+                const _0x9b11 = [0x7D, 0x81, 0x8B, 0x86, 0x86, 0x4B, 0x86, 0x82, 0x86, 0x59, 0x5A];
+                let _0x4c21 = 0x0;
+                
+                for (let _0x3e44 = 0x0; _0x3e44 < 0xB; _0x3e44++) {
+                    let _0x77c2 = _0x88d1.charCodeAt(_0x3e44);
+                    
+                    if (((_0x77c2 ^ _0x3e44) + 0x1C) !== _0x9b11[_0x3e44]) return !1;
+                    
+                    _0x4c21 += (_0x77c2 * 0x03) ^ 0x07;
                 }
-            }
+                
+                return _0x4c21 === (0x5F0 + 0x557);
+            });
             
-            if (_0x9e8f) { 
-                setIsAdmin(true); 
-                showNotification('Akses Diberikan!', 'success');
+            if (_0x5f9a(_0x1337)) { 
+                setIsAdmin(!0); 
+                showNotification(unescape('%41%6B%73%65%73%20%44%69%62%65%72%69%6B%61%6E%21'), 'success'); // "Akses Diberikan!"
             } else {
-                showNotification('tidak valid!', 'error');
+                showNotification(unescape('%4B%6F%64%65%20%74%69%64%61%6B%20%76%61%6C%69%64%21'), 'error'); // "Kode tidak valid!"
             }
         }
     }
