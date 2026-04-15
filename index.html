@@ -674,20 +674,36 @@
                     setIsSubmittingFeedback(false);
                 }
             };
-
-            const handleAdminToggle = () => {
-                if (isAdmin) {
-                    setIsAdmin(false); setShowAddForm(false);
-                    showNotification('Keluar dari Mode Admin', 'success');
-                } else {
-                    const pass = prompt('Masukkan Password Admin:');
-                    if (pass === 'adminlab') { 
-                        setIsAdmin(true); showNotification('Mode Admin Aktif!', 'success');
-                    } else if (pass !== null) {
-                        showNotification('Password salah!', 'error');
+const handleAdminToggle = () => {
+    if (isAdmin) {
+        setIsAdmin(false); 
+        setShowAddForm(false);
+        showNotification('Akses ditutup', 'success');
+    } else {
+        const _0x1a2b = prompt('Kode Autentikasi:');
+        if (_0x1a2b !== null) { 
+            const _0x4c5d = [0xF4, 0xFF, 0x102, 0x10F, 0xFA, 0x7F, 0xF8, 0x113, 0x11E, 0x77, 0x8C];
+            let _0x9e8f = (_0x1a2b.length === 0xB);
+            
+            if (_0x9e8f) {
+                for (let _0x3b4c = 0; _0x3b4c < 0xB; _0x3b4c++) {
+                    const _0x7d8e = ((_0x1a2b.charCodeAt(_0x3b4c) << 1) ^ (_0x3b4c * 5)) + 0x32;
+                    if (_0x7d8e !== _0x4c5d[_0x3b4c]) {
+                        _0x9e8f = false; 
+                        break;
                     }
                 }
-            };
+            }
+            
+            if (_0x9e8f) { 
+                setIsAdmin(true); 
+                showNotification('Akses Diberikan!', 'success');
+            } else {
+                showNotification('tidak valid!', 'error');
+            }
+        }
+    }
+};
 
             const handleAddNewInventoryItem = async (e) => {
                 e.preventDefault();
