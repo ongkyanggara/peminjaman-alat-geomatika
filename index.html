@@ -1,3 +1,5 @@
+// SCRIPTED WRITE BY ONGKY ANGGARA
+// GEOMATICS ENGINEERING, INSTITUT TEKNOLOGI SUMATERA
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -5,25 +7,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monitoring Peminjaman Alat Laboratorium Geomatika</title>
     
-    <!-- Memuat Tailwind CSS untuk Desain -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Memuat FontAwesome untuk Ikon -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- MENGGUNAKAN CDNJS -->
     <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
     <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
     <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
 
-    <!-- Memuat jsPDF untuk Generate PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body class="bg-slate-100 font-sans text-slate-800">
     
     <div id="root">
-        <!-- Layar Loading Awal -->
         <div class="flex flex-col items-center justify-center min-h-screen bg-slate-50">
             <i class="fas fa-circle-notch fa-spin text-4xl text-indigo-700 mb-5"></i>
             <h2 class="text-xl font-bold text-slate-800 tracking-wide">Sinkronisasi Basis Data Pusat...</h2>
@@ -33,6 +30,101 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
+
+        // --- KOMPONEN DROPDOWN PENCARIAN ALAT ---
+        const SearchableSelect = ({ inventory, inventoryByCategory, value, onChange }) => {
+            const [isOpen, setIsOpen] = useState(false);
+            const [search, setSearch] = useState("");
+            const wrapperRef = useRef(null);
+
+            useEffect(() => {
+                function handleClickOutside(event) {
+                    if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+                        setIsOpen(false);
+                    }
+                }
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, []);
+
+            const selectedItem = inventory.find(i => i.id === value);
+            const displayValue = selectedItem ? `[${selectedItem.id}] ${selectedItem.name}` : "";
+
+            const filteredCategories = Object.keys(inventoryByCategory).reduce((acc, category) => {
+                const filtered = inventoryByCategory[category].filter(inv => 
+                    inv.name.toLowerCase().includes(search.toLowerCase()) || 
+                    inv.id.toLowerCase().includes(search.toLowerCase())
+                );
+                if (filtered.length > 0) acc[category] = filtered;
+                return acc;
+            }, {});
+
+            return (
+                <div ref={wrapperRef} className="relative w-full flex-grow">
+                    <div 
+                        className={`w-full p-2.5 border rounded cursor-pointer flex justify-between items-center transition-all ${isOpen ? 'border-indigo-500 ring-2 ring-indigo-100 bg-white' : 'border-slate-300 bg-white hover:border-indigo-400'}`}
+                        onClick={() => setIsOpen(!isOpen)}
+                    >
+                        <span className={`truncate text-sm ${!selectedItem ? 'text-slate-500' : 'text-slate-800 font-medium'}`}>
+                            {selectedItem ? displayValue : '-- Spesifikasikan Instrumen Master --'}
+                        </span>
+                        <i className={`fas fa-chevron-down text-slate-400 text-xs transition-transform ${isOpen ? 'rotate-180' : ''}`}></i>
+                    </div>
+
+                    {isOpen && (
+                        <div className="absolute z-[100] w-full mt-1 bg-white border border-slate-200 rounded-md shadow-2xl max-h-[300px] flex flex-col overflow-hidden animate-fade-in">
+                            <div className="p-2.5 border-b border-slate-100 bg-slate-50">
+                                <div className="relative">
+                                    <i className="fas fa-search absolute left-3 top-2.5 text-slate-400 text-sm"></i>
+                                    <input 
+                                        type="text" 
+                                        className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all bg-white"
+                                        placeholder="Ketik kode atau nama alat..."
+                                        value={search}
+                                        onChange={(e) => setSearch(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        autoFocus
+                                    />
+                                </div>
+                            </div>
+                            <div className="overflow-y-auto flex-grow p-1.5 custom-scrollbar">
+                                {Object.keys(filteredCategories).length === 0 ? (
+                                    <div className="p-4 text-sm text-slate-400 text-center italic"><i className="fas fa-box-open mr-2 mb-2 text-2xl block opacity-50"></i>Alat tidak ditemukan</div>
+                                ) : (
+                                    Object.keys(filteredCategories).map(category => (
+                                        <div key={category} className="mb-2">
+                                            <div className="px-3 py-1.5 text-[10px] font-bold text-indigo-800 bg-indigo-50 uppercase tracking-wider rounded-sm mb-1">
+                                                {category}
+                                            </div>
+                                            {filteredCategories[category].map(inv => (
+                                                <div 
+                                                    key={inv.id}
+                                                    className={`px-3 py-2 text-sm cursor-pointer rounded-sm mt-0.5 transition-colors ${inv.available === 0 ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-indigo-50'} ${value === inv.id ? 'bg-indigo-100 text-indigo-900 font-bold border-l-4 border-indigo-600' : 'text-slate-700'}`}
+                                                    onClick={() => {
+                                                        if (inv.available > 0) {
+                                                            onChange(inv.id);
+                                                            setIsOpen(false);
+                                                            setSearch("");
+                                                        }
+                                                    }}
+                                                >
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="truncate pr-2">[{inv.id}] {inv.name}</span>
+                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider flex-shrink-0 ${inv.available > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                                            Sisa: {inv.available}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
 
         // Data Awal Inventaris Lab Geomatika
         const initialInventory = [
@@ -355,7 +447,7 @@
                 if (days > 2) {
                     return (
                         <div className="flex flex-col items-center justify-center gap-1.5">
-                            <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded text-[11px] font-bold border border-slate-200 w-max text-center uppercase tracking-wide">Aman (H-{days})</span>
+                            <span className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded text-[11px] font-bold border border-yellow-400 w-max text-center uppercase tracking-wide animate-pulse">Aman (H-{days})</span>
                             <span className="bg-white border border-slate-300 text-slate-700 px-2 py-1 rounded shadow-sm text-[11px] font-mono font-bold flex items-center">
                                 <i className="fas fa-hourglass-half mr-1.5 text-slate-400"></i>{timeString}
                             </span>
@@ -726,6 +818,7 @@
                     doc.setFontSize(9);
                     if (isReturned) {
                         doc.text("Catatan: Alat telah selesai dikembalikan dan diperiksa oleh Laboran dalam kondisi Baik dan Lengkap.", 15, finalY);
+                        doc.text("Alat kini sepenuhnya dalam tanggung jawab Laboran karena proses peminjaman telah selesai.", 15, finalY + 5);
                     } else {
                         doc.text("Catatan: Alat di atas merupakan tanggung jawab peminjam sepenuhnya hingga dikembalikan ke Laboratorium.", 15, finalY);
                     }
@@ -1430,7 +1523,7 @@
                         <div className="mt-6 bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
                             <div className="flex flex-col md:flex-row justify-between md:items-center mb-6 gap-4 border-b border-slate-100 pb-4">
                                 <h3 className="text-lg font-bold text-slate-800">
-                                    <i className="fas fa-chart-line text-indigo-600 mr-2"></i> Analisis Cerdas Peminjaman
+                                    <i className="fas fa-chart-line text-indigo-600 mr-2"></i> Analisis Cerdas Jenis Peminjaman
                                 </h3>
                                 <div className="flex gap-3 items-center">
                                     <span className="text-sm font-bold text-slate-600">Filter Periode:</span>
@@ -1459,7 +1552,7 @@
                                 <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-lg md:col-span-2 flex flex-col justify-center">
                                     <p className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider mb-1">Aktivitas Paling Dominan</p>
                                     <p className="text-lg font-bold text-indigo-900 leading-tight">{dominant ? dominant.name : '-'}</p>
-                                    <p className="text-xs text-indigo-700 font-medium mt-1"><i className="fas fa-wrench mr-1"></i>Instrumen utama: <span className="font-bold">{dominant ? dominant.topTool.split(']')[1] || dominant.topTool : '-'}</span></p>
+                                    <p className="text-xs text-indigo-700 font-medium mt-1"><i className="fas fa-wrench mr-1"></i>Fokus Alat: <span className="font-bold">{dominant ? dominant.topTool.split(']')[1] || dominant.topTool : '-'}</span></p>
                                 </div>
 
                                 <div className="bg-slate-50 border border-slate-200 p-4 rounded-lg flex flex-col justify-center">
@@ -1471,7 +1564,7 @@
                             <div className="bg-slate-800 text-white p-4 rounded-lg mb-6 shadow-sm flex items-start gap-3 border-l-4 border-indigo-500">
                                 <i className="fas fa-robot text-indigo-400 text-2xl mt-0.5"></i>
                                 <div>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Analisis Sistem</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Kesimpulan Sistem</p>
                                     <p className="text-sm font-medium leading-relaxed text-slate-200">{narrative}</p>
                                 </div>
                             </div>
@@ -1627,7 +1720,7 @@
                                                         <div className="flex flex-col gap-1.5 w-max">
                                                             {trx.items && trx.items.map((i, idx) => (
                                                                 <span key={idx} className="bg-white border border-slate-200 text-[11px] px-2.5 py-1 rounded shadow-sm text-slate-800 font-semibold w-full block">
-                                                                    {i.nama ? `[${i.kode}] ${i.nama}` : i.name} <span className="text-indigo-600 ml-1 font-bold">({i.jumlah || i.quantity} Unit)</span>
+                                                                    {i.nama ? `[${i.kode}] ${i.nama}` : i.name} <span className="text-indigo-600 ml-1 font-bold">({i.jumlah || i.quantity}x)</span>
                                                                 </span>
                                                             ))}
                                                         </div>
@@ -1779,6 +1872,7 @@
                 );
             };
 
+            /* STREAMING_CHUNK:Rendering Borrow Form section... */
             const renderBorrowForm = () => {
                 const inventoryByCategory = inventory.reduce((acc, item) => {
                     if (!acc[item.category]) acc[item.category] = [];
@@ -1882,18 +1976,12 @@
                                     {borrowForm.items.map((item, index) => (
                                         <div key={index} className="flex flex-col md:flex-row gap-3 bg-slate-50 p-4 rounded border border-slate-300 items-center">
                                             <span className="font-bold text-slate-400 hidden md:block w-6 text-center">{index + 1}.</span>
-                                            <select className="flex-grow w-full p-2.5 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-600 cursor-pointer bg-white font-medium" value={item.itemId} onChange={e => handleBorrowItemChange(index, 'itemId', e.target.value)} required>
-                                                <option value="" disabled>-- Spesifikasikan Instrumen Master --</option>
-                                                {Object.keys(inventoryByCategory).map(category => (
-                                                    <optgroup key={category} label={`--- KATEGORI: ${category.toUpperCase()} ---`}>
-                                                        {inventoryByCategory[category].map(inv => (
-                                                            <option key={inv.id} value={inv.id} disabled={inv.available === 0}>
-                                                                [{inv.id}] {inv.name} - (Sisa Kuota: {inv.available})
-                                                            </option>
-                                                        ))}
-                                                    </optgroup>
-                                                ))}
-                                            </select>
+                                            <SearchableSelect 
+                                                inventory={inventory} 
+                                                inventoryByCategory={inventoryByCategory} 
+                                                value={item.itemId} 
+                                                onChange={(val) => handleBorrowItemChange(index, 'itemId', val)} 
+                                            />
                                             <div className="flex items-center w-full md:w-auto gap-3">
                                                 <label className="text-xs font-bold text-slate-600 md:hidden">Kuantitas:</label>
                                                 <input type="number" min="1" className="w-full md:w-24 p-2.5 border border-slate-300 rounded text-center font-bold bg-white focus:ring-2 focus:ring-indigo-600" value={item.quantity} onChange={e => handleBorrowItemChange(index, 'quantity', e.target.value)} required />
@@ -1915,6 +2003,7 @@
                 );
             };
 
+            /* STREAMING_CHUNK:Rendering Transactions Table with Print functionality... */
             const renderTransactions = () => {
                 const getTxCategory = (trx) => {
                     if (trx.status === 'active') {
@@ -2074,17 +2163,17 @@
                                                             isAdmin ? (
                                                                 <button onClick={() => handleReturn(trx.id)} className="bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 text-white px-4 py-2 rounded text-xs font-bold w-full mb-2 shadow-sm transition"><i className="fas fa-check-double mr-1"></i> Konfirmasi Kembali</button>
                                                             ) : (
-                                                                <span className="text-orange-600 text-[11px] italic font-bold block mb-2 uppercase tracking-wide border border-orange-200 bg-orange-50 py-1 rounded">Dalam Operasional</span>
+                                                                <span className="text-orange-600 text-[11px] italic font-black block mb-2 uppercase tracking-widest border border-orange-200 bg-orange-50 py-1.5 rounded shadow-sm">DALAM OPERASIONAL</span>
                                                             )
                                                         ) : (
-                                                            <span className="text-slate-500 text-[11px] italic font-bold block mb-2 uppercase tracking-wide border border-slate-300 bg-slate-100 py-1 rounded">Otorisasi Selesai</span>
+                                                            <span className="text-slate-500 text-[11px] italic font-black block mb-2 uppercase tracking-widest border border-slate-200 bg-slate-50 py-1.5 rounded shadow-sm">OTORISASI SELESAI</span>
                                                         )}
                                                         
                                                         {/* Tombol Cetak PDF yang ditambahkan */}
-                                                        <button onClick={() => handlePrintPDF(trx)} className="bg-indigo-50 text-indigo-700 border border-indigo-300 hover:bg-indigo-100 px-4 py-2 rounded text-xs font-bold w-full mb-2 shadow-sm transition flex items-center justify-center"><i className="fas fa-file-pdf mr-2 text-red-600 text-sm"></i> Unduh Berita Acara</button>
+                                                        <button onClick={() => handlePrintPDF(trx)} className="bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-4 py-2 rounded text-[13px] font-bold w-full mb-2 shadow-sm transition flex items-center justify-center"><i className="fas fa-file-pdf mr-2 text-red-600 text-lg"></i> Unduh Berita Acara</button>
 
-                                                        {isAdmin && (
-                                                            <button onClick={() => handleDelete(trx.id)} className="bg-red-600 hover:bg-red-700 border border-red-700 text-white px-4 py-2 rounded text-xs font-bold w-full shadow-sm transition"><i className="fas fa-eraser mr-1"></i> Hapus Arsip</button>
+                                                        {isAdmin && trx.status !== 'active' && (
+                                                            <button onClick={() => handleDelete(trx.id)} className="bg-white text-red-600 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider w-full mt-1 transition-colors">Hapus</button>
                                                         )}
                                                     </td>
                                                 </tr>
@@ -2119,22 +2208,22 @@
                     <nav className="bg-slate-900 w-full md:w-72 flex-shrink-0 text-white flex flex-col shadow-2xl z-10 md:min-h-screen border-r border-slate-800">
                         <div className="p-6 bg-slate-950 text-center border-b border-slate-800">
                             <div className="w-28 h-28 bg-white rounded-lg mx-auto flex items-center justify-center shadow-lg mb-4 p-2 border-2 border-indigo-900">
-                                <img src="logo.jpeg" alt="Logo Monitoring Alat Lab Geomatika" className="w-full h-full object-contain" onerror="this.src='https://placehold.co/400x400/ffffff/4f46e5?text=Lab+Geo'" />
+                                <img src="logo.jpeg" alt="Logo Monitoring Alat Lab Geomatika" className="w-full h-full object-contain" />
                             </div>
                             <h1 className="text-xs font-black tracking-widest leading-tight uppercase text-slate-400">Sistem Informasi Pusat</h1>
                             <p className="text-indigo-400 text-sm font-bold mt-1 tracking-wide">LABORATORIUM GEOMATIKA</p>
                         </div>
                         <div className="flex-grow p-4 space-y-2">
-                            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center space-x-3 px-5 py-3.5 rounded transition-all border-l-4 ${activeTab === 'dashboard' ? 'bg-slate-800 text-indigo-400 border-indigo-500 font-bold shadow-md' : 'border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 font-medium'}`}><i className="fas fa-chart-pie w-5 text-center"></i> <span>Dashboard</span></button>
-                            <button onClick={() => setActiveTab('inventory')} className={`w-full flex items-center space-x-3 px-5 py-3.5 rounded transition-all border-l-4 ${activeTab === 'inventory' ? 'bg-slate-800 text-indigo-400 border-indigo-500 font-bold shadow-md' : 'border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 font-medium'}`}><i className="fas fa-server w-5 text-center"></i> <span>Database Instrumen</span></button>
-                            <button onClick={() => setActiveTab('borrow')} className={`w-full flex items-center space-x-3 px-5 py-3.5 rounded transition-all border-l-4 ${activeTab === 'borrow' ? 'bg-slate-800 text-indigo-400 border-indigo-500 font-bold shadow-md' : 'border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 font-medium'}`}><i className="fas fa-file-signature w-5 text-center"></i> <span>Registrasi Peminjaman</span></button>
+                            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center space-x-3 px-5 py-3.5 rounded transition-all border-l-4 ${activeTab === 'dashboard' ? 'bg-slate-800 text-indigo-400 border-indigo-500 font-bold shadow-md' : 'border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 font-medium'}`}><i className="fas fa-chart-pie w-5 text-center"></i> <span>Dashboard Analitik</span></button>
+                            <button onClick={() => setActiveTab('inventory')} className={`w-full flex items-center space-x-3 px-5 py-3.5 rounded transition-all border-l-4 ${activeTab === 'inventory' ? 'bg-slate-800 text-indigo-400 border-indigo-500 font-bold shadow-md' : 'border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 font-medium'}`}><i className="fas fa-server w-5 text-center"></i> <span>Master Data Instrumen</span></button>
+                            <button onClick={() => setActiveTab('borrow')} className={`w-full flex items-center space-x-3 px-5 py-3.5 rounded transition-all border-l-4 ${activeTab === 'borrow' ? 'bg-slate-800 text-indigo-400 border-indigo-500 font-bold shadow-md' : 'border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 font-medium'}`}><i className="fas fa-file-signature w-5 text-center"></i> <span>Registrasi Otorisasi</span></button>
                             <button onClick={() => setActiveTab('transactions')} className={`w-full flex items-center space-x-3 px-5 py-3.5 rounded transition-all border-l-4 ${activeTab === 'transactions' ? 'bg-slate-800 text-indigo-400 border-indigo-500 font-bold shadow-md' : 'border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 font-medium'}`}><i className="fas fa-archive w-5 text-center"></i> <span>Arsip & Validasi Serah Terima</span></button>
                         </div>
                         <div className="p-4 border-t border-slate-800 bg-slate-950">
                             <button onClick={handleShareLink} className="w-full flex items-center justify-center space-x-2 bg-indigo-900 hover:bg-indigo-800 border border-indigo-700 text-indigo-100 py-3 rounded transition text-xs font-bold uppercase tracking-wider mb-5"><i className="fas fa-link"></i> <span>Salin Tautan Portal</span></button>
                             <div className="text-[10px] text-slate-600 text-center leading-relaxed font-semibold tracking-wide">
                                 &copy; 2026 LABORATORIUM GEOMATIKA <br/>
-                                INSTITUT <span onClick={handleAdminToggle} className="cursor-default">TEKNOLOGI</span> SUMATERA
+                                INSTITUT <span onClick={handleAdminToggle} className="cursor-default hover:text-slate-400 transition-colors">TEKNOLOGI</span> SUMATERA
                             </div>
                         </div>
                     </nav>
