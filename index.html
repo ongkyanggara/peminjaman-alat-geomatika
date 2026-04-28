@@ -226,8 +226,8 @@
             const [activeTab, setActiveTab] = useState('dashboard');
             
             const [transactions, setTransactions] = useState(localSavedTx);
-            const [baseInventory, setBaseInventory] = useState(localSavedInv);
-            const [inventory, setInventory] = useState(() => calculateInventory(localSavedTx, localSavedInv));
+            const [baseInventory, setBaseInventory] = useState(initialInventory);
+            const [inventory, setInventory] = useState(() => calculateInventory(localSavedTx, initialInventory));
             
             const [filterCategory, setFilterCategory] = useState('Semua');
             const [isAdmin, setIsAdmin] = useState(false);
@@ -491,10 +491,9 @@
 
             useEffect(() => {
                 localStorage.setItem('lab_transactions_v2', JSON.stringify(transactions));
-                localStorage.setItem('lab_inventory_v2', JSON.stringify(baseInventory));
             }, [transactions, baseInventory]);
 
-            // FETCH DATA DARI KEDUA SPREADSHEET
+            // FETCH DATA DARI SPREADSHEET
             useEffect(() => {
                 const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
@@ -503,72 +502,46 @@
                     try {
                         const cacheBuster = '?t=' + new Date().getTime();
                         
-                        const txResponsePromise = fetch(GOOGLE_SCRIPT_URL + cacheBuster).then(res => res.json()).catch(() => ({ error: "Fetch TX failed" }));
+                        // 1. Tarik data dari Spreadsheet
+                        const txResponse = await fetch(GOOGLE_SCRIPT_URL + cacheBuster);
+                        const txRawData = await txResponse.json();
                         
-                        let invResponsePromise;
-                        if (GOOGLE_SCRIPT_INV_FEEDBACK_URL) {
-                            invResponsePromise = fetch(GOOGLE_SCRIPT_INV_FEEDBACK_URL + cacheBuster).then(res => res.json()).catch(() => null);
-                        } else {
-                            invResponsePromise = Promise.resolve(null);
-                        }
-
-                        const [txRawData, invRawData] = await Promise.all([txResponsePromise, invResponsePromise]);
-                        
-                        const currentLocalInv = JSON.parse(localStorage.getItem('lab_inventory_v2') || JSON.stringify(initialInventory));
+                        // 2. Olah data transaksi
                         let txData = [];
-                        let invData = [];
-
                         if (txRawData && !txRawData.error) {
-                            if (Array.isArray(txRawData)) {
-                                txData = txRawData;
-                            } else {
-                                txData = txRawData.transactions || [];
-                            }
+                            txData = Array.isArray(txRawData) ? txRawData : (txRawData.transactions || []);
                         }
 
-                        let activeInvSource = invRawData && invRawData.inventory ? invRawData.inventory : (txRawData && txRawData.inventory ? txRawData.inventory : null);
-
-                        if (activeInvSource && activeInvSource.length > 0) {
-                            const serverInv = activeInvSource.map(item => ({
-                                id: item.id, category: item.category, name: item.name, 
-                                total: item.total, available: item.total, isLocalOnly: false 
+                        // 3. Tentukan Data Master Alat (Inventory)
+                        // Jika di Spreadsheet ada data inventory, gunakan itu. 
+                        // Jika tidak ada/kosong, gunakan initialInventory dari skrip HTML.
+                        let finalInventoryMaster = initialInventory;
+                        if (txRawData.inventory && txRawData.inventory.length > 0) {
+                            finalInventoryMaster = txRawData.inventory.map(item => ({
+                                id: item.id, 
+                                category: item.category, 
+                                name: item.name, 
+                                total: parseInt(item.total),
+                                available: parseInt(item.total) // available akan dihitung ulang di langkah 5
                             }));
-                            
-                            // Ambil seluruh item lokal yang belum ada di server (spreadsheet)
-                            const unsyncedItems = currentLocalInv.filter(i => !serverInv.some(s => s.id === i.id));
-                            const markedUnsynced = unsyncedItems.map(i => ({...i, isLocalOnly: true}));
-
-                            invData = [...serverInv, ...markedUnsynced];
-
-                            markedUnsynced.forEach(item => {
-                                fetch(ACTIVE_INV_URL, {
-                                    method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                                    body: JSON.stringify({ action: "addInventory", item: item })
-                                }).catch(() => {});
-                            });
-                        } else {
-                            const markedUnsynced = currentLocalInv.map(i => ({...i, isLocalOnly: true}));
-                            invData = markedUnsynced;
-                            
-                            markedUnsynced.forEach(item => {
-                                fetch(ACTIVE_INV_URL, {
-                                    method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                                    body: JSON.stringify({ action: "addInventory", item: item })
-                                }).catch(() => {});
-                            });
                         }
 
+                        // 4. Format data transaksi untuk tampilan
                         const formattedTx = txData.map(trx => ({
                             ...trx,
                             borrowDateFormatted: new Date(trx.borrowDate).toLocaleDateString('id-ID')
                         }));
 
+                        // 5. Update State aplikasi
                         setTransactions(formattedTx);
-                        setBaseInventory(invData);
-                        setInventory(calculateInventory(formattedTx, invData));
+                        setBaseInventory(finalInventoryMaster);
+                        
+                        // Hitung ketersediaan: Master Inventory dikurangi transaksi yang statusnya 'active'
+                        setInventory(calculateInventory(formattedTx, finalInventoryMaster));
                         
                     } catch (error) {
-                        console.error("Gagal terhubung ke Spreadsheet:", error);
+                        console.error("Gagal sinkronisasi:", error);
+                        showNotification("Gagal mengambil data terbaru dari server", "error");
                     } finally {
                         setIsAppLoading(false);
                         setIsSyncing(false);
