@@ -31,6 +31,14 @@
     // --GEOMATICS ENGINEERING, INSTITUT TEKNOLOGI SUMATERA--
     -->
     <script type="text/babel">
+        document.addEventListener('contextmenu', event => event.preventDefault());
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'F12' || 
+               (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) || 
+               (e.ctrlKey && (e.key === 'U' || e.key === 'u'))) {
+                e.preventDefault();
+            }
+        });
         const { useState, useEffect, useRef } = React;
 
         // --- KOMPONEN DROPDOWN PENCARIAN ALAT ---
