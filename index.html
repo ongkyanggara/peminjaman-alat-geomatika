@@ -205,39 +205,53 @@
             { id: 'FG-001', category: 'Hidrografi', name: 'Fishfinder Garmin 585 S', total: 1, available: 1 }
         ];
 
-        const calculateInventory = (txData, baseInv) => {
-            let currentInventory = JSON.parse(JSON.stringify(baseInv));
-            txData.forEach(trx => {
-                if (trx.status === 'active' && trx.items) {
-                    trx.items.forEach(bItem => {
-                        const itemId = bItem.kode || (bItem.name && bItem.name.match(/\[(.*?)\]/) ? bItem.name.match(/\[(.*?)\]/)[1] : null);
-                        const qty = parseInt(bItem.jumlah || bItem.quantity);
-                        
-                        if (itemId) {
-                            const invIndex = currentInventory.findIndex(i => i.id === itemId);
-                            if (invIndex !== -1) {
-                                currentInventory[invIndex].available -= qty;
-                            }
-                        }
-                    });
+        // Perhitungan inventaris dibuat lebih efisien untuk sinkronisasi data Spreadsheet.
+        // Menggunakan Map agar pencarian kode alat tidak melakukan findIndex berulang kali.
+        const calculateInventory = (txData = [], baseInv = []) => {
+            const currentInventory = baseInv.map(item => ({
+                ...item,
+                available: Number(item.total ?? item.available ?? 0)
+            }));
+
+            const inventoryMap = new Map(
+                currentInventory.map(item => [item.id, item])
+            );
+
+            for (const trx of txData) {
+                if (trx.status !== 'active' || !Array.isArray(trx.items)) continue;
+
+                for (const bItem of trx.items) {
+                    const nameMatch = typeof bItem.name === 'string'
+                        ? bItem.name.match(/\[(.*?)\]/)
+                        : null;
+
+                    const itemId = bItem.kode || (nameMatch ? nameMatch[1] : null);
+                    const qty = Number(bItem.jumlah ?? bItem.quantity ?? 0);
+
+                    if (!itemId || !Number.isFinite(qty) || qty <= 0) continue;
+
+                    const invItem = inventoryMap.get(itemId);
+                    if (invItem) {
+                        invItem.available = Math.max(0, invItem.available - qty);
+                    }
                 }
-            });
+            }
+
             return currentInventory;
         };
 
         function App() {
+            // Spreadsheet menjadi single source of truth.
+            // Tidak menggunakan localStorage/cache untuk transaksi maupun inventaris.
             const [isSyncing, setIsSyncing] = useState(true);
-const [isInitialSync, setIsInitialSync] = useState(true);
-
-const [activeTab, setActiveTab] = useState('dashboard');
-const [scheduleLab, setScheduleLab] = useState('GT');
-
-const [transactions, setTransactions] = useState([]);
-const [baseInventory, setBaseInventory] = useState([]);
-const [inventory, setInventory] = useState([]);
-
-// Mencegah request sinkronisasi bertumpuk
-const syncInProgressRef = useRef(false);
+            const [isDatabaseReady, setIsDatabaseReady] = useState(false);
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [scheduleLab, setScheduleLab] = useState('GT');
+            
+            // UI dapat langsung dirender, kemudian data aktual Spreadsheet masuk di background.
+            const [transactions, setTransactions] = useState([]);
+            const [baseInventory, setBaseInventory] = useState(initialInventory);
+            const [inventory, setInventory] = useState(() => calculateInventory([], initialInventory));
             
             const [filterCategory, setFilterCategory] = useState('Semua');
             const [isAdmin, setIsAdmin] = useState(false);
@@ -252,6 +266,12 @@ const syncInProgressRef = useRef(false);
             const fileInputRef = useRef(null);
             const feedbackFileInputRef = useRef(null);
             const [currentTime, setCurrentTime] = useState(new Date());
+
+            // Kontrol sinkronisasi agar request tidak bertumpuk.
+            const syncInProgressRef = useRef(false);
+            const syncAbortRef = useRef(null);
+            const lastServerPayloadRef = useRef('');
+            const lastSyncAttemptRef = useRef(0);
 
             // --- PENGATURAN LINK DATABASE ---
             const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPlSeyXWP0ALhXp4VqJ_NUmB433jHqLUn4hButn2UFzHu2J9hOfEeRlj-Zdky0TA_b/exec'; 
@@ -499,193 +519,174 @@ const syncInProgressRef = useRef(false);
                 }
             };
 
-            // FETCH DATA DARI SPREADSHEET
+            // ============================================================
+            // SINKRONISASI DATABASE SPREADSHEET
+            // - Tanpa localStorage/cache data aktivitas
+            // - UI dirender lebih dulu, sinkronisasi berjalan di background
+            // - Request dicegah agar tidak bertumpuk
+            // - Timeout mencegah halaman menunggu Apps Script terlalu lama
+            // ============================================================
+            const fetchDatabase = async ({ silent = false, force = false } = {}) => {
+                const now = Date.now();
+
+                // Hindari request ganda dalam waktu sangat dekat, kecuali force refresh.
+                if (!force && now - lastSyncAttemptRef.current < 5000) return false;
+                if (syncInProgressRef.current) return false;
+
+                lastSyncAttemptRef.current = now;
+                syncInProgressRef.current = true;
+
+                if (!silent) setIsSyncing(true);
+
+                const controller = new AbortController();
+                syncAbortRef.current = controller;
+
+                const timeoutId = setTimeout(() => {
+                    controller.abort();
+                }, 8000);
+
+                try {
+                    // Satu GET untuk transaksi + inventory.
+                    // cache: 'no-store' memastikan browser meminta data aktual tanpa cache lokal.
+                    const response = await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'GET',
+                        cache: 'no-store',
+                        signal: controller.signal
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    // Bandingkan payload mentah agar background sync tidak memicu render ulang
+                    // jika isi Spreadsheet belum berubah.
+                    const rawText = await response.text();
+                    if (!rawText) throw new Error('Respons database kosong');
+
+                    if (!force && lastServerPayloadRef.current === rawText) {
+                        setIsDatabaseReady(true);
+                        return true;
+                    }
+
+                    const txRawData = JSON.parse(rawText);
+
+                    if (txRawData && txRawData.error) {
+                        throw new Error(txRawData.error);
+                    }
+
+                    // 1. Olah data transaksi
+                    const txData = Array.isArray(txRawData)
+                        ? txRawData
+                        : (Array.isArray(txRawData?.transactions) ? txRawData.transactions : []);
+
+                    // 2. Master inventory tetap mengikuti data Spreadsheet jika tersedia.
+                    // initialInventory hanya menjadi fallback struktur master apabila API lama
+                    // belum mengirim blok inventory.
+                    let finalInventoryMaster = initialInventory;
+
+                    if (!Array.isArray(txRawData) && Array.isArray(txRawData?.inventory) && txRawData.inventory.length > 0) {
+                        finalInventoryMaster = txRawData.inventory.map(item => {
+                            const total = Number(item.total) || 0;
+                            return {
+                                id: item.id,
+                                category: item.category,
+                                name: item.name,
+                                total,
+                                available: total
+                            };
+                        });
+                    }
+
+                    // 3. Format transaksi
+                    const formattedTx = txData.map(trx => ({
+                        ...trx,
+                        borrowDateFormatted: trx.borrowDate
+                            ? parseRealDate(trx.borrowDate).toLocaleDateString('id-ID')
+                            : '-'
+                    }));
+
+                    // 4. Hitung ketersediaan satu kali sebelum update state.
+                    const calculatedInventory = calculateInventory(formattedTx, finalInventoryMaster);
+
+                    // 5. Update state dari Spreadsheet.
+                    setTransactions(formattedTx);
+                    setBaseInventory(finalInventoryMaster);
+                    setInventory(calculatedInventory);
+                    setIsDatabaseReady(true);
+                    lastServerPayloadRef.current = rawText;
+
+                    return true;
+
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        console.warn('Sinkronisasi Spreadsheet timeout setelah 8 detik.');
+                    } else {
+                        console.error('Gagal sinkronisasi Spreadsheet:', error);
+                    }
+
+                    if (!silent) {
+                        showNotification(
+                            error.name === 'AbortError'
+                                ? 'Database sedang lambat. Sistem akan mencoba sinkronisasi kembali di background.'
+                                : 'Gagal terhubung ke database Spreadsheet. Sistem akan mencoba kembali.',
+                            'error'
+                        );
+                    }
+
+                    return false;
+
+                } finally {
+                    clearTimeout(timeoutId);
+                    syncAbortRef.current = null;
+                    syncInProgressRef.current = false;
+                    if (!silent) setIsSyncing(false);
+                }
+            };
+
+            // Refresh ulang sesudah operasi POST agar UI kembali mengikuti Spreadsheet.
+            const refreshDatabaseAfterWrite = (delay = 900) => {
+                setTimeout(() => {
+                    fetchDatabase({ silent: true, force: true });
+                }, delay);
+            };
+
             useEffect(() => {
+                // Jam real-time tetap dipertahankan seperti struktur lama.
+                const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
-    let mounted = true;
+                // useEffect berjalan setelah render pertama, sehingga dashboard tidak lagi
+                // diblokir oleh proses GET Spreadsheet.
+                const initialSyncTimer = setTimeout(() => {
+                    fetchDatabase({ silent: false, force: true });
+                }, 0);
 
-    const fetchDatabase = async (silent = false) => {
+                // Sinkronisasi background setiap 30 detik hanya ketika tab sedang aktif.
+                const backgroundSyncTimer = setInterval(() => {
+                    if (document.visibilityState === 'visible') {
+                        fetchDatabase({ silent: true });
+                    }
+                }, 30000);
 
-        // Hindari request bertumpuk
-        if (syncInProgressRef.current) return;
+                // Saat pengguna kembali ke tab, cek data terbaru tanpa menunggu interval berikutnya.
+                const handleVisibilityChange = () => {
+                    if (document.visibilityState === 'visible') {
+                        fetchDatabase({ silent: true });
+                    }
+                };
 
-        syncInProgressRef.current = true;
+                document.addEventListener('visibilitychange', handleVisibilityChange);
 
-        if (!silent) {
-            setIsSyncing(true);
-        }
+                return () => {
+                    clearInterval(timer);
+                    clearTimeout(initialSyncTimer);
+                    clearInterval(backgroundSyncTimer);
+                    document.removeEventListener('visibilitychange', handleVisibilityChange);
 
-        const controller = new AbortController();
-
-        // Maksimum menunggu Apps Script 8 detik
-        const timeoutId = setTimeout(() => {
-            controller.abort();
-        }, 8000);
-
-        try {
-
-            // SATU request untuk transaksi + inventory
-            const response = await fetch(GOOGLE_SCRIPT_URL, {
-                method: 'GET',
-                cache: 'no-store',
-                signal: controller.signal
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            if (!mounted) return;
-
-
-            // ==================================================
-            // TRANSAKSI
-            // ==================================================
-
-            const txData = Array.isArray(data)
-                ? data
-                : Array.isArray(data.transactions)
-                    ? data.transactions
-                    : [];
-
-
-            // ==================================================
-            // INVENTORY
-            // ==================================================
-
-            const inventoryData =
-                Array.isArray(data.inventory)
-                    ? data.inventory.map(item => {
-
-                        const total = Number(item.total) || 0;
-
-                        return {
-                            id: item.id,
-                            category: item.category,
-                            name: item.name,
-                            total: total,
-                            available: total
-                        };
-
-                    })
-                    : [];
-
-
-            // ==================================================
-            // FORMAT TRANSAKSI
-            // ==================================================
-
-            const formattedTx = txData.map(trx => ({
-                ...trx,
-
-                borrowDateFormatted: trx.borrowDate
-                    ? parseRealDate(trx.borrowDate)
-                        .toLocaleDateString('id-ID')
-                    : '-'
-            }));
-
-
-            // ==================================================
-            // HITUNG INVENTORY SEBELUM UPDATE STATE
-            // ==================================================
-
-            const calculatedInventory =
-                calculateInventory(
-                    formattedTx,
-                    inventoryData
-                );
-
-
-            // ==================================================
-            // UPDATE DATA
-            // ==================================================
-
-            setTransactions(formattedTx);
-            setBaseInventory(inventoryData);
-            setInventory(calculatedInventory);
-
-            setIsInitialSync(false);
-
-
-        } catch (error) {
-
-            if (error.name === 'AbortError') {
-
-                console.warn(
-                    'Sinkronisasi Spreadsheet timeout.'
-                );
-
-                if (!silent) {
-                    showNotification(
-                        'Server database membutuhkan waktu lebih lama. Silakan coba kembali.',
-                        'error'
-                    );
-                }
-
-            } else {
-
-                console.error(
-                    'Gagal sinkronisasi database:',
-                    error
-                );
-
-                if (!silent) {
-                    showNotification(
-                        'Gagal terhubung ke database Spreadsheet.',
-                        'error'
-                    );
-                }
-
-            }
-
-        } finally {
-
-            clearTimeout(timeoutId);
-
-            syncInProgressRef.current = false;
-
-            if (mounted) {
-                setIsSyncing(false);
-            }
-
-        }
-
-    };
-
-
-    // ==========================================================
-    // LOAD PERTAMA
-    // ==========================================================
-
-    // React/UI dirender dulu.
-    // Database mulai diminta sesaat setelah render.
-    const initialSync = setTimeout(() => {
-        fetchDatabase(false);
-    }, 50);
-
-
-    // ==========================================================
-    // BACKGROUND AUTO SYNC
-    // ==========================================================
-
-    // Refresh data Spreadsheet setiap 30 detik.
-    const backgroundSync = setInterval(() => {
-        fetchDatabase(true);
-    }, 30000);
-
-
-    return () => {
-
-        mounted = false;
-
-        clearTimeout(initialSync);
-        clearInterval(backgroundSync);
-
-    };
-
-}, []);
+                    if (syncAbortRef.current) {
+                        syncAbortRef.current.abort();
+                    }
+                };
+            }, []);
 
             const handleShareLink = () => {
                 const url = window.location.href; 
@@ -741,6 +742,13 @@ const syncInProgressRef = useRef(false);
 
             const submitBorrow = async (e) => {
                 e.preventDefault();
+
+                // Transaksi baru hanya boleh dikirim setelah pembacaan awal Spreadsheet berhasil.
+                if (!isDatabaseReady) {
+                    showNotification('Database belum selesai disinkronisasi. Mohon tunggu beberapa saat.', 'error');
+                    fetchDatabase({ silent: false, force: true });
+                    return;
+                }
                 
                 if (!borrowForm.borrowerName || !borrowForm.nim || !borrowForm.purpose || !borrowForm.borrowDate || !borrowForm.borrowTime || !borrowForm.returnDateEst || !borrowForm.returnTimeEst || borrowForm.items.length === 0 || !borrowForm.fileBase64) {
                     showNotification('Mohon lengkapi data diri, keperluan, jam, daftar alat, dan unggah surat izin', 'error'); return;
@@ -807,11 +815,14 @@ const syncInProgressRef = useRef(false);
                         method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify(payload)
                     });
-                    showNotification('Peminjaman berhasil dicatat & tersimpan secara online!');
+
+                    // Setelah penulisan, ambil kembali data resmi dari Spreadsheet.
+                    refreshDatabaseAfterWrite();
+                    showNotification('Peminjaman berhasil dikirim ke Database Spreadsheet!');
 
                 } catch (error) {
                     console.error('Info pengiriman fetch error:', error);
-                    showNotification('Jaringan offline. Data tersimpan lokal & akan dikirim nanti.', 'error');
+                    showNotification('Gagal mengirim data ke Spreadsheet. Silakan coba kembali.', 'error');
                 } finally { setIsSubmitting(false); }
             };
 
@@ -836,6 +847,7 @@ const syncInProgressRef = useRef(false);
                             method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({ action: "updateStatus", id: transactionId, status: newStatusRecord })
                         });
+                        refreshDatabaseAfterWrite();
                     } catch(e) { console.error("Gagal sinkron pengembalian", e) }
                 }
             };
@@ -852,6 +864,7 @@ const syncInProgressRef = useRef(false);
                             method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({ action: "delete", id: transactionId })
                         });
+                        refreshDatabaseAfterWrite();
                     } catch(e) { console.error("Gagal sinkron hapus", e) }
                 }
             };
@@ -1058,6 +1071,13 @@ const syncInProgressRef = useRef(false);
 
             const handleAddNewInventoryItem = async (e) => {
                 e.preventDefault();
+
+                if (!isDatabaseReady) {
+                    showNotification('Database belum selesai disinkronisasi. Mohon tunggu beberapa saat.', 'error');
+                    fetchDatabase({ silent: false, force: true });
+                    return;
+                }
+
                 if (!newItemForm.id || !newItemForm.category || !newItemForm.name || newItemForm.total <= 0) return showNotification('Data alat belum lengkap!', 'error');
                 if (baseInventory.some(i => i.id === newItemForm.id)) return showNotification('Kode Alat sudah digunakan!', 'error');
                 
@@ -1076,7 +1096,8 @@ const syncInProgressRef = useRef(false);
                         method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: "addInventory", item: newItem })
                     });
-                    showNotification('Alat disimpan sementara. Refresh halaman untuk memastikan masuk ke Sheet.', 'success');
+                    refreshDatabaseAfterWrite();
+                    showNotification('Data alat dikirim ke Database Spreadsheet.', 'success');
                 } catch(e) { 
                     console.error("Gagal simpan inv", e);
                 }
@@ -1097,6 +1118,7 @@ const syncInProgressRef = useRef(false);
                             method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({ action: "deleteInventory", id: itemId })
                         });
+                        refreshDatabaseAfterWrite();
                     } catch(e) { console.error("Gagal hapus inv", e) }
                 }
             };
@@ -1120,8 +1142,8 @@ const syncInProgressRef = useRef(false);
                     }
                 }
 
-                showNotification(`Selesai memproses pengiriman. Memuat ulang data...`, "success");
-                setTimeout(() => window.location.reload(), 1500);
+                showNotification(`Selesai memproses pengiriman. Menyinkronkan ulang Database Spreadsheet...`, "success");
+                refreshDatabaseAfterWrite(1200);
             };
 
             const renderDashboard = () => {
@@ -2510,16 +2532,6 @@ const selectedSchedule = processedSchedule.filter(
                     </div>
                 );
             };
-
-            if (isAppLoading) {
-                return (
-                    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
-                        <i className="fas fa-circle-notch fa-spin text-4xl text-indigo-700 mb-5"></i>
-                        <h2 className="text-xl font-bold text-slate-800 tracking-wide">Sinkronisasi Basis Data Pusat...</h2>
-                        <p className="text-slate-500 text-sm mt-2 font-medium">Melakukan otentikasi riwayat instrumen laboratorium</p>
-                    </div>
-                )
-            }
 
             return (
                 <div className="min-h-screen flex flex-col md:flex-row bg-slate-100">
