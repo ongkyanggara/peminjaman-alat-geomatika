@@ -226,17 +226,18 @@
         };
 
         function App() {
-            const localSavedTx = JSON.parse(localStorage.getItem('lab_transactions_v2') || '[]');
-            const localSavedInv = JSON.parse(localStorage.getItem('lab_inventory_v2') || JSON.stringify(initialInventory));
-            
-            const [isAppLoading, setIsAppLoading] = useState(localSavedTx.length === 0);
             const [isSyncing, setIsSyncing] = useState(true);
-            const [activeTab, setActiveTab] = useState('dashboard');
-            const [scheduleLab, setScheduleLab] = useState('GT');
-            
-            const [transactions, setTransactions] = useState(localSavedTx);
-            const [baseInventory, setBaseInventory] = useState(initialInventory);
-            const [inventory, setInventory] = useState(() => calculateInventory(localSavedTx, initialInventory));
+const [isInitialSync, setIsInitialSync] = useState(true);
+
+const [activeTab, setActiveTab] = useState('dashboard');
+const [scheduleLab, setScheduleLab] = useState('GT');
+
+const [transactions, setTransactions] = useState([]);
+const [baseInventory, setBaseInventory] = useState([]);
+const [inventory, setInventory] = useState([]);
+
+// Mencegah request sinkronisasi bertumpuk
+const syncInProgressRef = useRef(false);
             
             const [filterCategory, setFilterCategory] = useState('Semua');
             const [isAdmin, setIsAdmin] = useState(false);
@@ -498,68 +499,193 @@
                 }
             };
 
-            useEffect(() => {
-                localStorage.setItem('lab_transactions_v2', JSON.stringify(transactions));
-            }, [transactions, baseInventory]);
-
             // FETCH DATA DARI SPREADSHEET
             useEffect(() => {
-                const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
-                const fetchDatabase = async () => {
-                    setIsSyncing(true);
-                    try {
-                        const cacheBuster = '?t=' + new Date().getTime();
-                        
-                        // 1. Tarik data dari Spreadsheet
-                        const txResponse = await fetch(GOOGLE_SCRIPT_URL + cacheBuster);
-                        const txRawData = await txResponse.json();
-                        
-                        // 2. Olah data transaksi
-                        let txData = [];
-                        if (txRawData && !txRawData.error) {
-                            txData = Array.isArray(txRawData) ? txRawData : (txRawData.transactions || []);
-                        }
+    let mounted = true;
 
-                        // 3. Tentukan Data Master Alat (Inventory)
-                        // Jika di Spreadsheet ada data inventory, gunakan itu. 
-                        // Jika tidak ada/kosong, gunakan initialInventory dari skrip HTML.
-                        let finalInventoryMaster = initialInventory;
-                        if (txRawData.inventory && txRawData.inventory.length > 0) {
-                            finalInventoryMaster = txRawData.inventory.map(item => ({
-                                id: item.id, 
-                                category: item.category, 
-                                name: item.name, 
-                                total: parseInt(item.total),
-                                available: parseInt(item.total) // available akan dihitung ulang di langkah 5
-                            }));
-                        }
+    const fetchDatabase = async (silent = false) => {
 
-                        // 4. Format data transaksi untuk tampilan
-                        const formattedTx = txData.map(trx => ({
-                            ...trx,
-                            borrowDateFormatted: new Date(trx.borrowDate).toLocaleDateString('id-ID')
-                        }));
+        // Hindari request bertumpuk
+        if (syncInProgressRef.current) return;
 
-                        // 5. Update State aplikasi
-                        setTransactions(formattedTx);
-                        setBaseInventory(finalInventoryMaster);
-                        
-                        // Hitung ketersediaan: Master Inventory dikurangi transaksi yang statusnya 'active'
-                        setInventory(calculateInventory(formattedTx, finalInventoryMaster));
-                        
-                    } catch (error) {
-                        console.error("Gagal sinkronisasi:", error);
-                        showNotification("Gagal mengambil data terbaru dari server", "error");
-                    } finally {
-                        setIsAppLoading(false);
-                        setIsSyncing(false);
-                    }
-                };
+        syncInProgressRef.current = true;
 
-                fetchDatabase();
-                return () => clearInterval(timer);
-            }, []);
+        if (!silent) {
+            setIsSyncing(true);
+        }
+
+        const controller = new AbortController();
+
+        // Maksimum menunggu Apps Script 8 detik
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+        }, 8000);
+
+        try {
+
+            // SATU request untuk transaksi + inventory
+            const response = await fetch(GOOGLE_SCRIPT_URL, {
+                method: 'GET',
+                cache: 'no-store',
+                signal: controller.signal
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (!mounted) return;
+
+
+            // ==================================================
+            // TRANSAKSI
+            // ==================================================
+
+            const txData = Array.isArray(data)
+                ? data
+                : Array.isArray(data.transactions)
+                    ? data.transactions
+                    : [];
+
+
+            // ==================================================
+            // INVENTORY
+            // ==================================================
+
+            const inventoryData =
+                Array.isArray(data.inventory)
+                    ? data.inventory.map(item => {
+
+                        const total = Number(item.total) || 0;
+
+                        return {
+                            id: item.id,
+                            category: item.category,
+                            name: item.name,
+                            total: total,
+                            available: total
+                        };
+
+                    })
+                    : [];
+
+
+            // ==================================================
+            // FORMAT TRANSAKSI
+            // ==================================================
+
+            const formattedTx = txData.map(trx => ({
+                ...trx,
+
+                borrowDateFormatted: trx.borrowDate
+                    ? parseRealDate(trx.borrowDate)
+                        .toLocaleDateString('id-ID')
+                    : '-'
+            }));
+
+
+            // ==================================================
+            // HITUNG INVENTORY SEBELUM UPDATE STATE
+            // ==================================================
+
+            const calculatedInventory =
+                calculateInventory(
+                    formattedTx,
+                    inventoryData
+                );
+
+
+            // ==================================================
+            // UPDATE DATA
+            // ==================================================
+
+            setTransactions(formattedTx);
+            setBaseInventory(inventoryData);
+            setInventory(calculatedInventory);
+
+            setIsInitialSync(false);
+
+
+        } catch (error) {
+
+            if (error.name === 'AbortError') {
+
+                console.warn(
+                    'Sinkronisasi Spreadsheet timeout.'
+                );
+
+                if (!silent) {
+                    showNotification(
+                        'Server database membutuhkan waktu lebih lama. Silakan coba kembali.',
+                        'error'
+                    );
+                }
+
+            } else {
+
+                console.error(
+                    'Gagal sinkronisasi database:',
+                    error
+                );
+
+                if (!silent) {
+                    showNotification(
+                        'Gagal terhubung ke database Spreadsheet.',
+                        'error'
+                    );
+                }
+
+            }
+
+        } finally {
+
+            clearTimeout(timeoutId);
+
+            syncInProgressRef.current = false;
+
+            if (mounted) {
+                setIsSyncing(false);
+            }
+
+        }
+
+    };
+
+
+    // ==========================================================
+    // LOAD PERTAMA
+    // ==========================================================
+
+    // React/UI dirender dulu.
+    // Database mulai diminta sesaat setelah render.
+    const initialSync = setTimeout(() => {
+        fetchDatabase(false);
+    }, 50);
+
+
+    // ==========================================================
+    // BACKGROUND AUTO SYNC
+    // ==========================================================
+
+    // Refresh data Spreadsheet setiap 30 detik.
+    const backgroundSync = setInterval(() => {
+        fetchDatabase(true);
+    }, 30000);
+
+
+    return () => {
+
+        mounted = false;
+
+        clearTimeout(initialSync);
+        clearInterval(backgroundSync);
+
+    };
+
+}, []);
 
             const handleShareLink = () => {
                 const url = window.location.href; 
