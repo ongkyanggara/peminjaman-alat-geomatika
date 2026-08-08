@@ -869,7 +869,7 @@ function App() {
             doc.setTextColor(0, 0, 0);
             doc.setFontSize(10);
             // Space untuk TTD
-            doc.text("(_________________________)", 130, finalY + 55);
+            doc.text("(Deny Adam, A. Md.)", 130, finalY + 55);
             doc.text(`( ${trx.borrowerName} )`, 25, finalY + 55);
             // Unduh File
             doc.save(`Bukti_${isReturned ? 'Pengembalian' : 'Peminjaman'}_${trx.id}.pdf`);
