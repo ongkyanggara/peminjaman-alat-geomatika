@@ -232,6 +232,7 @@
             const [isAppLoading, setIsAppLoading] = useState(localSavedTx.length === 0);
             const [isSyncing, setIsSyncing] = useState(true);
             const [activeTab, setActiveTab] = useState('dashboard');
+            const [scheduleLab, setScheduleLab] = useState('GT');
             
             const [transactions, setTransactions] = useState(localSavedTx);
             const [baseInventory, setBaseInventory] = useState(initialInventory);
@@ -1188,25 +1189,94 @@
                 });
 
                 // --- DATA JADWAL PRAKTIKUM ---
-                // --- DATA JADWAL PRAKTIKUM ---
 const MONDAY = 1, TUESDAY = 2, WEDNESDAY = 3, THURSDAY = 4, FRIDAY = 5;
+
+const labLabels = {
+    GT: 'Praktikum Lab GT',
+    GEOSPASIAL: 'Praktikum Lab Geospasial FTIK',
+    MM: 'Praktikum Lab Multimedia (MM)'
+};
+
 const rawSchedule = [
-    { id: 'm1', day: MONDAY, course: 'Pemetaan Dasar', class: 'RA', start: '07:30', end: '10:10' },
-    { id: 'm2', day: MONDAY, course: 'Hidrografi I', class: 'RA', start: '13:00', end: '15:40' },
 
-    { id: 't1', day: TUESDAY, course: 'Pemetaan Dasar', class: 'RB', start: '07:30', end: '10:10' },
-    { id: 't2', day: TUESDAY, course: 'Hidrografi I', class: 'RB', start: '13:00', end: '15:40' },
+    // =========================================================
+    // KATEGORI 1 - PRAKTIKUM LAB GT
+    // =========================================================
 
-    { id: 'w1', day: WEDNESDAY, course: 'Pemetaan Dasar', class: 'RC', start: '07:30', end: '10:10' },
-    { id: 'w2', day: WEDNESDAY, course: 'Hidrografi I', class: 'RC', start: '13:00', end: '15:40' },
+    { id: 'gt-m1', lab: 'GT', day: MONDAY, course: 'Pemetaan Dasar', class: 'RA', start: '07:30', end: '10:10' },
+    { id: 'gt-m2', lab: 'GT', day: MONDAY, course: 'Hidrografi I', class: 'RA', start: '13:00', end: '15:40' },
 
-    { id: 'th1', day: THURSDAY, course: 'Pendaftaran Tanah', class: 'RA', start: '07:30', end: '10:10' },
-    { id: 'th2', day: THURSDAY, course: 'Perpetaan', class: 'TL', start: '10:15', end: '12:00' },
-    { id: 'th3', day: THURSDAY, course: 'Pendaftaran Tanah', class: 'RC', start: '13:00', end: '15:40' },
+    { id: 'gt-t1', lab: 'GT', day: TUESDAY, course: 'Pemetaan Dasar', class: 'RB', start: '07:30', end: '10:10' },
+    { id: 'gt-t2', lab: 'GT', day: TUESDAY, course: 'Hidrografi I', class: 'RB', start: '13:00', end: '15:40' },
 
-    { id: 'f1', day: FRIDAY, course: 'Pendaftaran Tanah', class: 'RB', start: '07:30', end: '10:10' },
-    { id: 'f2', day: FRIDAY, course: 'Perpetaan', class: 'TL', start: '10:15', end: '12:00' }
-    { id: 'f2', day: FRIDAY, course: 'Perpetaan', class: 'TL', start: '12:00', end: '16:35' }
+    { id: 'gt-w1', lab: 'GT', day: WEDNESDAY, course: 'Pemetaan Dasar', class: 'RC', start: '07:30', end: '10:10' },
+    { id: 'gt-w2', lab: 'GT', day: WEDNESDAY, course: 'Hidrografi I', class: 'RC', start: '13:00', end: '15:40' },
+
+    { id: 'gt-th1', lab: 'GT', day: THURSDAY, course: 'Pendaftaran Tanah', class: 'RA', start: '07:30', end: '10:10' },
+    { id: 'gt-th2', lab: 'GT', day: THURSDAY, course: 'Perpetaan', class: 'TL', start: '10:15', end: '12:00' },
+    { id: 'gt-th3', lab: 'GT', day: THURSDAY, course: 'Pendaftaran Tanah', class: 'RC', start: '13:00', end: '15:40' },
+
+    { id: 'gt-f1', lab: 'GT', day: FRIDAY, course: 'Pendaftaran Tanah', class: 'RB', start: '07:30', end: '10:10' },
+
+    // Perpetaan Jumat dipisah karena ada istirahat 12:00 - 13:00
+    { id: 'gt-f2a', lab: 'GT', day: FRIDAY, course: 'Perpetaan', class: 'TL', start: '10:15', end: '12:00' },
+    { id: 'gt-f2b', lab: 'GT', day: FRIDAY, course: 'Perpetaan', class: 'TL', start: '13:00', end: '14:45' },
+
+
+    // =========================================================
+    // KATEGORI 2 - PRAKTIKUM LAB GEOSPASIAL FTIK
+    // =========================================================
+
+    // RABU - FOTOGRAMETRI DASAR
+    { id: 'geo-w1', lab: 'GEOSPASIAL', day: WEDNESDAY, course: 'Fotogrametri Dasar', class: 'RC', start: '07:30', end: '10:10' },
+
+    // RB terpisah karena istirahat 12:00 - 13:00
+    { id: 'geo-w2a', lab: 'GEOSPASIAL', day: WEDNESDAY, course: 'Fotogrametri Dasar', class: 'RB', start: '10:15', end: '12:00' },
+    { id: 'geo-w2b', lab: 'GEOSPASIAL', day: WEDNESDAY, course: 'Fotogrametri Dasar', class: 'RB', start: '13:00', end: '13:50' },
+
+    { id: 'geo-w3', lab: 'GEOSPASIAL', day: WEDNESDAY, course: 'Fotogrametri Dasar', class: 'RA', start: '13:55', end: '16:35' },
+
+
+    // KAMIS - PEMETAAN RADAR DAN LiDAR
+    { id: 'geo-th1', lab: 'GEOSPASIAL', day: THURSDAY, course: 'Pemetaan Radar dan LiDAR', class: 'RA', start: '07:30', end: '10:10' },
+
+    // RB terpisah karena istirahat 12:00 - 13:00
+    { id: 'geo-th2a', lab: 'GEOSPASIAL', day: THURSDAY, course: 'Pemetaan Radar dan LiDAR', class: 'RB', start: '10:15', end: '12:00' },
+    { id: 'geo-th2b', lab: 'GEOSPASIAL', day: THURSDAY, course: 'Pemetaan Radar dan LiDAR', class: 'RB', start: '13:00', end: '13:50' },
+
+    { id: 'geo-th3', lab: 'GEOSPASIAL', day: THURSDAY, course: 'Pemetaan Radar dan LiDAR', class: 'RC', start: '13:55', end: '16:35' },
+
+
+    // =========================================================
+    // KATEGORI 3 - PRAKTIKUM LAB MULTIMEDIA (MM)
+    // =========================================================
+
+    // SENIN
+    { id: 'mm-m1', lab: 'MM', day: MONDAY, course: 'Geodesi Satelit', class: 'RB', start: '07:30', end: '10:10' },
+    { id: 'mm-m2', lab: 'MM', day: MONDAY, course: 'Penginderaan Jauh Lanjut', class: 'RA', start: '07:30', end: '11:05' },
+
+    { id: 'mm-m3', lab: 'MM', day: MONDAY, course: 'Geodesi Satelit', class: 'RA', start: '13:00', end: '15:40' },
+    { id: 'mm-m4', lab: 'MM', day: MONDAY, course: 'Penginderaan Jauh Lanjut', class: 'RB', start: '13:00', end: '16:35' },
+
+
+    // SELASA
+    { id: 'mm-t1', lab: 'MM', day: TUESDAY, course: 'Geodesi Satelit', class: 'RC', start: '07:30', end: '10:10' },
+    { id: 'mm-t2', lab: 'MM', day: TUESDAY, course: 'Penginderaan Jauh Lanjut', class: 'RC', start: '07:30', end: '11:05' },
+
+    { id: 'mm-t3', lab: 'MM', day: TUESDAY, course: 'Kartografi', class: 'RA', start: '13:00', end: '15:40' },
+
+
+    // RABU
+    { id: 'mm-w1', lab: 'MM', day: WEDNESDAY, course: 'Kartografi', class: 'RB', start: '07:30', end: '10:10' },
+    { id: 'mm-w2', lab: 'MM', day: WEDNESDAY, course: 'Kartografi', class: 'RC', start: '13:00', end: '15:40' },
+
+
+    // KAMIS
+    { id: 'mm-th1', lab: 'MM', day: THURSDAY, course: 'Basis Data Spasial', class: 'RA', start: '07:30', end: '10:10' },
+    { id: 'mm-th2', lab: 'MM', day: THURSDAY, course: 'Basis Data Spasial', class: 'RC', start: '07:30', end: '10:10' },
+
+    { id: 'mm-th3', lab: 'MM', day: THURSDAY, course: 'Basis Data Spasial', class: 'RB', start: '13:00', end: '15:40' }
+
 ];
 
                 const timeToMins = (t) => {
@@ -1214,17 +1284,32 @@ const rawSchedule = [
                     return h * 60 + m;
                 };
 
-                const processedSchedule = rawSchedule.map(item => {
-                    const startMins = timeToMins(item.start);
-                    const endMins = timeToMins(item.end);
-                    const overlaps = rawSchedule.filter(other => 
-                        other.day === item.day && 
-                        other.id !== item.id &&
-                        timeToMins(other.start) < endMins && 
-                        timeToMins(other.end) > startMins
-                    );
-                    return { ...item, startMins, endMins, isOverlap: overlaps.length > 0 };
-                }).sort((a, b) => a.startMins - b.startMins);
+const processedSchedule = rawSchedule.map(item => {
+    const startMins = timeToMins(item.start);
+    const endMins = timeToMins(item.end);
+
+    const overlaps = rawSchedule.filter(other => 
+        other.lab === item.lab &&
+        other.day === item.day &&
+        other.id !== item.id &&
+        timeToMins(other.start) < endMins &&
+        timeToMins(other.end) > startMins
+    );
+
+    return {
+        ...item,
+        startMins,
+        endMins,
+        isOverlap: overlaps.length > 0
+    };
+}).sort((a, b) => {
+    if (a.day !== b.day) return a.day - b.day;
+    return a.startMins - b.startMins;
+});
+
+const selectedSchedule = processedSchedule.filter(
+    item => item.lab === scheduleLab
+);
 
                 const todayDay = currentTime.getDay() || 7; // Sunday = 7
                 const currentMins = currentTime.getHours() * 60 + currentTime.getMinutes();
@@ -1233,7 +1318,7 @@ const rawSchedule = [
                 let minMinsAway = Infinity;
                 const activePracticums = [];
 
-                processedSchedule.forEach(item => {
+                selectedSchedule.forEach(item => {
                     if (item.day === todayDay && currentMins >= item.startMins && currentMins <= item.endMins) {
                         activePracticums.push(item);
                     }
@@ -1273,7 +1358,7 @@ const rawSchedule = [
 
                 const renderDayColumn = (dayId, dayName) => {
                     const isToday = todayDay === dayId;
-                    const dayItems = processedSchedule.filter(i => i.day === dayId);
+                    const dayItems = selectedSchedule.filter(i => i.day === dayId);
 
                     return (
                         <div key={dayId} className={`flex flex-col rounded-lg border ${isToday ? 'border-indigo-400 bg-indigo-50/20 shadow-md ring-1 ring-indigo-400' : 'border-slate-200 bg-slate-50/50'} overflow-hidden`}>
