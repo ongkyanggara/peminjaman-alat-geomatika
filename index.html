@@ -14,6 +14,491 @@
     <script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        :root {
+            --lab-indigo: #4f46e5;
+            --lab-indigo-dark: #312e81;
+            --lab-slate: #0f172a;
+            --lab-emerald: #059669;
+            --lab-orange: #ea580c;
+            --lab-red: #dc2626;
+        }
+
+        html { scroll-behavior: smooth; }
+        body {
+            background-image:
+                radial-gradient(circle at 10% 4%, rgba(79,70,229,.075), transparent 28%),
+                radial-gradient(circle at 90% 10%, rgba(14,165,233,.055), transparent 25%),
+                linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+        }
+
+        @keyframes labToastLife {
+            0% { opacity: 0; transform: translate3d(36px,-8px,0) scale(.94); filter: blur(5px); }
+            10% { opacity: 1; transform: translate3d(0,0,0) scale(1); filter: blur(0); }
+            88% { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+            100% { opacity: 0; transform: translate3d(16px,-4px,0) scale(.98); }
+        }
+        @keyframes labToastProgress { from { width: 100%; } to { width: 0%; } }
+        @keyframes labSoftPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(79,70,229,.11); }
+            50% { box-shadow: 0 0 0 8px rgba(79,70,229,0); }
+        }
+        @keyframes labShine {
+            0% { transform: translateX(-150%) skewX(-18deg); }
+            70%, 100% { transform: translateX(280%) skewX(-18deg); }
+        }
+        @keyframes labFloatIcon {
+            0%,100% { transform: translateY(0) rotate(0); }
+            50% { transform: translateY(-2px) rotate(2deg); }
+        }
+        @keyframes labSyncGlow {
+            0%,100% { filter: drop-shadow(0 0 0 rgba(79,70,229,0)); }
+            50% { filter: drop-shadow(0 0 7px rgba(79,70,229,.48)); }
+        }
+
+        .lab-main { position: relative; }
+        .lab-main::before {
+            content: "";
+            position: fixed;
+            right: -110px;
+            top: -100px;
+            width: 420px;
+            height: 420px;
+            border-radius: 999px;
+            background: radial-gradient(circle, rgba(99,102,241,.06), transparent 68%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .lab-sidebar {
+            background-image: linear-gradient(180deg, #090f1c 0%, #0f172a 50%, #111827 100%) !important;
+            box-shadow: 18px 0 42px rgba(15,23,42,.10);
+        }
+        .lab-logo {
+            transition: transform .3s ease, box-shadow .3s ease;
+            box-shadow: 0 14px 32px rgba(15,23,42,.24) !important;
+        }
+        .lab-logo:hover { transform: translateY(-2px) scale(1.015); }
+        .lab-nav-btn { position: relative; overflow: hidden; }
+        .lab-nav-btn::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,.045), transparent);
+            transform: translateX(-120%);
+            transition: transform .55s ease;
+        }
+        .lab-nav-btn:hover::after { transform: translateX(120%); }
+
+        /* Popup notifikasi animatif */
+        .lab-toast {
+            min-width: 320px;
+            max-width: min(440px, calc(100vw - 32px));
+            border-radius: 16px !important;
+            border: 1px solid rgba(255,255,255,.20) !important;
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            overflow: hidden;
+            animation: labToastLife 3s cubic-bezier(.22,.9,.2,1) both;
+            box-shadow: 0 24px 60px rgba(15,23,42,.30) !important;
+        }
+        .lab-toast-success { background: linear-gradient(135deg, rgba(4,120,87,.98), rgba(5,150,105,.93)) !important; }
+        .lab-toast-error { background: linear-gradient(135deg, rgba(153,27,27,.98), rgba(220,38,38,.93)) !important; }
+        .lab-toast::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            height: 3px;
+            background: rgba(255,255,255,.85);
+            animation: labToastProgress 3s linear both;
+        }
+        .lab-toast-icon {
+            animation: labFloatIcon 1.7s ease-in-out infinite;
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,.18));
+        }
+        .lab-sync-icon { animation: labSyncGlow 1.4s ease-in-out infinite; }
+
+        /* Surface/card profesional tanpa mengubah layout */
+        .lab-surface {
+            position: relative;
+            border-color: rgba(203,213,225,.82) !important;
+            box-shadow: 0 10px 28px rgba(15,23,42,.055) !important;
+            transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+        }
+        .lab-surface:hover {
+            transform: translateY(-2px);
+            border-color: rgba(129,140,248,.58) !important;
+            box-shadow: 0 18px 38px rgba(15,23,42,.085) !important;
+        }
+
+        .lab-metric {
+            position: relative;
+            overflow: hidden;
+            isolation: isolate;
+            transition: transform .24s ease, box-shadow .24s ease, border-color .24s ease;
+            box-shadow: 0 9px 24px rgba(15,23,42,.055) !important;
+        }
+        .lab-metric::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 4px;
+            opacity: .95;
+        }
+        .lab-metric::after {
+            content: "";
+            position: absolute;
+            width: 96px;
+            height: 96px;
+            right: -37px;
+            bottom: -48px;
+            border-radius: 50%;
+            opacity: .11;
+            z-index: -1;
+        }
+        .lab-metric:hover { transform: translateY(-4px); box-shadow: 0 16px 34px rgba(15,23,42,.10) !important; }
+        .lab-metric-indigo { background-image: linear-gradient(145deg,#fff 0%,#eef2ff 100%) !important; }
+        .lab-metric-indigo::before, .lab-metric-indigo::after { background: #4f46e5; }
+        .lab-metric-blue { background-image: linear-gradient(145deg,#fff 0%,#eff6ff 100%) !important; }
+        .lab-metric-blue::before, .lab-metric-blue::after { background: #2563eb; }
+        .lab-metric-green { background-image: linear-gradient(145deg,#fff 0%,#ecfdf5 100%) !important; }
+        .lab-metric-green::before, .lab-metric-green::after { background: #059669; }
+        .lab-metric-orange { background-image: linear-gradient(145deg,#fff 0%,#fff7ed 100%) !important; }
+        .lab-metric-orange::before, .lab-metric-orange::after { background: #ea580c; }
+        .lab-metric-red { background-image: linear-gradient(145deg,#fff 0%,#fef2f2 100%) !important; }
+        .lab-metric-red::before, .lab-metric-red::after { background: #dc2626; }
+        .lab-icon-tile {
+            border-radius: 12px !important;
+            transition: transform .25s ease, box-shadow .25s ease;
+            animation: labSoftPulse 3.2s ease-in-out infinite;
+        }
+        .lab-metric:hover .lab-icon-tile { transform: scale(1.06) rotate(-2deg); }
+
+        .lab-alert {
+            background-image: linear-gradient(90deg, #fffbeb 0%, #fff7ed 100%) !important;
+            box-shadow: 0 10px 28px rgba(217,119,6,.08) !important;
+            animation: labSoftPulse 2.8s ease-in-out infinite;
+        }
+
+        .lab-analysis-stat {
+            position: relative;
+            overflow: hidden;
+            min-height: 108px;
+            transition: transform .24s ease, box-shadow .24s ease;
+        }
+        .lab-analysis-stat:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(15,23,42,.08); }
+        .lab-analysis-stat::after {
+            position: absolute;
+            right: 16px;
+            top: 15px;
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            font-size: 28px;
+            opacity: .14;
+        }
+        .lab-analysis-neutral { background-image: linear-gradient(145deg,#f8fafc,#eef2ff) !important; }
+        .lab-analysis-neutral::after { content: "\f080"; color: #4f46e5; }
+        .lab-analysis-primary { background-image: linear-gradient(145deg,#eef2ff,#e0e7ff) !important; }
+        .lab-analysis-primary::after { content: "\f135"; color: #4338ca; }
+        .lab-analysis-low { background-image: linear-gradient(145deg,#f8fafc,#f1f5f9) !important; }
+        .lab-analysis-low::after { content: "\f063"; color: #64748b; }
+
+        .lab-insight {
+            background-image: linear-gradient(120deg,#172033 0%,#1e293b 54%,#312e81 155%) !important;
+            box-shadow: 0 16px 34px rgba(15,23,42,.16) !important;
+            position: relative;
+            overflow: hidden;
+        }
+        .lab-insight::after {
+            content: "";
+            position: absolute;
+            width: 190px;
+            height: 190px;
+            right: -75px;
+            top: -95px;
+            border-radius: 50%;
+            background: rgba(99,102,241,.16);
+        }
+
+        .lab-filter {
+            border-radius: 10px !important;
+            background: #fff !important;
+            box-shadow: 0 4px 12px rgba(15,23,42,.04);
+            transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+        }
+        .lab-filter:focus {
+            border-color: #6366f1 !important;
+            box-shadow: 0 0 0 4px rgba(99,102,241,.12) !important;
+            transform: translateY(-1px);
+        }
+
+        .lab-report-btn {
+            position: relative;
+            overflow: hidden;
+            background-image: linear-gradient(135deg,#312e81 0%,#4f46e5 55%,#6366f1 100%) !important;
+            border-color: #4338ca !important;
+            box-shadow: 0 9px 22px rgba(79,70,229,.22) !important;
+            transition: transform .22s ease, box-shadow .22s ease !important;
+        }
+        .lab-report-btn::before {
+            content: "";
+            position: absolute;
+            top: -25%;
+            left: -45%;
+            width: 32%;
+            height: 150%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,.34), transparent);
+            animation: labShine 3.4s ease-in-out infinite;
+        }
+        .lab-report-btn:hover {
+            transform: translateY(-2px) scale(1.015);
+            box-shadow: 0 14px 30px rgba(79,70,229,.30) !important;
+        }
+        .lab-report-btn i { filter: drop-shadow(0 2px 4px rgba(0,0,0,.18)); }
+        .lab-section-icon { filter: drop-shadow(0 3px 5px rgba(79,70,229,.18)); }
+
+        main input, main select, main textarea {
+            transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+        }
+        main table tbody tr { transition: background-color .18s ease, box-shadow .18s ease; }
+        main table tbody tr:hover { box-shadow: inset 3px 0 0 #6366f1; }
+
+        @media (max-width: 640px) {
+            .lab-toast { left: 16px; right: 16px; top: 16px; min-width: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .lab-toast, .lab-icon-tile, .lab-alert, .lab-report-btn::before, .lab-toast-icon, .lab-sync-icon { animation: none !important; }
+            .lab-surface, .lab-metric, .lab-analysis-stat, .lab-report-btn { transition: none !important; }
+        }
+    
+
+        /* ==========================================================
+           DYNAMIC PROFESSIONAL THEME - VISUAL ONLY
+           ========================================================== */
+        @keyframes labBgDrift {
+            0%,100% { transform: translate3d(0,0,0) scale(1); opacity: .72; }
+            50% { transform: translate3d(-18px,14px,0) scale(1.06); opacity: 1; }
+        }
+        @keyframes labAdminPulse {
+            0%,100% { box-shadow: 0 0 0 0 rgba(52,211,153,.36); }
+            50% { box-shadow: 0 0 0 7px rgba(52,211,153,0); }
+        }
+        @keyframes labBorderFlow {
+            0%,100% { opacity: .48; }
+            50% { opacity: .92; }
+        }
+
+        body {
+            background:
+                radial-gradient(circle at 11% 7%, rgba(99,102,241,.10), transparent 27%),
+                radial-gradient(circle at 90% 13%, rgba(14,165,233,.10), transparent 25%),
+                radial-gradient(circle at 70% 88%, rgba(16,185,129,.07), transparent 26%),
+                linear-gradient(145deg,#f8fafc 0%,#eef2ff 48%,#f0fdfa 100%) !important;
+        }
+        .lab-app-shell { background: transparent !important; }
+        .lab-main {
+            background:
+                linear-gradient(135deg, rgba(248,250,252,.80), rgba(238,242,255,.68) 52%, rgba(240,253,250,.62));
+            isolation: isolate;
+        }
+        .lab-main::before {
+            width: 520px !important;
+            height: 520px !important;
+            right: -170px !important;
+            top: -160px !important;
+            background: radial-gradient(circle, rgba(99,102,241,.13), rgba(59,130,246,.055) 42%, transparent 70%) !important;
+            animation: labBgDrift 12s ease-in-out infinite;
+        }
+        .lab-main::after {
+            content: "";
+            position: fixed;
+            left: 19%;
+            bottom: -230px;
+            width: 560px;
+            height: 560px;
+            border-radius: 999px;
+            background: radial-gradient(circle, rgba(16,185,129,.09), rgba(14,165,233,.045) 44%, transparent 70%);
+            pointer-events: none;
+            z-index: -1;
+            animation: labBgDrift 15s ease-in-out infinite reverse;
+        }
+
+        .lab-sidebar {
+            background:
+                radial-gradient(circle at 12% 8%, rgba(99,102,241,.22), transparent 22%),
+                radial-gradient(circle at 90% 70%, rgba(14,165,233,.10), transparent 28%),
+                linear-gradient(180deg,#070b16 0%,#0f172a 48%,#111827 100%) !important;
+            border-right-color: rgba(99,102,241,.18) !important;
+        }
+        .lab-sidebar > div:first-child {
+            background: linear-gradient(180deg,rgba(2,6,23,.82),rgba(15,23,42,.72)) !important;
+        }
+        .lab-nav-btn {
+            min-height: 57px;
+            backdrop-filter: blur(9px);
+            -webkit-backdrop-filter: blur(9px);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+        }
+        .lab-nav-btn:hover {
+            transform: translateX(3px);
+            background: rgba(255,255,255,.045);
+        }
+        .lab-nav-btn.lab-nav-active { transform: translateX(4px); }
+        .lab-nav-btn i {
+            width: 34px !important;
+            height: 34px;
+            border-radius: 10px;
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            transition: transform .24s ease, box-shadow .24s ease, background-color .24s ease;
+        }
+        .lab-nav-dashboard i { background: rgba(99,102,241,.15); color: #a5b4fc; }
+        .lab-nav-inventory i { background: rgba(14,165,233,.14); color: #7dd3fc; }
+        .lab-nav-borrow i { background: rgba(16,185,129,.14); color: #6ee7b7; }
+        .lab-nav-transactions i { background: rgba(245,158,11,.14); color: #fcd34d; }
+        .lab-nav-btn:hover i, .lab-nav-active i { transform: scale(1.08) rotate(-3deg); box-shadow: 0 8px 18px rgba(0,0,0,.18); }
+
+        .lab-surface {
+            background: linear-gradient(145deg,rgba(255,255,255,.98),rgba(248,250,252,.93)) !important;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            overflow: hidden;
+        }
+        .lab-surface::before {
+            content: "";
+            position: absolute;
+            left: 0; right: 0; top: 0;
+            height: 3px;
+            background: linear-gradient(90deg,#4f46e5,#0ea5e9,#10b981,#f59e0b,#ef4444);
+            opacity: .52;
+            animation: labBorderFlow 4.5s ease-in-out infinite;
+            pointer-events: none;
+        }
+        .lab-surface > * { position: relative; z-index: 1; }
+
+        .lab-report-btn {
+            background: linear-gradient(135deg,#7f1d1d 0%,#dc2626 36%,#4f46e5 100%) !important;
+            border-color: rgba(248,113,113,.6) !important;
+            box-shadow: 0 10px 26px rgba(220,38,38,.20), 0 8px 24px rgba(79,70,229,.14) !important;
+        }
+        .lab-report-icon {
+            width: 30px;
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9px;
+            background: rgba(255,255,255,.16);
+            color: #fecaca;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.16);
+        }
+        .lab-admin-mini {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 7px;
+            border-radius: 999px;
+            font-size: 8px;
+            line-height: 1;
+            letter-spacing: .12em;
+            background: rgba(255,255,255,.16);
+            border: 1px solid rgba(255,255,255,.20);
+            color: #fff;
+        }
+        .lab-admin-status {
+            color: #a7f3d0;
+            border-color: rgba(52,211,153,.26) !important;
+            background: linear-gradient(135deg,rgba(6,78,59,.52),rgba(15,23,42,.68));
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 8px 20px rgba(0,0,0,.14);
+        }
+        .lab-admin-status-icon {
+            width: 30px; height: 30px;
+            border-radius: 9px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #6ee7b7;
+            background: rgba(16,185,129,.14);
+        }
+        .lab-admin-live {
+            width: 8px; height: 8px;
+            border-radius: 999px;
+            background: #34d399;
+            animation: labAdminPulse 1.7s ease-in-out infinite;
+        }
+        .lab-share-btn {
+            color: #e0e7ff;
+            border: 1px solid rgba(129,140,248,.28);
+            background: linear-gradient(135deg,rgba(49,46,129,.75),rgba(30,41,59,.86));
+            box-shadow: 0 8px 18px rgba(0,0,0,.14);
+        }
+        .lab-share-btn:hover {
+            transform: translateY(-1px);
+            color: white;
+            border-color: rgba(129,140,248,.48);
+            background: linear-gradient(135deg,rgba(67,56,202,.88),rgba(30,64,175,.72));
+        }
+
+        /* Memberi warna lebih kuat pada elemen informasi penting tanpa mengubah layout */
+        main h2, main h3 { letter-spacing: -.015em; }
+        main h3 .lab-section-icon {
+            width: 34px;
+            height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            background: linear-gradient(135deg,#eef2ff,#dbeafe);
+            border: 1px solid #c7d2fe;
+            margin-right: 10px !important;
+            vertical-align: middle;
+        }
+        main button:not(.lab-nav-btn):not(.lab-report-btn) { transition: transform .2s ease, box-shadow .2s ease, filter .2s ease; }
+        main button:not(.lab-nav-btn):not(.lab-report-btn):hover { transform: translateY(-1px); filter: saturate(1.06); }
+
+        @media (prefers-reduced-motion: reduce) {
+            .lab-main::before, .lab-main::after, .lab-admin-live, .lab-surface::before { animation: none !important; }
+        }
+
+
+        /* FRESH DASHBOARD CHARTS + ROOM-AWARE MM SCHEDULE */
+        @keyframes labBarReveal { from { transform: scaleX(0); opacity:.35; } to { transform: scaleX(1); opacity:1; } }
+        @keyframes labRoomGlow { 0%,100% { box-shadow:0 0 0 0 rgba(14,165,233,.10); } 50% { box-shadow:0 0 0 5px rgba(14,165,233,0); } }
+        .lab-room-badge { width:max-content; max-width:100%; display:inline-flex; align-items:center; gap:6px; padding:4px 7px; border-radius:8px; color:#0369a1; background:linear-gradient(135deg,#f0f9ff,#e0f2fe); border:1px solid #bae6fd; font-size:9px; font-weight:900; letter-spacing:.04em; animation:labRoomGlow 3.2s ease-in-out infinite; }
+        .lab-room-badge i { color:#0284c7; font-size:9px; }
+        .lab-modern-chart { background:radial-gradient(circle at 100% 0%,rgba(99,102,241,.055),transparent 32%),linear-gradient(145deg,#fff 0%,#fbfdff 62%,#f8fafc 100%) !important; }
+        .lab-chart-live { display:inline-flex; align-items:center; gap:5px; padding:5px 8px; border-radius:999px; color:#047857; background:#ecfdf5; border:1px solid #a7f3d0; font-size:8px; font-weight:900; letter-spacing:.12em; white-space:nowrap; }
+        .lab-chart-live i { color:#10b981; font-size:6px; animation:labAdminPulse 1.7s ease-in-out infinite; }
+        .lab-chart-live-blue { color:#4338ca; background:#eef2ff; border-color:#c7d2fe; }
+        .lab-chart-live-blue i { color:#6366f1; font-size:9px; animation:none; }
+        .lab-donut-interactive { transition:transform .28s ease,filter .28s ease,box-shadow .28s ease; filter:saturate(1.05); box-shadow:0 18px 38px rgba(79,70,229,.12),inset 0 0 0 1px rgba(255,255,255,.72)!important; }
+        .lab-donut-interactive:hover { transform:scale(1.055) rotate(1deg); filter:saturate(1.18); box-shadow:0 24px 46px rgba(79,70,229,.18)!important; }
+        .lab-donut-center { transition:transform .28s ease,box-shadow .28s ease; }
+        .lab-donut-interactive:hover .lab-donut-center { transform:scale(.97); box-shadow:0 12px 28px rgba(15,23,42,.10)!important; }
+        .lab-category-row { padding:8px 9px; border-radius:10px; border:1px solid transparent; transition:transform .2s ease,background .2s ease,border-color .2s ease,box-shadow .2s ease; }
+        .lab-category-row:hover { transform:translateX(3px); background:#f8fafc; border-color:#e2e8f0; box-shadow:0 8px 20px rgba(15,23,42,.05); }
+        .lab-category-dot { width:9px; height:9px; border-radius:999px; flex:0 0 auto; box-shadow:0 0 0 3px rgba(148,163,184,.10); }
+        .lab-percent-pill { min-width:42px; text-align:center; padding:3px 7px; border-radius:999px; color:#312e81; background:#eef2ff; border:1px solid #c7d2fe; font-size:10px; font-weight:900; }
+        .lab-mini-track,.lab-dual-track { height:5px; border-radius:999px; overflow:hidden; background:#eef2f7; box-shadow:inset 0 1px 2px rgba(15,23,42,.05); }
+        .lab-mini-fill,.lab-dual-fill { height:100%; border-radius:inherit; transform-origin:left center; animation:labBarReveal .85s cubic-bezier(.2,.8,.2,1) both; }
+        .lab-tool-rank-card { padding:10px 11px; border-radius:12px; border:1px solid #e2e8f0; background:linear-gradient(135deg,#fff,#f8fafc); transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease,background .22s ease; }
+        .lab-tool-rank-card:hover { transform:translateY(-2px) translateX(2px); border-color:#c7d2fe; background:linear-gradient(135deg,#fff,#eef2ff); box-shadow:0 12px 26px rgba(79,70,229,.08); }
+        .lab-rank-badge { width:28px; height:28px; flex:0 0 auto; border-radius:9px; display:inline-flex; align-items:center; justify-content:center; background:#f8fafc; color:#64748b; border:1px solid #e2e8f0; font-size:11px; font-weight:950; }
+        .lab-rank-1 { color:#92400e; background:linear-gradient(135deg,#fef3c7,#fde68a); border-color:#fbbf24; }
+        .lab-rank-2 { color:#334155; background:linear-gradient(135deg,#f8fafc,#e2e8f0); border-color:#cbd5e1; }
+        .lab-rank-3 { color:#9a3412; background:linear-gradient(135deg,#fff7ed,#fed7aa); border-color:#fdba74; }
+        .lab-data-chip { display:inline-flex; align-items:center; gap:4px; padding:3px 6px; border-radius:7px; font-size:9px; font-weight:900; white-space:nowrap; }
+        .lab-data-chip-indigo { color:#4338ca; background:#eef2ff; border:1px solid #c7d2fe; }
+        .lab-data-chip-cyan { color:#0e7490; background:#ecfeff; border:1px solid #a5f3fc; }
+        .lab-dual-bar-row { display:grid; grid-template-columns:58px minmax(0,1fr); align-items:center; gap:8px; color:#64748b; font-size:8px; font-weight:800; }
+        .lab-fill-frequency { background:linear-gradient(90deg,#4f46e5,#6366f1,#818cf8); }
+        .lab-fill-duration { background:linear-gradient(90deg,#0891b2,#06b6d4,#22d3ee); }
+        .lab-tool-rank-card:hover .lab-dual-fill,.lab-category-row:hover .lab-mini-fill { filter:brightness(1.06) saturate(1.18); }
+        @media (prefers-reduced-motion: reduce) { .lab-room-badge,.lab-mini-fill,.lab-dual-fill,.lab-chart-live i { animation:none!important; } }
+</style>
+
 </head>
 <body class="bg-slate-100 font-sans text-slate-800">
     
@@ -1095,7 +1580,14 @@ function App() {
                 itemFrequency[itemId].totalHours += (durationHours * qty);
             });
         });
+        const isMainInstrument = (id) => {
+            const invItem = inventory.find(inv => inv.id === id);
+            if (invItem)
+                return mainCategories.includes(invItem.category);
+            return /^(TS|DT|AL|G|DN|F)-/.test(String(id || ''));
+        };
         const topItems = Object.keys(itemFrequency)
+            .filter(id => isMainInstrument(id))
             .map(id => ({
             id,
             count: itemFrequency[id].count,
@@ -1104,6 +1596,8 @@ function App() {
         }))
             .sort((a, b) => b.count - a.count)
             .slice(0, 5);
+        const maxTopItemCount = topItems.length > 0 ? Math.max(...topItems.map(item => item.count)) : 1;
+        const maxTopItemHours = topItems.length > 0 ? Math.max(...topItems.map(item => item.hours)) : 1;
         const availableMonths = [...new Set(transactions.map(t => getMonthYear(t.borrowDate)))].sort().reverse();
         const currentPeriod = analysisMonth === 'Semua' ? '' : analysisMonth;
         let prevPeriod = '';
@@ -1186,6 +1680,491 @@ function App() {
             const timeB = parseTargetDate(b.borrowDate, b.borrowTime).getTime();
             return timeB - timeA;
         });
+
+        // --- LAPORAN PDF PENGGUNAAN ALAT ---
+        // Hanya menambahkan fungsi report; struktur dashboard dan sumber data Spreadsheet tetap dipertahankan.
+        const handleGenerateUsageReport = () => {
+            // Laporan penggunaan alat adalah dokumen internal dan hanya dapat dibuat dalam Mode Admin.
+            if (!isAdmin) {
+                showNotification('Laporan penggunaan alat hanya dapat diakses melalui Mode Admin.', 'error');
+                return;
+            }
+            try {
+                if (!window.jspdf || !window.jspdf.jsPDF) {
+                    showNotification('Modul PDF belum siap. Silakan tunggu beberapa detik lalu coba kembali.', 'error');
+                    return;
+                }
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('p', 'mm', 'a4');
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const pageHeight = doc.internal.pageSize.getHeight();
+                const marginX = 15;
+                const contentWidth = pageWidth - (marginX * 2);
+                const reportTransactions = filteredAnalysisTx;
+                const periodLabel = analysisMonth === 'Semua' ? 'Keseluruhan Waktu' : formatMonthYearText(analysisMonth);
+                const generatedAt = new Date();
+
+                if (reportTransactions.length === 0) {
+                    showNotification('Tidak ada data pada periode yang dipilih untuk dibuatkan laporan.', 'error');
+                    return;
+                }
+
+                // Statistik instrumen khusus periode laporan.
+                const reportItemFrequency = {};
+                reportTransactions.forEach(trx => {
+                    if (!Array.isArray(trx.items)) return;
+
+                    const startDate = parseTargetDate(trx.borrowDate, trx.borrowTime);
+                    let durationMs = 0;
+
+                    if (trx.status && trx.status.startsWith('completed|')) {
+                        const returnedAt = new Date(trx.status.split('|')[1].replace(' ', 'T'));
+                        durationMs = returnedAt.getTime() - startDate.getTime();
+                    } else {
+                        const estimatedEnd = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
+                        const effectiveEnd = estimatedEnd.getTime() < currentTime.getTime() ? currentTime : estimatedEnd;
+                        durationMs = effectiveEnd.getTime() - startDate.getTime();
+                    }
+
+                    if (!Number.isFinite(durationMs) || durationMs < 0) durationMs = 0;
+                    const durationHours = durationMs / (1000 * 60 * 60);
+
+                    trx.items.forEach(item => {
+                        const code = item.kode || (item.name && item.name.match(/\[(.*?)\]/) ? item.name.match(/\[(.*?)\]/)[1] : '-') || '-';
+                        const rawName = item.nama || item.name || 'Instrumen';
+                        const cleanName = String(rawName).replace(/^\[[^\]]+\]\s*/, '');
+                        const qty = parseInt(item.jumlah || item.quantity) || 1;
+                        const invItem = inventory.find(inv => inv.id === code || inv.name === cleanName);
+                        const category = invItem ? invItem.category : 'Lainnya';
+
+                        if (!reportItemFrequency[code]) {
+                            reportItemFrequency[code] = {
+                                code,
+                                name: cleanName,
+                                category,
+                                count: 0,
+                                totalHours: 0,
+                                transactionCount: 0
+                            };
+                        }
+
+                        reportItemFrequency[code].count += qty;
+                        reportItemFrequency[code].totalHours += (durationHours * qty);
+                        reportItemFrequency[code].transactionCount += 1;
+                    });
+                });
+
+                const reportTools = Object.values(reportItemFrequency)
+                    .map(item => ({
+                        ...item,
+                        hours: Math.round(item.totalHours * 10) / 10,
+                        avgHours: item.count === 0 ? 0 : Math.round((item.totalHours / item.count) * 10) / 10
+                    }))
+                    .sort((a, b) => b.count - a.count);
+
+                const durationRanking = [...reportTools].sort((a, b) => b.hours - a.hours);
+                const totalToolUses = reportTools.reduce((sum, item) => sum + item.count, 0);
+                const totalUsageHours = reportTools.reduce((sum, item) => sum + item.hours, 0);
+                const avgUsageHours = totalToolUses === 0 ? 0 : totalUsageHours / totalToolUses;
+                const topTool = reportTools[0] || null;
+                const topDurationTool = durationRanking[0] || null;
+                const top3Uses = reportTools.slice(0, 3).reduce((sum, item) => sum + item.count, 0);
+                const top3Share = totalToolUses === 0 ? 0 : Math.round((top3Uses / totalToolUses) * 100);
+
+                const reportCategoryMap = {};
+                reportTools.forEach(item => {
+                    if (!reportCategoryMap[item.category]) reportCategoryMap[item.category] = 0;
+                    reportCategoryMap[item.category] += item.count;
+                });
+                const reportCategories = Object.entries(reportCategoryMap)
+                    .map(([name, count]) => ({ name, count }))
+                    .sort((a, b) => b.count - a.count);
+
+                const monthlyMap = {};
+                reportTransactions.forEach(trx => {
+                    const key = getMonthYear(trx.borrowDate);
+                    if (!key) return;
+                    monthlyMap[key] = (monthlyMap[key] || 0) + 1;
+                });
+                const monthlyTrend = Object.keys(monthlyMap).sort().map(key => ({
+                    key,
+                    label: formatMonthYearText(key),
+                    count: monthlyMap[key]
+                }));
+
+                const pdfText = (value) => String(value == null ? '-' : value);
+                const safeName = (value) => pdfText(value).replace(/[^a-zA-Z0-9_-]+/g, '_');
+
+                const addHeader = (title, subtitle = '') => {
+                    doc.setFillColor(30, 41, 59);
+                    doc.rect(0, 0, pageWidth, 31, 'F');
+                    doc.setFillColor(79, 70, 229);
+                    doc.rect(0, 0, 5, 31, 'F');
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(13);
+                    doc.text('INSTITUT TEKNOLOGI SUMATERA', marginX, 10);
+                    doc.setFontSize(9);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text('PROGRAM STUDI TEKNIK GEOMATIKA | LABORATORIUM GEOMATIKA', marginX, 16);
+                    doc.setFontSize(12);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(title, marginX, 24);
+                    if (subtitle) {
+                        doc.setFontSize(8);
+                        doc.setFont('helvetica', 'normal');
+                        doc.text(subtitle, pageWidth - marginX, 24, { align: 'right' });
+                    }
+                    doc.setTextColor(15, 23, 42);
+                };
+
+                const addSectionTitle = (title, y) => {
+                    doc.setFillColor(238, 242, 255);
+                    doc.roundedRect(marginX, y - 4, contentWidth, 9, 1.5, 1.5, 'F');
+                    doc.setTextColor(55, 48, 163);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(10);
+                    doc.text(title, marginX + 4, y + 1.5);
+                    doc.setTextColor(15, 23, 42);
+                    return y + 10;
+                };
+
+                const drawMetricCard = (x, y, w, label, value, note = '') => {
+                    doc.setFillColor(248, 250, 252);
+                    doc.setDrawColor(226, 232, 240);
+                    doc.roundedRect(x, y, w, 25, 2, 2, 'FD');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(7.5);
+                    doc.setTextColor(100, 116, 139);
+                    doc.text(label.toUpperCase(), x + 4, y + 6);
+                    doc.setFontSize(17);
+                    doc.setTextColor(15, 23, 42);
+                    doc.text(pdfText(value), x + 4, y + 15);
+                    if (note) {
+                        doc.setFont('helvetica', 'normal');
+                        doc.setFontSize(7);
+                        doc.setTextColor(100, 116, 139);
+                        const wrapped = doc.splitTextToSize(note, w - 8);
+                        doc.text(wrapped.slice(0, 2), x + 4, y + 20);
+                    }
+                };
+
+                const drawHorizontalBarChart = (items, y, options = {}) => {
+                    const {
+                        title = '',
+                        valueKey = 'count',
+                        valueSuffix = '',
+                        maxItems = 8,
+                        height = 72
+                    } = options;
+                    const data = items.slice(0, maxItems);
+                    if (title) y = addSectionTitle(title, y);
+                    if (data.length === 0) {
+                        doc.setFontSize(9);
+                        doc.setTextColor(100, 116, 139);
+                        doc.text('Belum ada data.', marginX, y + 4);
+                        return y + 12;
+                    }
+                    const chartX = marginX + 58;
+                    const chartW = contentWidth - 78;
+                    const rowH = Math.min(9, height / data.length);
+                    const maxValue = Math.max(...data.map(item => Number(item[valueKey]) || 0), 1);
+                    data.forEach((item, index) => {
+                        const rowY = y + (index * rowH);
+                        const value = Number(item[valueKey]) || 0;
+                        const label = `${index + 1}. ${item.name || item.label || '-'}`;
+                        doc.setFont('helvetica', index === 0 ? 'bold' : 'normal');
+                        doc.setFontSize(7.3);
+                        doc.setTextColor(51, 65, 85);
+                        const clippedLabel = doc.splitTextToSize(label, 52)[0];
+                        doc.text(clippedLabel, marginX, rowY + 4);
+                        doc.setFillColor(241, 245, 249);
+                        doc.roundedRect(chartX, rowY + 1, chartW, 4, 1, 1, 'F');
+                        const barW = Math.max(1, (value / maxValue) * chartW);
+                        if (index === 0) doc.setFillColor(79, 70, 229);
+                        else doc.setFillColor(129, 140, 248);
+                        doc.roundedRect(chartX, rowY + 1, barW, 4, 1, 1, 'F');
+                        doc.setFont('helvetica', 'bold');
+                        doc.setFontSize(7.2);
+                        doc.setTextColor(30, 41, 59);
+                        doc.text(`${value.toLocaleString('id-ID')}${valueSuffix}`, pageWidth - marginX, rowY + 4.2, { align: 'right' });
+                    });
+                    return y + (data.length * rowH) + 4;
+                };
+
+                const drawActivityBars = (items, y) => {
+                    y = addSectionTitle('Distribusi Aktivitas Peminjaman', y);
+                    const maxCount = Math.max(...items.map(item => item.count), 1);
+                    items.slice(0, 6).forEach((item, idx) => {
+                        const rowY = y + (idx * 9);
+                        const pct = totalFilteredTx === 0 ? 0 : Math.round((item.count / totalFilteredTx) * 100);
+                        doc.setFont('helvetica', 'bold');
+                        doc.setFontSize(7.5);
+                        doc.setTextColor(51, 65, 85);
+                        doc.text(item.name, marginX, rowY + 4);
+                        doc.setFillColor(241, 245, 249);
+                        doc.roundedRect(marginX + 48, rowY + 1, 105, 4, 1, 1, 'F');
+                        doc.setFillColor(5, 150, 105);
+                        doc.roundedRect(marginX + 48, rowY + 1, Math.max(1, (item.count / maxCount) * 105), 4, 1, 1, 'F');
+                        doc.setFont('helvetica', 'bold');
+                        doc.setTextColor(15, 23, 42);
+                        doc.text(`${item.count} kegiatan (${pct}%)`, pageWidth - marginX, rowY + 4.2, { align: 'right' });
+                    });
+                    return y + (Math.min(items.length, 6) * 9) + 3;
+                };
+
+                const drawTrendChart = (items, y) => {
+                    if (items.length < 2) return y;
+                    y = addSectionTitle('Tren Jumlah Peminjaman per Bulan', y);
+                    const x = marginX + 5;
+                    const w = contentWidth - 10;
+                    const h = 42;
+                    const bottom = y + h;
+                    const maxV = Math.max(...items.map(item => item.count), 1);
+                    doc.setDrawColor(203, 213, 225);
+                    doc.line(x, bottom, x + w, bottom);
+                    doc.line(x, y, x, bottom);
+                    const pointGap = items.length === 1 ? 0 : w / (items.length - 1);
+                    const pts = items.map((item, i) => ({
+                        x: x + (i * pointGap),
+                        y: bottom - ((item.count / maxV) * (h - 6)),
+                        item
+                    }));
+                    doc.setDrawColor(79, 70, 229);
+                    doc.setLineWidth(0.8);
+                    for (let i = 1; i < pts.length; i++) {
+                        doc.line(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y);
+                    }
+                    pts.forEach((p, i) => {
+                        doc.setFillColor(79, 70, 229);
+                        doc.circle(p.x, p.y, 1.5, 'F');
+                        doc.setFontSize(6.5);
+                        doc.setFont('helvetica', 'bold');
+                        doc.setTextColor(30, 41, 59);
+                        doc.text(String(p.item.count), p.x, p.y - 3, { align: 'center' });
+                        if (i % Math.ceil(items.length / 6) === 0 || i === items.length - 1) {
+                            const shortLabel = p.item.label.replace(/^(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)/, m => m.substring(0, 3));
+                            doc.setFont('helvetica', 'normal');
+                            doc.setFontSize(5.8);
+                            doc.setTextColor(100, 116, 139);
+                            doc.text(shortLabel, p.x, bottom + 4, { align: 'center' });
+                        }
+                    });
+                    return bottom + 10;
+                };
+
+                const executiveAnalysisParts = [];
+                if (topTool) {
+                    const share = totalToolUses === 0 ? 0 : Math.round((topTool.count / totalToolUses) * 100);
+                    executiveAnalysisParts.push(`Instrumen dengan frekuensi penggunaan tertinggi adalah ${topTool.name} (${topTool.code}) sebanyak ${topTool.count} unit-pemakaian atau sekitar ${share}% dari seluruh penggunaan alat pada periode laporan.`);
+                }
+                if (topDurationTool) {
+                    executiveAnalysisParts.push(`Akumulasi waktu penggunaan tertinggi tercatat pada ${topDurationTool.name} sebesar ${topDurationTool.hours.toLocaleString('id-ID')} jam.`);
+                }
+                if (dominant) {
+                    executiveAnalysisParts.push(`Aktivitas ${dominant.name} merupakan tujuan peminjaman paling dominan dengan ${dominant.count} kegiatan (${dominant.percent}%).`);
+                }
+                executiveAnalysisParts.push(`Tiga instrumen teratas menyumbang ${top3Share}% dari total frekuensi pemakaian. Nilai ini dapat digunakan sebagai dasar prioritas pengecekan kondisi, kalibrasi, dan kesiapan operasional instrumen yang paling intensif digunakan.`);
+                const executiveAnalysis = executiveAnalysisParts.join(' ');
+
+                // ==============================
+                // HALAMAN 1 - RINGKASAN EKSEKUTIF
+                // ==============================
+                addHeader('LAPORAN PENGGUNAAN ALAT LABORATORIUM', `Periode: ${periodLabel}`);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(100, 116, 139);
+                doc.text(`Tanggal cetak: ${generatedAt.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })} ${generatedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\./g, ':')} WIB`, marginX, 38);
+
+                const cardGap = 4;
+                const cardW = (contentWidth - (cardGap * 3)) / 4;
+                drawMetricCard(marginX, 44, cardW, 'Total Peminjaman', reportTransactions.length, 'Transaksi pada periode laporan');
+                drawMetricCard(marginX + cardW + cardGap, 44, cardW, 'Frekuensi Alat', totalToolUses, 'Akumulasi unit-pemakaian');
+                drawMetricCard(marginX + ((cardW + cardGap) * 2), 44, cardW, 'Durasi Penggunaan', `${Math.round(totalUsageHours).toLocaleString('id-ID')} jam`, 'Akumulasi seluruh alat');
+                drawMetricCard(marginX + ((cardW + cardGap) * 3), 44, cardW, 'Rata-rata Durasi', `${avgUsageHours.toFixed(1)} jam`, 'Per unit-pemakaian');
+
+                let y = addSectionTitle('Ringkasan Eksekutif', 78);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.7);
+                doc.setTextColor(51, 65, 85);
+                const executiveLines = doc.splitTextToSize(executiveAnalysis, contentWidth - 4);
+                doc.text(executiveLines, marginX + 2, y);
+                y += (executiveLines.length * 4.4) + 6;
+
+                y = drawHorizontalBarChart(reportTools, y, {
+                    title: 'Grafik Frekuensi Penggunaan Instrumen',
+                    valueKey: 'count',
+                    valueSuffix: 'x',
+                    maxItems: 8,
+                    height: 70
+                });
+
+                if (y < 250) {
+                    y = drawActivityBars(sortedCategoriesList, y + 2);
+                }
+
+                // ==============================
+                // HALAMAN 2 - DURASI & TREN
+                // ==============================
+                doc.addPage();
+                addHeader('ANALISIS INTENSITAS PEMANFAATAN INSTRUMEN', `Periode: ${periodLabel}`);
+                y = 42;
+                y = drawHorizontalBarChart(durationRanking, y, {
+                    title: 'Grafik Akumulasi Durasi Penggunaan',
+                    valueKey: 'hours',
+                    valueSuffix: ' jam',
+                    maxItems: 8,
+                    height: 72
+                });
+
+                if (monthlyTrend.length >= 2 && y < 210) {
+                    y = drawTrendChart(monthlyTrend, y + 4);
+                }
+
+                y = addSectionTitle('Analisis dan Rekomendasi Pengelolaan', Math.min(y + 4, 220));
+                const recommendations = [];
+                if (topTool) recommendations.push(`1. Prioritaskan inspeksi, pemeliharaan preventif, dan verifikasi kesiapan ${topTool.name} (${topTool.code}) karena memiliki frekuensi penggunaan tertinggi (${topTool.count}x).`);
+                if (topDurationTool) recommendations.push(`2. Jadwalkan evaluasi kondisi berdasarkan jam operasi pada ${topDurationTool.name}; akumulasi durasinya mencapai ${topDurationTool.hours.toLocaleString('id-ID')} jam.`);
+                if (dominant) recommendations.push(`3. Kebutuhan ${dominant.name} mendominasi ${dominant.percent}% aktivitas. Ketersediaan instrumen yang paling terkait dengan aktivitas tersebut perlu menjadi prioritas sebelum periode praktikum/kegiatan berikutnya.`);
+                recommendations.push(`4. Konsentrasi Top 3 instrumen sebesar ${top3Share}% menunjukkan kebutuhan monitoring khusus pada instrumen dengan intensitas tinggi agar risiko ketidaktersediaan alat dapat ditekan.`);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.5);
+                doc.setTextColor(51, 65, 85);
+                recommendations.forEach(rec => {
+                    const lines = doc.splitTextToSize(rec, contentWidth - 5);
+                    doc.text(lines, marginX + 2, y);
+                    y += (lines.length * 4.2) + 2.5;
+                });
+
+                // ==============================
+                // HALAMAN 3 - DATA RINCI
+                // ==============================
+                doc.addPage();
+                addHeader('DATA RINCI PENGGUNAAN ALAT', `Periode: ${periodLabel}`);
+                doc.setFontSize(8);
+                doc.setTextColor(100, 116, 139);
+                doc.text('Data diurutkan berdasarkan frekuensi penggunaan tertinggi.', marginX, 39);
+
+                const toolRows = reportTools.map((item, idx) => [
+                    idx + 1,
+                    item.code,
+                    item.name,
+                    item.category,
+                    item.count,
+                    `${item.hours.toLocaleString('id-ID')} jam`,
+                    `${item.avgHours.toLocaleString('id-ID')} jam`
+                ]);
+
+                doc.autoTable({
+                    startY: 44,
+                    head: [['No', 'Kode', 'Instrumen', 'Kategori', 'Frekuensi', 'Durasi', 'Rata-rata']],
+                    body: toolRows,
+                    theme: 'grid',
+                    margin: { left: marginX, right: marginX },
+                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', fontSize: 7.5 },
+                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    styles: { fontSize: 7.2, cellPadding: 2, textColor: [51, 65, 85], valign: 'middle' },
+                    columnStyles: {
+                        0: { halign: 'center', cellWidth: 9 },
+                        1: { cellWidth: 20 },
+                        2: { cellWidth: 48 },
+                        3: { cellWidth: 31 },
+                        4: { halign: 'center', cellWidth: 20 },
+                        5: { halign: 'right', cellWidth: 25 },
+                        6: { halign: 'right', cellWidth: 25 }
+                    }
+                });
+
+                let tableEndY = doc.lastAutoTable.finalY + 8;
+                if (tableEndY > 235) {
+                    doc.addPage();
+                    addHeader('CATATAN METODOLOGI LAPORAN', `Periode: ${periodLabel}`);
+                    tableEndY = 43;
+                } else {
+                    tableEndY = addSectionTitle('Catatan Metodologi', tableEndY);
+                }
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(71, 85, 105);
+                const methodology = [
+                    'Frekuensi penggunaan dihitung dari jumlah unit alat yang tercatat pada transaksi peminjaman dalam periode terpilih.',
+                    'Durasi transaksi selesai dihitung dari waktu peminjaman hingga waktu pengembalian aktual yang tercatat pada status transaksi.',
+                    'Untuk transaksi yang masih aktif, durasi mengikuti estimasi pengembalian; apabila estimasi telah terlewati, durasi dihitung hingga waktu laporan dibuat.',
+                    'Seluruh data laporan bersumber dari data transaksi dan inventaris yang telah disinkronkan dari Google Spreadsheet pada aplikasi.'
+                ];
+                methodology.forEach((line, idx) => {
+                    const wrapped = doc.splitTextToSize(`${idx + 1}. ${line}`, contentWidth - 5);
+                    doc.text(wrapped, marginX + 2, tableEndY);
+                    tableEndY += (wrapped.length * 4.1) + 2;
+                });
+
+                // ==============================
+                // PENGESAHAN / TANDA TANGAN
+                // ==============================
+                if (tableEndY > 218) {
+                    doc.addPage();
+                    addHeader('PENGESAHAN LAPORAN PENGGUNAAN ALAT', `Periode: ${periodLabel}`);
+                    tableEndY = 46;
+                } else {
+                    tableEndY += 5;
+                }
+
+                tableEndY = addSectionTitle('Pengesahan Laporan', tableEndY);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(71, 85, 105);
+                doc.text(`Lampung Selatan, ${generatedAt.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, pageWidth - marginX, tableEndY, { align: 'right' });
+
+                const signatureTop = tableEndY + 9;
+                const leftSigX = marginX + (contentWidth * 0.25);
+                const rightSigX = marginX + (contentWidth * 0.75);
+
+                doc.setTextColor(15, 23, 42);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.5);
+                doc.text('Mengetahui,', leftSigX, signatureTop, { align: 'center' });
+                doc.text('Diverifikasi oleh,', rightSigX, signatureTop, { align: 'center' });
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(9);
+                doc.text('Koordinator Laboratorium GT', leftSigX, signatureTop + 6, { align: 'center' });
+                doc.text('Laboran Geomatika', rightSigX, signatureTop + 6, { align: 'center' });
+
+                // Ruang tanda tangan manual/digital.
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(100, 116, 139);
+                doc.text('(........................................................)', leftSigX, signatureTop + 34, { align: 'center' });
+                doc.text('(........................................................)', rightSigX, signatureTop + 34, { align: 'center' });
+                doc.setDrawColor(148, 163, 184);
+                doc.setLineWidth(0.25);
+                doc.line(leftSigX - 28, signatureTop + 36, leftSigX + 28, signatureTop + 36);
+                doc.line(rightSigX - 28, signatureTop + 36, rightSigX + 28, signatureTop + 36);
+
+                // Footer seluruh halaman.
+                const pageCount = doc.getNumberOfPages();
+                for (let p = 1; p <= pageCount; p++) {
+                    doc.setPage(p);
+                    doc.setDrawColor(226, 232, 240);
+                    doc.line(marginX, pageHeight - 13, pageWidth - marginX, pageHeight - 13);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(7);
+                    doc.setTextColor(100, 116, 139);
+                    doc.text('Sistem Informasi Pusat Laboratorium Geomatika - ITERA', marginX, pageHeight - 8);
+                    doc.text(`Halaman ${p} dari ${pageCount}`, pageWidth - marginX, pageHeight - 8, { align: 'right' });
+                }
+
+                const filePeriod = analysisMonth === 'Semua' ? 'Keseluruhan_Waktu' : safeName(analysisMonth);
+                doc.save(`Laporan_Penggunaan_Alat_Lab_Geomatika_${filePeriod}.pdf`);
+                showNotification('Laporan penggunaan alat berhasil dibuat dalam format PDF.', 'success');
+            } catch (error) {
+                console.error('Gagal membuat laporan penggunaan alat:', error);
+                showNotification('Gagal membuat laporan PDF penggunaan alat.', 'error');
+            }
+        };
+
         // --- DATA JADWAL PRAKTIKUM ---
         const MONDAY = 1, TUESDAY = 2, WEDNESDAY = 3, THURSDAY = 4, FRIDAY = 5;
         const labLabels = {
@@ -1229,21 +2208,21 @@ function App() {
             // KATEGORI 3 - PRAKTIKUM LAB MULTIMEDIA (MM)
             // =========================================================
             // SENIN
-            { id: 'mm-m1', lab: 'MM', day: MONDAY, course: 'Geodesi Satelit', class: 'RB', start: '07:30', end: '10:10' },
-            { id: 'mm-m2', lab: 'MM', day: MONDAY, course: 'Penginderaan Jauh Lanjut', class: 'RA', start: '07:30', end: '11:05' },
-            { id: 'mm-m3', lab: 'MM', day: MONDAY, course: 'Geodesi Satelit', class: 'RA', start: '13:00', end: '15:40' },
-            { id: 'mm-m4', lab: 'MM', day: MONDAY, course: 'Penginderaan Jauh Lanjut', class: 'RB', start: '13:00', end: '16:35' },
+            { id: 'mm-m1', lab: 'MM', room: 'Lab MM-1', day: MONDAY, course: 'Geodesi Satelit', class: 'RB', start: '07:30', end: '10:10' },
+            { id: 'mm-m2', lab: 'MM', room: 'Lab MM-2', day: MONDAY, course: 'Penginderaan Jauh Lanjut', class: 'RA', start: '07:30', end: '11:05' },
+            { id: 'mm-m3', lab: 'MM', room: 'Lab MM-1', day: MONDAY, course: 'Geodesi Satelit', class: 'RA', start: '13:00', end: '15:40' },
+            { id: 'mm-m4', lab: 'MM', room: 'Lab MM-2', day: MONDAY, course: 'Penginderaan Jauh Lanjut', class: 'RB', start: '13:00', end: '16:35' },
             // SELASA
-            { id: 'mm-t1', lab: 'MM', day: TUESDAY, course: 'Geodesi Satelit', class: 'RC', start: '07:30', end: '10:10' },
-            { id: 'mm-t2', lab: 'MM', day: TUESDAY, course: 'Penginderaan Jauh Lanjut', class: 'RC', start: '07:30', end: '11:05' },
-            { id: 'mm-t3', lab: 'MM', day: TUESDAY, course: 'Kartografi', class: 'RA', start: '13:00', end: '15:40' },
+            { id: 'mm-t1', lab: 'MM', room: 'Lab MM-1', day: TUESDAY, course: 'Geodesi Satelit', class: 'RC', start: '07:30', end: '10:10' },
+            { id: 'mm-t2', lab: 'MM', room: 'Lab MM-2', day: TUESDAY, course: 'Penginderaan Jauh Lanjut', class: 'RC', start: '07:30', end: '11:05' },
+            { id: 'mm-t3', lab: 'MM', room: 'Lab MM-1', day: TUESDAY, course: 'Kartografi', class: 'RA', start: '13:00', end: '15:40' },
             // RABU
-            { id: 'mm-w1', lab: 'MM', day: WEDNESDAY, course: 'Kartografi', class: 'RB', start: '07:30', end: '10:10' },
-            { id: 'mm-w2', lab: 'MM', day: WEDNESDAY, course: 'Kartografi', class: 'RC', start: '13:00', end: '15:40' },
+            { id: 'mm-w1', lab: 'MM', room: 'Lab MM-1', day: WEDNESDAY, course: 'Kartografi', class: 'RB', start: '07:30', end: '10:10' },
+            { id: 'mm-w2', lab: 'MM', room: 'Lab MM-1', day: WEDNESDAY, course: 'Kartografi', class: 'RC', start: '13:00', end: '15:40' },
             // KAMIS
-            { id: 'mm-th1', lab: 'MM', day: THURSDAY, course: 'Basis Data Spasial', class: 'RA', start: '07:30', end: '10:10' },
-            { id: 'mm-th2', lab: 'MM', day: THURSDAY, course: 'Basis Data Spasial', class: 'RC', start: '07:30', end: '10:10' },
-            { id: 'mm-th3', lab: 'MM', day: THURSDAY, course: 'Basis Data Spasial', class: 'RB', start: '13:00', end: '15:40' }
+            { id: 'mm-th1', lab: 'MM', room: 'Lab MM-1', day: THURSDAY, course: 'Basis Data Spasial', class: 'RA', start: '07:30', end: '10:10' },
+            { id: 'mm-th2', lab: 'MM', room: 'Lab MM-2', day: THURSDAY, course: 'Basis Data Spasial', class: 'RC', start: '07:30', end: '10:10' },
+            { id: 'mm-th3', lab: 'MM', room: 'Lab MM-1', day: THURSDAY, course: 'Basis Data Spasial', class: 'RB', start: '13:00', end: '15:40' }
         ];
         const timeToMins = (t) => {
             const [h, m] = t.split(':').map(Number);
@@ -1253,6 +2232,7 @@ function App() {
             const startMins = timeToMins(item.start);
             const endMins = timeToMins(item.end);
             const overlaps = rawSchedule.filter(other => other.lab === item.lab &&
+                (item.lab !== 'MM' || other.room === item.room) &&
                 other.day === item.day &&
                 other.id !== item.id &&
                 timeToMins(other.start) < endMins &&
@@ -1357,7 +2337,10 @@ function App() {
                         React.createElement("div", { className: "flex justify-between items-start mb-1" },
                             React.createElement("span", { className: "text-xs font-black text-slate-800 leading-tight pr-2" }, item.course),
                             React.createElement("span", { className: "text-[10px] font-black px-1.5 py-0.5 rounded bg-white border border-slate-200 shadow-sm flex-shrink-0" }, item.class)),
-                        React.createElement("div", { className: `flex items-center text-[11px] font-mono font-bold mt-1 ${iconColor}` },
+                        item.room && React.createElement("div", { className: "lab-room-badge mt-1.5", title: `Ruangan: ${item.room}` },
+                            React.createElement("i", { className: "fas fa-door-open" }),
+                            item.room),
+                        React.createElement("div", { className: `flex items-center text-[11px] font-mono font-bold mt-1.5 ${iconColor}` },
                             React.createElement("i", { className: "far fa-clock mr-1.5" }),
                             item.start,
                             " - ",
@@ -1370,13 +2353,13 @@ function App() {
             React.createElement("div", { className: "flex justify-between items-end border-b border-slate-300 pb-3" },
                 React.createElement("h2", { className: "text-2xl font-bold text-slate-800 flex items-center" },
                     "Dashboard Monitoring",
-                    isSyncing && React.createElement("i", { className: "fas fa-sync fa-spin text-indigo-600 text-sm ml-3", title: "Sinkronisasi Data..." })),
+                    isSyncing && React.createElement("i", { className: "lab-sync-icon fas fa-sync fa-spin text-indigo-600 text-sm ml-3", title: "Sinkronisasi Data..." })),
                 React.createElement("div", { className: "text-right bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm flex items-center gap-3" },
                     React.createElement("i", { className: "far fa-clock text-indigo-600 text-xl animate-pulse" }),
                     React.createElement("div", null,
                         React.createElement("p", { className: "text-[10px] font-bold text-slate-500 uppercase tracking-wider" }, currentTime.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })),
                         React.createElement("p", { className: "text-xl font-black text-indigo-700 font-mono tracking-widest" }, currentTime.toLocaleTimeString('id-ID', { hour12: false }))))),
-            mendekatiDeadlineCount > 0 && (React.createElement("div", { className: "bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg flex items-center shadow-sm" },
+            mendekatiDeadlineCount > 0 && (React.createElement("div", { className: "lab-alert bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl flex items-center shadow-sm" },
                 React.createElement("i", { className: "fas fa-exclamation-circle text-amber-500 text-2xl mr-4" }),
                 React.createElement("div", null,
                     React.createElement("p", { className: "text-sm text-amber-800 font-bold" }, "Perhatian: Ada alat yang mendekati batas waktu!"),
@@ -1385,57 +2368,57 @@ function App() {
                         React.createElement("span", { className: "font-black text-lg" }, mendekatiDeadlineCount),
                         " alat akan segera mencapai batas waktu pengembalian kurang dari 48 Jam. Silakan periksa detail pengembalian.")))),
             React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4" },
-                React.createElement("div", { className: "bg-white border border-slate-200 p-4 rounded-lg shadow-sm" },
+                React.createElement("div", { className: "lab-metric lab-metric-indigo bg-white border border-slate-200 p-4 rounded-xl shadow-sm" },
                     React.createElement("div", { className: "flex justify-between items-start" },
                         React.createElement("div", null,
                             React.createElement("p", { className: "text-sm text-slate-500 font-semibold mb-1 leading-tight" }, "Total Semua Inventaris"),
                             React.createElement("p", { className: "text-3xl font-black text-slate-800" }, grandTotalAlat)),
-                        React.createElement("div", { className: "bg-indigo-100 p-3 rounded text-indigo-700 flex-shrink-0 ml-2" },
+                        React.createElement("div", { className: "lab-icon-tile bg-indigo-100 p-3 rounded text-indigo-700 flex-shrink-0 ml-2" },
                             React.createElement("i", { className: "fas fa-warehouse text-xl" })))),
-                React.createElement("div", { className: "bg-white border border-slate-200 p-4 rounded-lg shadow-sm" },
+                React.createElement("div", { className: "lab-metric lab-metric-blue bg-white border border-slate-200 p-4 rounded-xl shadow-sm" },
                     React.createElement("div", { className: "flex justify-between items-start" },
                         React.createElement("div", null,
                             React.createElement("p", { className: "text-sm text-slate-500 font-semibold mb-1 leading-tight" }, "Total Alat Utama Survei"),
                             React.createElement("p", { className: "text-3xl font-black text-slate-800" }, totalAlat)),
-                        React.createElement("div", { className: "bg-blue-100 p-3 rounded text-blue-700 flex-shrink-0 ml-2" },
+                        React.createElement("div", { className: "lab-icon-tile bg-blue-100 p-3 rounded text-blue-700 flex-shrink-0 ml-2" },
                             React.createElement("i", { className: "fas fa-boxes text-xl" })))),
-                React.createElement("div", { className: "bg-white border border-slate-200 p-4 rounded-lg shadow-sm" },
+                React.createElement("div", { className: "lab-metric lab-metric-green bg-white border border-slate-200 p-4 rounded-xl shadow-sm" },
                     React.createElement("div", { className: "flex justify-between items-start" },
                         React.createElement("div", null,
                             React.createElement("p", { className: "text-sm text-slate-500 font-semibold mb-1 leading-tight" }, "Ketersediaan Alat Utama"),
                             React.createElement("p", { className: "text-3xl font-black text-emerald-600" },
                                 persenTersedia,
                                 "%")),
-                        React.createElement("div", { className: "bg-emerald-100 p-3 rounded text-emerald-700 flex-shrink-0 ml-2" },
+                        React.createElement("div", { className: "lab-icon-tile bg-emerald-100 p-3 rounded text-emerald-700 flex-shrink-0 ml-2" },
                             React.createElement("i", { className: "fas fa-check-circle text-xl" }))),
                     React.createElement("div", { className: "w-full bg-slate-100 rounded-full h-1.5 mt-4 border border-slate-200" },
                         React.createElement("div", { className: "bg-emerald-500 h-1.5 rounded-full", style: { width: `${persenTersedia}%` } }))),
-                React.createElement("div", { className: "bg-white border border-slate-200 p-4 rounded-lg shadow-sm" },
+                React.createElement("div", { className: "lab-metric lab-metric-orange bg-white border border-slate-200 p-4 rounded-xl shadow-sm" },
                     React.createElement("div", { className: "flex justify-between items-start" },
                         React.createElement("div", null,
                             React.createElement("p", { className: "text-sm text-slate-500 font-semibold mb-1 leading-tight" }, "Sedang Dipinjam"),
                             React.createElement("p", { className: "text-3xl font-black text-orange-600" },
                                 persenDipinjam,
                                 "%")),
-                        React.createElement("div", { className: "bg-orange-100 p-3 rounded text-orange-700 flex-shrink-0 ml-2" },
+                        React.createElement("div", { className: "lab-icon-tile bg-orange-100 p-3 rounded text-orange-700 flex-shrink-0 ml-2" },
                             React.createElement("i", { className: "fas fa-exchange-alt text-xl" }))),
                     React.createElement("div", { className: "w-full bg-slate-100 rounded-full h-1.5 mt-4 border border-slate-200" },
                         React.createElement("div", { className: "bg-orange-500 h-1.5 rounded-full", style: { width: `${persenDipinjam}%` } }))),
-                React.createElement("div", { className: "bg-white border border-slate-200 p-4 rounded-lg shadow-sm" },
+                React.createElement("div", { className: "lab-metric lab-metric-red bg-white border border-slate-200 p-4 rounded-xl shadow-sm" },
                     React.createElement("div", { className: "flex justify-between items-start" },
                         React.createElement("div", null,
                             React.createElement("p", { className: "text-sm text-slate-500 font-semibold mb-1 leading-tight" }, "Risiko Keterlambatan"),
                             React.createElement("p", { className: "text-3xl font-black text-red-600" },
                                 persenTerlambat,
                                 "%")),
-                        React.createElement("div", { className: "bg-red-100 p-3 rounded text-red-700 flex-shrink-0 ml-2" },
+                        React.createElement("div", { className: "lab-icon-tile bg-red-100 p-3 rounded text-red-700 flex-shrink-0 ml-2" },
                             React.createElement("i", { className: "fas fa-exclamation-triangle text-xl" }))),
                     React.createElement("div", { className: "w-full bg-slate-100 rounded-full h-1.5 mt-4 border border-slate-200" },
                         React.createElement("div", { className: "bg-red-600 h-1.5 rounded-full", style: { width: `${persenTerlambat}%` } })))),
-            React.createElement("div", { className: "bg-white p-6 rounded-lg border border-slate-200 shadow-sm" },
+            React.createElement("div", { className: "lab-surface bg-white p-6 rounded-xl border border-slate-200 shadow-sm" },
                 React.createElement("div", { className: "flex flex-col md:flex-row justify-between md:items-end mb-4 gap-4" },
                     React.createElement("h3", { className: "text-lg font-bold text-slate-800" },
-                        React.createElement("i", { className: "fas fa-calendar-week text-indigo-600 mr-2" }),
+                        React.createElement("i", { className: "lab-section-icon fas fa-calendar-week text-indigo-600 mr-2" }),
                         "Jadwal ",
                         labLabels[scheduleLab],
                         " Ganjil 2026/2027"),
@@ -1509,50 +2492,78 @@ function App() {
                                 formatCountdown(minMinsAway)))))),
                 React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-5 gap-4" }, daysOfWeek.map(d => renderDayColumn(d.id, d.name)))),
             React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-6 mt-6" },
-                React.createElement("div", { className: "bg-white p-6 rounded-lg border border-slate-200 shadow-sm flex flex-col" },
-                    React.createElement("h3", { className: "text-lg font-bold text-slate-800 mb-6" }, "Distribusi Alat Utama"),
-                    React.createElement("div", { className: "flex flex-col md:flex-row items-center gap-8 my-auto" },
-                        React.createElement("div", { className: "w-40 h-40 rounded-full shadow-inner relative flex-shrink-0", style: pieStyle },
-                            React.createElement("div", { className: "absolute inset-0 m-auto w-24 h-24 bg-white rounded-full flex flex-col items-center justify-center shadow-sm border border-slate-100" },
-                                React.createElement("span", { className: "font-bold text-slate-800 text-xl" }, totalAlat),
-                                React.createElement("span", { className: "text-slate-500 text-[10px] font-bold uppercase tracking-wide" }, "Total Alat"))),
-                        React.createElement("div", { className: "w-full space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar" }, categoryStats.map((stat, i) => (React.createElement("div", { key: stat.category, className: "flex items-center justify-between text-sm" },
-                            React.createElement("div", { className: "flex items-center gap-2" },
-                                React.createElement("span", { className: "w-3 h-3 rounded block flex-shrink-0", style: { backgroundColor: chartColors[i % chartColors.length] } }),
-                                React.createElement("span", { className: "text-slate-700 font-medium truncate max-w-[120px]", title: stat.category }, stat.category)),
-                            React.createElement("span", { className: "font-bold text-slate-800" },
-                                totalAlat === 0 ? 0 : Math.round((stat.total / totalAlat) * 100),
-                                "%"))))))),
-                React.createElement("div", { className: "bg-white p-6 rounded-lg border border-slate-200 shadow-sm" },
-                    React.createElement("h3", { className: "text-lg font-bold text-slate-800 mb-4" },
-                        React.createElement("i", { className: "fas fa-chart-bar text-indigo-600 mr-2" }),
-                        " Alat Paling Sering Dipinjam"),
-                    topItems.length === 0 ? (React.createElement("p", { className: "text-slate-400 text-sm italic py-4 text-center" }, "Belum ada data peminjaman.")) : (React.createElement("ul", { className: "divide-y divide-slate-100" }, topItems.map((item, idx) => (React.createElement("li", { key: idx, className: "py-3 flex justify-between items-center" },
-                        React.createElement("div", { className: "flex items-center gap-3" },
-                            React.createElement("div", { className: `w-6 h-6 rounded flex items-center justify-center text-xs font-bold border ${idx === 0 ? 'bg-amber-50 text-amber-700 border-amber-200' : idx === 1 ? 'bg-slate-100 text-slate-700 border-slate-300' : idx === 2 ? 'bg-orange-50 text-orange-800 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-100'}` }, idx + 1),
-                            React.createElement("div", null,
-                                React.createElement("p", { className: "text-sm font-bold text-slate-800" }, item.name))),
-                        React.createElement("div", { className: "text-right flex flex-col items-end gap-1" },
-                            React.createElement("span", { className: "bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-xs font-bold w-max" },
-                                item.count,
-                                " (kali)"),
-                            React.createElement("span", { className: "text-[10px] font-bold text-slate-500" },
-                                React.createElement("i", { className: "fas fa-history mr-1 text-slate-400" }),
-                                "Durasi: ",
-                                item.hours,
-                                " Jam"))))))))),
-            React.createElement("div", { className: "mt-6 bg-white p-6 rounded-lg border border-slate-200 shadow-sm" },
+                React.createElement("div", { className: "lab-surface lab-modern-chart bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col" },
+                    React.createElement("div", { className: "flex items-start justify-between mb-5 gap-3" },
+                        React.createElement("div", null,
+                            React.createElement("h3", { className: "text-lg font-bold text-slate-800 flex items-center" },
+                                React.createElement("i", { className: "lab-section-icon fas fa-chart-pie text-indigo-600 mr-2" }),
+                                "Distribusi Alat Utama"),
+                            React.createElement("p", { className: "text-[11px] text-slate-500 mt-1" }, "Komposisi inventaris utama per kategori")),
+                        React.createElement("span", { className: "lab-chart-live" }, React.createElement("i", { className: "fas fa-circle" }), " LIVE")),
+                    React.createElement("div", { className: "flex flex-col md:flex-row items-center gap-7 my-auto" },
+                        React.createElement("div", { className: "lab-donut-interactive w-44 h-44 rounded-full shadow-inner relative flex-shrink-0", style: pieStyle, title: `Total ${totalAlat} alat utama` },
+                            React.createElement("div", { className: "lab-donut-center absolute inset-0 m-auto w-28 h-28 bg-white rounded-full flex flex-col items-center justify-center shadow-sm border border-slate-100" },
+                                React.createElement("span", { className: "text-[9px] text-indigo-500 font-black uppercase tracking-[0.16em]" }, "Inventaris"),
+                                React.createElement("span", { className: "font-black text-slate-900 text-3xl leading-none mt-1" }, totalAlat),
+                                React.createElement("span", { className: "text-slate-500 text-[10px] font-bold mt-1" }, `${categoryStats.length} kategori`))),
+                        React.createElement("div", { className: "w-full space-y-2 max-h-56 overflow-y-auto pr-1 custom-scrollbar" }, categoryStats.map((stat, i) => (React.createElement("div", { key: stat.category, className: "lab-category-row", title: `${stat.category}: ${stat.total} unit` },
+                            React.createElement("div", { className: "flex items-center justify-between text-sm mb-1.5" },
+                                React.createElement("div", { className: "flex items-center gap-2 min-w-0" },
+                                    React.createElement("span", { className: "lab-category-dot", style: { backgroundColor: chartColors[i % chartColors.length] } }),
+                                    React.createElement("span", { className: "text-slate-700 font-bold truncate", title: stat.category }, stat.category)),
+                                React.createElement("span", { className: "lab-percent-pill" },
+                                    totalAlat === 0 ? 0 : Math.round((stat.total / totalAlat) * 100), "%")),
+                            React.createElement("div", { className: "lab-mini-track" },
+                                React.createElement("div", { className: "lab-mini-fill", style: { width: `${totalAlat === 0 ? 0 : Math.round((stat.total / totalAlat) * 100)}%`, backgroundColor: chartColors[i % chartColors.length] } })))))))),
+                React.createElement("div", { className: "lab-surface lab-modern-chart bg-white p-6 rounded-xl border border-slate-200 shadow-sm" },
+                    React.createElement("div", { className: "flex items-start justify-between mb-5 gap-3" },
+                        React.createElement("div", null,
+                            React.createElement("h3", { className: "text-lg font-bold text-slate-800 flex items-center" },
+                                React.createElement("i", { className: "lab-section-icon fas fa-ranking-star text-indigo-600 mr-2" }),
+                                "Alat Utama Paling Sering Dipinjam"),
+                            React.createElement("p", { className: "text-[11px] text-slate-500 mt-1" }, "Instrumen utama survei; alat pendukung tidak dimasukkan")),
+                        React.createElement("span", { className: "lab-chart-live lab-chart-live-blue" }, React.createElement("i", { className: "fas fa-wave-square" }), " TOP 5")),
+                    topItems.length === 0 ? (React.createElement("p", { className: "text-slate-400 text-sm italic py-6 text-center" }, "Belum ada data peminjaman alat utama.")) : (React.createElement("ul", { className: "space-y-3" }, topItems.map((item, idx) => (React.createElement("li", { key: item.id || idx, className: "lab-tool-rank-card", title: `${item.name} • ${item.count} kali • ${item.hours} jam` },
+                        React.createElement("div", { className: "flex items-start gap-3" },
+                            React.createElement("div", { className: `lab-rank-badge ${idx === 0 ? 'lab-rank-1' : idx === 1 ? 'lab-rank-2' : idx === 2 ? 'lab-rank-3' : ''}` }, idx + 1),
+                            React.createElement("div", { className: "flex-1 min-w-0" },
+                                React.createElement("div", { className: "flex flex-wrap items-center justify-between gap-2" },
+                                    React.createElement("p", { className: "text-xs font-black text-slate-800 truncate", title: item.name }, item.name),
+                                    React.createElement("div", { className: "flex gap-1.5" },
+                                        React.createElement("span", { className: "lab-data-chip lab-data-chip-indigo" }, React.createElement("i", { className: "fas fa-repeat" }), `${item.count}x`),
+                                        React.createElement("span", { className: "lab-data-chip lab-data-chip-cyan" }, React.createElement("i", { className: "far fa-clock" }), `${item.hours} jam`))),
+                                React.createElement("div", { className: "mt-2 space-y-1.5" },
+                                    React.createElement("div", { className: "lab-dual-bar-row" },
+                                        React.createElement("span", null, "Frekuensi"),
+                                        React.createElement("div", { className: "lab-dual-track" }, React.createElement("div", { className: "lab-dual-fill lab-fill-frequency", style: { width: `${Math.round((item.count / maxTopItemCount) * 100)}%` } }))),
+                                    React.createElement("div", { className: "lab-dual-bar-row" },
+                                        React.createElement("span", null, "Durasi"),
+                                        React.createElement("div", { className: "lab-dual-track" }, React.createElement("div", { className: "lab-dual-fill lab-fill-duration", style: { width: `${Math.round((item.hours / maxTopItemHours) * 100)}%` } }))))))))))))),
+            React.createElement("div", { className: "lab-surface mt-6 bg-white p-6 rounded-xl border border-slate-200 shadow-sm" },
                 React.createElement("div", { className: "flex flex-col md:flex-row justify-between md:items-center mb-6 gap-4 border-b border-slate-100 pb-4" },
                     React.createElement("h3", { className: "text-lg font-bold text-slate-800" },
-                        React.createElement("i", { className: "fas fa-chart-line text-indigo-600 mr-2" }),
+                        React.createElement("i", { className: "lab-section-icon fas fa-chart-line text-indigo-600 mr-2" }),
                         " Analisis Cerdas Jenis Peminjaman"),
-                    React.createElement("div", { className: "flex gap-3 items-center" },
-                        React.createElement("span", { className: "text-sm font-bold text-slate-600" }, "Filter Periode:"),
-                        React.createElement("select", { className: "p-2 border border-slate-300 rounded text-sm bg-slate-50 focus:ring-2 focus:ring-indigo-600 font-medium cursor-pointer", value: analysisMonth, onChange: e => setAnalysisMonth(e.target.value) },
-                            React.createElement("option", { value: "Semua" }, "Keseluruhan Waktu"),
-                            availableMonths.map(m => (React.createElement("option", { key: m, value: m }, formatMonthYearText(m))))))),
+                    React.createElement("div", { className: "flex flex-wrap gap-3 items-center" },
+                        React.createElement("div", { className: "flex gap-2 items-center" },
+                            React.createElement("span", { className: "text-sm font-bold text-slate-600" }, "Filter Periode:"),
+                            React.createElement("select", { className: "lab-filter p-2 border border-slate-300 rounded text-sm bg-slate-50 focus:ring-2 focus:ring-indigo-600 font-medium cursor-pointer", value: analysisMonth, onChange: e => setAnalysisMonth(e.target.value) },
+                                React.createElement("option", { value: "Semua" }, "Keseluruhan Waktu"),
+                                availableMonths.map(m => (React.createElement("option", { key: m, value: m }, formatMonthYearText(m)))))),
+                        isAdmin && React.createElement("button", {
+                            type: "button",
+                            onClick: handleGenerateUsageReport,
+                            className: "lab-report-btn inline-flex items-center gap-2 px-4 py-2 text-white text-sm font-bold rounded-xl shadow-sm transition-all border",
+                            title: "Dokumen internal - Unduh laporan penggunaan alat"
+                        },
+                            React.createElement("span", { className: "lab-report-icon" },
+                                React.createElement("i", { className: "fas fa-file-pdf" })),
+                            React.createElement("span", null, "Unduh Laporan PDF"),
+                            React.createElement("span", { className: "lab-admin-mini" },
+                                React.createElement("i", { className: "fas fa-lock mr-1" }),
+                                "ADMIN")))),
                 React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-4 gap-4 mb-6" },
-                    React.createElement("div", { className: "bg-slate-50 border border-slate-200 p-4 rounded-lg flex flex-col justify-center items-start" },
+                    React.createElement("div", { className: "lab-analysis-stat lab-analysis-neutral bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col justify-center items-start" },
                         React.createElement("p", { className: "text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1" }, "Total Peminjaman"),
                         React.createElement("div", { className: "flex items-end gap-2" },
                             React.createElement("span", { className: "text-3xl font-black text-slate-800" }, totalFilteredTx),
@@ -1560,17 +2571,17 @@ function App() {
                                 trendPercent > 0 ? '+' : '',
                                 trendPercent,
                                 "% vs bulan lalu")))),
-                    React.createElement("div", { className: "bg-indigo-50 border border-indigo-200 p-4 rounded-lg md:col-span-2 flex flex-col justify-center" },
+                    React.createElement("div", { className: "lab-analysis-stat lab-analysis-primary bg-indigo-50 border border-indigo-200 p-4 rounded-xl md:col-span-2 flex flex-col justify-center" },
                         React.createElement("p", { className: "text-[10px] text-indigo-700 font-bold uppercase tracking-wider mb-1" }, "Aktivitas Paling Dominan"),
                         React.createElement("p", { className: "text-lg font-bold text-indigo-900 leading-tight" }, dominant ? dominant.name : '-'),
                         React.createElement("p", { className: "text-xs text-indigo-700 font-medium mt-1" },
                             React.createElement("i", { className: "fas fa-wrench mr-1" }),
                             "Fokus Alat: ",
                             React.createElement("span", { className: "font-bold" }, dominant ? dominant.topTool.split(']')[1] || dominant.topTool : '-'))),
-                    React.createElement("div", { className: "bg-slate-50 border border-slate-200 p-4 rounded-lg flex flex-col justify-center" },
+                    React.createElement("div", { className: "lab-analysis-stat lab-analysis-low bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col justify-center" },
                         React.createElement("p", { className: "text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1" }, "Aktivitas Terendah"),
                         React.createElement("p", { className: "text-lg font-bold text-slate-700 leading-tight" }, least && least.name !== (dominant === null || dominant === void 0 ? void 0 : dominant.name) ? least.name : '-'))),
-                React.createElement("div", { className: "bg-slate-800 text-white p-4 rounded-lg mb-6 shadow-sm flex items-start gap-3 border-l-4 border-indigo-500" },
+                React.createElement("div", { className: "lab-insight bg-slate-800 text-white p-4 rounded-xl mb-6 shadow-sm flex items-start gap-3 border-l-4 border-indigo-500" },
                     React.createElement("i", { className: "fas fa-robot text-indigo-400 text-2xl mt-0.5" }),
                     React.createElement("div", null,
                         React.createElement("p", { className: "text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1" }, "Kesimpulan Sistem"),
@@ -1641,9 +2652,9 @@ function App() {
                                     React.createElement("i", { className: "far fa-clock mr-1" }),
                                     formatTimeStr(trx.returnTimeEst))))));
                 })))),
-            React.createElement("div", { className: "mt-6 bg-white p-6 rounded-lg border border-slate-200 shadow-sm" },
+            React.createElement("div", { className: "lab-surface mt-6 bg-white p-6 rounded-xl border border-slate-200 shadow-sm" },
                 React.createElement("h3", { className: "text-lg font-bold text-slate-800 mb-4 border-b border-slate-100 pb-3" },
-                    React.createElement("i", { className: "fas fa-tasks text-indigo-600 mr-2" }),
+                    React.createElement("i", { className: "lab-section-icon fas fa-tasks text-indigo-600 mr-2" }),
                     " Peminjaman Berjalan (Rincian Aktif)"),
                 sortedActiveTx.length === 0 ? (React.createElement("p", { className: "text-slate-500 text-sm italic py-6 text-center bg-slate-50 rounded border border-slate-100" }, "Tidak ada transaksi peminjaman aktif saat ini.")) : (React.createElement("div", { className: "overflow-x-auto" },
                     React.createElement("table", { className: "w-full text-left text-sm whitespace-nowrap" },
@@ -1848,17 +2859,14 @@ function App() {
                                 React.createElement("option", { value: "Layanan Teknik Kelautan" }, "Layanan Prodi Teknik Kelautan"),
                                 React.createElement("option", { value: "Layanan Teknik Perkeretaapian" }, "Layanan Prodi Teknik Perkeretaapian"),
                                 React.createElement("option", { value: "Layanan Teknik Biosistem" }, "Layanan Prodi Teknik Biosistem"),
-                                React.createElement("option", { value: "Layanan Teknik Lingkungan" }, "Layanan Prodi Teknik Lingkungan"),
-                                React.createElement("option", { value: "Layanan Tata Kelola Air Terpadu" }, "Layanan Prodi TKA")))),
+                                React.createElement("option", { value: "Layanan Tata Kelola Air Terpadu" }, "Layanan Prodi TKAT")))),
                         React.createElement("div", null,
                             React.createElement("label", { className: "block text-sm font-bold text-slate-700 mb-1.5" }, "Klasifikasi Kelas"),
                             React.createElement("select", { required: true, className: "w-full p-2.5 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-600 bg-white cursor-pointer", value: borrowForm.praktikumClass, onChange: e => setBorrowForm({ ...borrowForm, praktikumClass: e.target.value }) },
                                 React.createElement("option", { value: "", disabled: true }, "-- Identifikasi Kelas --"),
                                 React.createElement("option", { value: "RA" }, "Reguler A (RA)"),
                                 React.createElement("option", { value: "RB" }, "Reguler B (RB)"),
-                                React.createElement("option", { value: "RB" }, "Reguler B (RC)"),
-                                React.createElement("option", { value: "RB" }, "Reguler B (RD)"),
-                                React.createElement("option", { value: "RC" }, "Reguler C (RE)"))))),
+                                React.createElement("option", { value: "RC" }, "Reguler C (RC)"))))),
                     React.createElement("div", null,
                         React.createElement("label", { className: "block text-sm font-bold text-slate-700 mb-1.5" }, "Waktu Pengeluaran Instrumen"),
                         React.createElement("div", { className: "flex gap-2 relative" },
@@ -2040,36 +3048,43 @@ function App() {
                                 isAdmin && trx.status !== 'active' && (React.createElement("button", { onClick: () => handleDelete(trx.id), className: "bg-white text-red-600 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider w-full mt-1 transition-colors" }, "Hapus")))));
                     }))))))));
     };
-    return (React.createElement("div", { className: "min-h-screen flex flex-col md:flex-row bg-slate-100" },
-        notification && (React.createElement("div", { className: `fixed top-6 right-6 z-50 px-6 py-4 rounded shadow-2xl text-white font-bold transition-all flex items-center tracking-wide border-b-4 ${notification.type === 'error' ? 'bg-red-800 border-red-500' : 'bg-emerald-800 border-emerald-500'}` },
-            React.createElement("i", { className: `fas ${notification.type === 'error' ? 'fa-times-circle' : 'fa-check-circle'} text-2xl mr-3 opacity-90` }),
+    return (React.createElement("div", { className: "lab-app-shell min-h-screen flex flex-col md:flex-row bg-slate-100" },
+        notification && (React.createElement("div", { className: `lab-toast fixed top-6 right-6 z-50 px-6 py-4 rounded shadow-2xl text-white font-bold transition-all flex items-center tracking-wide ${notification.type === 'error' ? 'lab-toast-error bg-red-800 border-red-500' : 'lab-toast-success bg-emerald-800 border-emerald-500'}` },
+            React.createElement("i", { className: `lab-toast-icon fas ${notification.type === 'error' ? 'fa-times-circle' : 'fa-check-circle'} text-2xl mr-3 opacity-90` }),
             " ",
             notification.message)),
-        React.createElement("nav", { className: "bg-slate-900 w-full md:w-72 flex-shrink-0 text-white flex flex-col shadow-2xl z-10 md:min-h-screen border-r border-slate-800" },
+        React.createElement("nav", { className: "lab-sidebar bg-slate-900 w-full md:w-72 flex-shrink-0 text-white flex flex-col shadow-2xl z-10 md:min-h-screen border-r border-slate-800" },
             React.createElement("div", { className: "p-6 bg-slate-950 text-center border-b border-slate-800" },
-                React.createElement("div", { className: "w-28 h-28 bg-white rounded-lg mx-auto flex items-center justify-center shadow-lg mb-4 p-2 border-2 border-indigo-900" },
+                React.createElement("div", { className: "lab-logo w-28 h-28 bg-white rounded-xl mx-auto flex items-center justify-center shadow-lg mb-4 p-2 border-2 border-indigo-900" },
                     React.createElement("img", { src: "logo.jpeg", alt: "Logo Monitoring Alat Lab Geomatika", className: "w-full h-full object-contain" })),
                 React.createElement("h1", { className: "text-xs font-black tracking-widest leading-tight uppercase text-slate-400" }, "Sistem Informasi Pusat"),
                 React.createElement("p", { className: "text-indigo-400 text-sm font-bold mt-1 tracking-wide" }, "LABORATORIUM GEOMATIKA")),
             React.createElement("div", { className: "flex-grow p-4 space-y-2" },
-                React.createElement("button", { onClick: () => setActiveTab('dashboard'), className: `w-full flex items-center space-x-3 px-5 py-3.5 rounded transition-all border-l-4 ${activeTab === 'dashboard' ? 'bg-slate-800 text-indigo-400 border-indigo-500 font-bold shadow-md' : 'border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 font-medium'}` },
+                React.createElement("button", { onClick: () => setActiveTab('dashboard'), className: `lab-nav-btn lab-nav-dashboard w-full flex items-center space-x-3 px-4 py-3.5 rounded-xl transition-all border ${activeTab === 'dashboard' ? 'lab-nav-active bg-gradient-to-r from-indigo-500/25 to-violet-500/10 text-indigo-100 border-indigo-400/50 font-bold shadow-lg' : 'border-transparent text-slate-400 hover:text-indigo-100 font-medium'}` },
                     React.createElement("i", { className: "fas fa-chart-pie w-5 text-center" }),
                     " ",
                     React.createElement("span", null, "Dashboard ")),
-                React.createElement("button", { onClick: () => setActiveTab('inventory'), className: `w-full flex items-center space-x-3 px-5 py-3.5 rounded transition-all border-l-4 ${activeTab === 'inventory' ? 'bg-slate-800 text-indigo-400 border-indigo-500 font-bold shadow-md' : 'border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 font-medium'}` },
+                React.createElement("button", { onClick: () => setActiveTab('inventory'), className: `lab-nav-btn lab-nav-inventory w-full flex items-center space-x-3 px-4 py-3.5 rounded-xl transition-all border ${activeTab === 'inventory' ? 'lab-nav-active bg-gradient-to-r from-sky-500/25 to-cyan-500/10 text-sky-100 border-sky-400/50 font-bold shadow-lg' : 'border-transparent text-slate-400 hover:text-sky-100 font-medium'}` },
                     React.createElement("i", { className: "fas fa-server w-5 text-center" }),
                     " ",
                     React.createElement("span", null, "Database Instrumen")),
-                React.createElement("button", { onClick: () => setActiveTab('borrow'), className: `w-full flex items-center space-x-3 px-5 py-3.5 rounded transition-all border-l-4 ${activeTab === 'borrow' ? 'bg-slate-800 text-indigo-400 border-indigo-500 font-bold shadow-md' : 'border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 font-medium'}` },
+                React.createElement("button", { onClick: () => setActiveTab('borrow'), className: `lab-nav-btn lab-nav-borrow w-full flex items-center space-x-3 px-4 py-3.5 rounded-xl transition-all border ${activeTab === 'borrow' ? 'lab-nav-active bg-gradient-to-r from-emerald-500/25 to-teal-500/10 text-emerald-100 border-emerald-400/50 font-bold shadow-lg' : 'border-transparent text-slate-400 hover:text-emerald-100 font-medium'}` },
                     React.createElement("i", { className: "fas fa-file-signature w-5 text-center" }),
                     " ",
                     React.createElement("span", null, "Registrasi Otorisasi")),
-                React.createElement("button", { onClick: () => setActiveTab('transactions'), className: `w-full flex items-center space-x-3 px-5 py-3.5 rounded transition-all border-l-4 ${activeTab === 'transactions' ? 'bg-slate-800 text-indigo-400 border-indigo-500 font-bold shadow-md' : 'border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-300 font-medium'}` },
+                React.createElement("button", { onClick: () => setActiveTab('transactions'), className: `lab-nav-btn lab-nav-transactions w-full flex items-center space-x-3 px-4 py-3.5 rounded-xl transition-all border ${activeTab === 'transactions' ? 'lab-nav-active bg-gradient-to-r from-amber-500/25 to-orange-500/10 text-amber-100 border-amber-400/50 font-bold shadow-lg' : 'border-transparent text-slate-400 hover:text-amber-100 font-medium'}` },
                     React.createElement("i", { className: "fas fa-archive w-5 text-center" }),
                     " ",
                     React.createElement("span", null, "Arsip & Validasi Serah Terima"))),
             React.createElement("div", { className: "p-4 border-t border-slate-800 bg-slate-950" },
-                React.createElement("button", { onClick: handleShareLink, className: "w-full flex items-center justify-center space-x-2 bg-indigo-900 hover:bg-indigo-800 border border-indigo-700 text-indigo-100 py-3 rounded transition text-xs font-bold uppercase tracking-wider mb-5" },
+                isAdmin && React.createElement("div", { className: "lab-admin-status mb-3 flex items-center justify-between px-3 py-2.5 rounded-xl border" },
+                    React.createElement("div", { className: "flex items-center gap-2" },
+                        React.createElement("span", { className: "lab-admin-status-icon" }, React.createElement("i", { className: "fas fa-user-shield" })),
+                        React.createElement("div", null,
+                            React.createElement("p", { className: "text-[9px] uppercase tracking-[0.18em] font-black" }, "Mode Internal"),
+                            React.createElement("p", { className: "text-[11px] font-bold" }, "Administrator Aktif"))),
+                    React.createElement("span", { className: "lab-admin-live" })),
+                React.createElement("button", { onClick: handleShareLink, className: "lab-share-btn w-full flex items-center justify-center space-x-2 py-3 rounded-xl transition text-xs font-bold uppercase tracking-wider mb-5" },
                     React.createElement("i", { className: "fas fa-link" }),
                     " ",
                     React.createElement("span", null, "Salin Tautan Portal")),
@@ -2079,7 +3094,7 @@ function App() {
                     "INSTITUT ",
                     React.createElement("span", { onClick: handleAdminToggle, className: "cursor-default hover:text-slate-400 transition-colors" }, "TEKNOLOGI"),
                     " SUMATERA"))),
-        React.createElement("main", { className: "flex-grow p-4 md:p-8 overflow-y-auto w-full" },
+        React.createElement("main", { className: "lab-main flex-grow p-4 md:p-8 overflow-y-auto w-full" },
             React.createElement("div", { className: "max-w-7xl mx-auto" },
                 activeTab === 'dashboard' && renderDashboard(),
                 activeTab === 'inventory' && renderInventory(),
