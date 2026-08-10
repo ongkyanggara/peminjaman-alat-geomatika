@@ -120,7 +120,6 @@
         }
         .lab-sync-icon { animation: labSyncGlow 1.4s ease-in-out infinite; }
 
-        /* Surface/card profesional tanpa mengubah layout */
         .lab-surface {
             position: relative;
             border-color: rgba(203,213,225,.82) !important;
@@ -463,7 +462,7 @@
         }
 
 
-        /* FRESH DASHBOARD CHARTS + ROOM-AWARE MM SCHEDULE */
+        /* Schedule MM */
         @keyframes labBarReveal { from { transform: scaleX(0); opacity:.35; } to { transform: scaleX(1); opacity:1; } }
         @keyframes labRoomGlow { 0%,100% { box-shadow:0 0 0 0 rgba(14,165,233,.10); } 50% { box-shadow:0 0 0 5px rgba(14,165,233,0); } }
         .lab-room-badge { width:max-content; max-width:100%; display:inline-flex; align-items:center; gap:6px; padding:4px 7px; border-radius:8px; color:#0369a1; background:linear-gradient(135deg,#f0f9ff,#e0f2fe); border:1px solid #bae6fd; font-size:9px; font-weight:900; letter-spacing:.04em; animation:labRoomGlow 3.2s ease-in-out infinite; }
@@ -676,13 +675,11 @@ const calculateInventory = (txData = [], baseInv = []) => {
     return currentInventory;
 };
 function App() {
-    // Spreadsheet menjadi single source of truth.
-    // Tidak menggunakan localStorage/cache untuk transaksi maupun inventaris.
+    // Spreadsheet menjadi single source of truth dan Tidak menggunakan localStorage/cache untuk transaksi maupun inventaris.
     const [isSyncing, setIsSyncing] = useState(true);
     const [isDatabaseReady, setIsDatabaseReady] = useState(false);
     const [activeTab, setActiveTab] = useState('dashboard');
     const [scheduleLab, setScheduleLab] = useState('GT');
-    // UI dapat langsung dirender, kemudian data aktual Spreadsheet masuk di background.
     const [transactions, setTransactions] = useState([]);
     const [baseInventory, setBaseInventory] = useState(initialInventory);
     const [inventory, setInventory] = useState(() => calculateInventory([], initialInventory));
@@ -696,7 +693,7 @@ function App() {
     const fileInputRef = useRef(null);
     const feedbackFileInputRef = useRef(null);
     const [currentTime, setCurrentTime] = useState(new Date());
-    // Kontrol sinkronisasi agar request tidak bertumpuk.
+    // Kontrol sinkronisasi
     const syncInProgressRef = useRef(false);
     const syncAbortRef = useRef(null);
     const lastServerPayloadRef = useRef('');
@@ -924,10 +921,6 @@ function App() {
     };
     // ============================================================
     // SINKRONISASI DATABASE SPREADSHEET
-    // - Tanpa localStorage/cache data aktivitas
-    // - UI dirender lebih dulu, sinkronisasi berjalan di background
-    // - Request dicegah agar tidak bertumpuk
-    // - Timeout mencegah halaman menunggu Apps Script terlalu lama
     // ============================================================
     const fetchDatabase = async ({ silent = false, force = false } = {}) => {
         const now = Date.now();
@@ -956,8 +949,6 @@ function App() {
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
-            // Bandingkan payload mentah agar background sync tidak memicu render ulang
-            // jika isi Spreadsheet belum berubah.
             const rawText = await response.text();
             if (!rawText)
                 throw new Error('Respons database kosong');
@@ -974,7 +965,7 @@ function App() {
                 ? txRawData
                 : (Array.isArray(txRawData === null || txRawData === void 0 ? void 0 : txRawData.transactions) ? txRawData.transactions : []);
             // 2. Master inventory tetap mengikuti data Spreadsheet jika tersedia.
-            // initialInventory hanya menjadi fallback struktur master apabila API lama
+            // initialInventory menjadi fallback struktur master apabila API lama
             // belum mengirim blok inventory.
             let finalInventoryMaster = initialInventory;
             if (!Array.isArray(txRawData) && Array.isArray(txRawData === null || txRawData === void 0 ? void 0 : txRawData.inventory) && txRawData.inventory.length > 0) {
@@ -1631,7 +1622,7 @@ function App() {
                 categoryData[mainCat].subs[subCat] = (categoryData[mainCat].subs[subCat] || 0) + 1;
             }
             trx.items.forEach(item => {
-                // Filter: Hanya masukkan Alat Utama ke dalam Analisis Cerdas (Abaikan Safety & Aksesoris)
+                // Filter: Hanya masukkan Alat Utama ke dalam Analisis Cerdas (Data Pendukung tidak dimasukkan)
                 let isMainTool = false;
                 const invItem = inventory.find(inv => inv.id === item.kode || (item.nama && inv.name === item.nama));
                 // Cek apakah item ini masuk dalam daftar mainCategories (Alat Utama Survei)
