@@ -120,6 +120,7 @@
         }
         .lab-sync-icon { animation: labSyncGlow 1.4s ease-in-out infinite; }
 
+        /* Surface/card profesional tanpa mengubah layout */
         .lab-surface {
             position: relative;
             border-color: rgba(203,213,225,.82) !important;
@@ -462,7 +463,7 @@
         }
 
 
-        /* Schedule MM */
+        /* FRESH DASHBOARD CHARTS + ROOM-AWARE MM SCHEDULE */
         @keyframes labBarReveal { from { transform: scaleX(0); opacity:.35; } to { transform: scaleX(1); opacity:1; } }
         @keyframes labRoomGlow { 0%,100% { box-shadow:0 0 0 0 rgba(14,165,233,.10); } 50% { box-shadow:0 0 0 5px rgba(14,165,233,0); } }
         .lab-room-badge { width:max-content; max-width:100%; display:inline-flex; align-items:center; gap:6px; padding:4px 7px; border-radius:8px; color:#0369a1; background:linear-gradient(135deg,#f0f9ff,#e0f2fe); border:1px solid #bae6fd; font-size:9px; font-weight:900; letter-spacing:.04em; animation:labRoomGlow 3.2s ease-in-out infinite; }
@@ -575,74 +576,8 @@ const SearchableSelect = ({ inventory, inventoryByCategory, value, onChange }) =
                             "Sisa: ",
                             inv.available))))))))))))));
 };
-// Data Awal Inventaris Lab Geomatika
-const initialInventory = [
-    { id: 'TS-001', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
-    { id: 'TS-002', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
-    { id: 'TS-003', category: 'Total Station', name: 'SOUTH NTS-332R', total: 1, available: 1 },
-    { id: 'TS-004', category: 'Total Station', name: 'TOPCON OS-SERIES', total: 1, available: 1 },
-    { id: 'TS-005', category: 'Total Station', name: 'TOPCON ES-SERIES', total: 1, available: 1 },
-    { id: 'TS-006', category: 'Total Station', name: 'TOPCON OS-SERIES', total: 1, available: 1 },
-    { id: 'TS-007', category: 'Total Station', name: 'TOPCON GM-SERIES', total: 1, available: 1 },
-    { id: 'TS-008', category: 'Total Station', name: 'TOPCON GTS-235N', total: 1, available: 1 },
-    { id: 'TS-013', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
-    { id: 'TS-014', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
-    { id: 'TS-015', category: 'Total Station', name: 'TOTAL STATION', total: 1, available: 1 },
-    { id: 'DT-001', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-    { id: 'DT-002', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-    { id: 'DT-003', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-    { id: 'DT-004', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-    { id: 'DT-005', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-    { id: 'DT-006', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-    { id: 'DT-007', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-    { id: 'DT-008', category: 'Theodolite', name: 'TOPCON DT-200', total: 1, available: 1 },
-    { id: 'AL-001', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
-    { id: 'AL-002', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
-    { id: 'AL-003', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
-    { id: 'AL-004', category: 'Leveling', name: 'ORION+', total: 1, available: 1 },
-    { id: 'AL-005', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-    { id: 'AL-006', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-    { id: 'AL-007', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-    { id: 'AL-008', category: 'Leveling', name: 'LEICA', total: 1, available: 1 },
-    { id: 'AL-009', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-    { id: 'AL-010', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-    { id: 'AL-011', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-    { id: 'AL-012', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-    { id: 'AL-013', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-    { id: 'AL-014', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-    { id: 'AL-015', category: 'Leveling', name: 'TOPCON', total: 1, available: 1 },
-    { id: 'G-001', category: 'GNSS', name: 'TOPCON HIPER II', total: 1, available: 1 },
-    { id: 'G-002', category: 'GNSS', name: 'LEICA GS14', total: 1, available: 1 },
-    { id: 'G-003', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
-    { id: 'G-004', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
-    { id: 'G-005', category: 'GNSS', name: 'CHCNAV I73', total: 1, available: 1 },
-    { id: 'G-006', category: 'Laser Scanner', name: 'LEICA BLK360', total: 1, available: 1 },
-    { id: 'DN-001', category: 'Fotogrametri', name: 'DJI drone M3E', total: 1, available: 1 },
-    { id: 'DN-002', category: 'Fotogrametri', name: 'DJI Inspire 2', total: 1, available: 1 },
-    { id: 'F-0001', category: 'Hidrografi', name: 'Fish Finder', total: 1, available: 1 },
-    { id: 'PL-001-029', category: 'Safety', name: 'Pelampung', total: 29, available: 29 },
-    { id: 'HL-001-100', category: 'Safety', name: 'Helm', total: 100, available: 100 },
-    { id: 'RM-001-100', category: 'Safety', name: 'Rompi', total: 100, available: 100 },
-    { id: 'JL-001-020', category: 'Aksesoris', name: 'Jalon', total: 14, available: 14 },
-    { id: 'RB-001-030', category: 'Aksesoris', name: 'Rambu Ukur (3 m)', total: 30, available: 30 },
-    { id: 'RB-001-010', category: 'Aksesoris', name: 'Rambu Ukur (4 m)', total: 10, available: 10 },
-    { id: 'RB-001-009', category: 'Aksesoris', name: 'Rambu Ukur (5 m)', total: 9, available: 9 },
-    { id: 'TM-001-035', category: 'Aksesoris', name: 'Tripod / Statip', total: 35, available: 35 },
-    { id: 'PC-001', category: 'Multimedia', name: 'PC Acer Veriton', total: 1, available: 1 },
-    { id: 'PC-002', category: 'Multimedia', name: 'PC Acer Veriton', total: 1, available: 1 },
-    { id: 'LP-001', category: 'Multimedia', name: 'Laptop Dell', total: 1, available: 1 },
-    { id: 'GD-001', category: 'Fotogrametri', name: 'GPS for Drone PPK', total: 1, available: 1 },
-    { id: 'GD-002', category: 'Fotogrametri', name: 'GPS for Drone PPK', total: 1, available: 1 },
-    { id: 'PS-001-015', category: 'Aksesoris', name: 'Prisma', total: 15, available: 15 },
-    { id: 'SP-001-015', category: 'Aksesoris', name: 'Stick Prisma', total: 15, available: 15 },
-    { id: 'TB-001-008', category: 'Aksesoris', name: 'Tirbrach', total: 8, available: 8 },
-    { id: 'PP-001-012', category: 'Aksesoris', name: 'Prisma Polygon', total: 12, available: 12 },
-    { id: 'LD-001-002', category: 'Aksesoris', name: 'Laser Distance', total: 2, available: 2 },
-    { id: 'PY-001', category: 'Aksesoris', name: 'Proyektor GT', total: 1, available: 1 },
-    { id: 'KT-001', category: 'Aksesoris', name: 'Kalimator Topcon', total: 1, available: 1 },
-    { id: 'SC-001', category: 'Aksesoris', name: 'Stereoskop Cermin', total: 1, available: 1 },
-    { id: 'FG-001', category: 'Hidrografi', name: 'Fishfinder Garmin 585 S', total: 1, available: 1 }
-];
+// Master inventaris dimuat dari Google Spreadsheet melalui MASTER_DATA_URL.
+const initialInventory = [];
 // Perhitungan inventaris dibuat lebih efisien untuk sinkronisasi data Spreadsheet.
 // Menggunakan Map agar pencarian kode alat tidak melakukan findIndex berulang kali.
 const calculateInventory = (txData = [], baseInv = []) => {
@@ -675,25 +610,34 @@ const calculateInventory = (txData = [], baseInv = []) => {
     return currentInventory;
 };
 function App() {
-    // Spreadsheet menjadi single source of truth dan Tidak menggunakan localStorage/cache untuk transaksi maupun inventaris.
+    // Spreadsheet menjadi single source of truth.
+    // Tidak menggunakan localStorage/cache untuk transaksi maupun inventaris.
     const [isSyncing, setIsSyncing] = useState(true);
     const [isDatabaseReady, setIsDatabaseReady] = useState(false);
     const [activeTab, setActiveTab] = useState('dashboard');
     const [scheduleLab, setScheduleLab] = useState('GT');
+    // UI dapat langsung dirender, kemudian data aktual Spreadsheet masuk di background.
     const [transactions, setTransactions] = useState([]);
-    const [baseInventory, setBaseInventory] = useState(initialInventory);
-    const [inventory, setInventory] = useState(() => calculateInventory([], initialInventory));
+    const [baseInventory, setBaseInventory] = useState([]);
+    const [inventory, setInventory] = useState([]);
+    const [scheduleData, setScheduleData] = useState([]);
+    const [whatsappDirectory, setWhatsappDirectory] = useState({});
     const [filterCategory, setFilterCategory] = useState('Semua');
     const [isAdmin, setIsAdmin] = useState(false);
+    const [adminCredential, setAdminCredential] = useState('');
     const [showAddForm, setShowAddForm] = useState(false);
     const [newItemForm, setNewItemForm] = useState({ id: '', category: '', name: '', total: 1 });
+    const [showScheduleForm, setShowScheduleForm] = useState(false);
+    const [newScheduleForm, setNewScheduleForm] = useState({
+        lab: 'GT', room: 'Lab Geomatika', day: 1, course: '', class: 'RA', start: '07:30', end: '10:10'
+    });
     const [txFilter, setTxFilter] = useState('Semua');
     const [txLimit, setTxLimit] = useState(10);
     const [analysisMonth, setAnalysisMonth] = useState('Semua');
     const fileInputRef = useRef(null);
     const feedbackFileInputRef = useRef(null);
     const [currentTime, setCurrentTime] = useState(new Date());
-    // Kontrol sinkronisasi
+    // Kontrol sinkronisasi agar request tidak bertumpuk.
     const syncInProgressRef = useRef(false);
     const syncAbortRef = useRef(null);
     const lastServerPayloadRef = useRef('');
@@ -701,9 +645,12 @@ function App() {
     // --- PENGATURAN LINK DATABASE ---
     const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPlSeyXWP0ALhXp4VqJ_NUmB433jHqLUn4hButn2UFzHu2J9hOfEeRlj-Zdky0TA_b/exec';
     const GOOGLE_SCRIPT_INV_FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwGry5HOdHq2v6NmPoOIdDbQYAXAjupfbyeHwRyIK1ymGVJMf2-g0S8CiwjOZm-JF6v/exec';
-    const ACTIVE_INV_URL = GOOGLE_SCRIPT_INV_FEEDBACK_URL || GOOGLE_SCRIPT_URL;
+    // Deploy file MasterData.gs sebagai Web App pada Spreadsheet yang SAMA,
+    // lalu tempel URL /exec di bawah ini.
+    const MASTER_DATA_URL = 'https://script.google.com/macros/s/AKfycbzN8oFfMRVIAwFnshxm4_S2O5q-5PjURWdP9NYkIE_TnwXHvCze2WabM4JiTY1qW7ImSw/exec';
+    const ACTIVE_INV_URL = MASTER_DATA_URL;
     const [borrowForm, setBorrowForm] = useState({
-        borrowerName: '', nim: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
+        borrowerName: '', nim: '', whatsapp: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
         borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
         returnDateEst: '', returnTimeEst: '',
         items: [{ itemId: '', quantity: 1 }],
@@ -830,6 +777,22 @@ function App() {
         const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
         return `${monthNames[parseInt(m) - 1]} ${y}`;
     };
+    const normalizeWhatsAppNumber = (value) => {
+        let digits = String(value || '').replace(/\D/g, '');
+        if (!digits)
+            return '';
+        if (digits.startsWith('0'))
+            digits = '62' + digits.slice(1);
+        else if (digits.startsWith('8'))
+            digits = '62' + digits;
+        return digits;
+    };
+    const formatWhatsAppNumber = (value) => {
+        const normalized = normalizeWhatsAppNumber(value);
+        if (!normalized)
+            return '';
+        return '+' + normalized;
+    };
     const renderCountdownBadge = (returnDateEst, returnTimeEst, status) => {
         if (status && status.startsWith('completed')) {
             let isLate = false;
@@ -921,80 +884,123 @@ function App() {
     };
     // ============================================================
     // SINKRONISASI DATABASE SPREADSHEET
+    // - Tanpa localStorage/cache data aktivitas
+    // - UI dirender lebih dulu, sinkronisasi berjalan di background
+    // - Request dicegah agar tidak bertumpuk
+    // - Timeout mencegah halaman menunggu Apps Script terlalu lama
     // ============================================================
     const fetchDatabase = async ({ silent = false, force = false } = {}) => {
         const now = Date.now();
-        // Hindari request ganda dalam waktu sangat dekat, kecuali force refresh.
         if (!force && now - lastSyncAttemptRef.current < 5000)
             return false;
         if (syncInProgressRef.current)
             return false;
+        if (!MASTER_DATA_URL || MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE')) {
+            if (!silent)
+                showNotification('MASTER_DATA_URL belum dikonfigurasi. Deploy MasterData.gs lalu tempel URL Web App.', 'error');
+            return false;
+        }
         lastSyncAttemptRef.current = now;
         syncInProgressRef.current = true;
         if (!silent)
             setIsSyncing(true);
         const controller = new AbortController();
         syncAbortRef.current = controller;
-        const timeoutId = setTimeout(() => {
-            controller.abort();
-        }, 8000);
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
         try {
-            // Satu GET untuk transaksi + inventory.
-            // cache: 'no-store' memastikan browser meminta data aktual tanpa cache lokal.
-            const response = await fetch(GOOGLE_SCRIPT_URL, {
-                method: 'GET',
-                cache: 'no-store',
-                signal: controller.signal
-            });
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            const rawText = await response.text();
-            if (!rawText)
-                throw new Error('Respons database kosong');
-            if (!force && lastServerPayloadRef.current === rawText) {
+            // Transaksi tetap berasal dari endpoint lama.
+            // Inventaris + jadwal berasal dari Spreadsheet Master Data yang sama,
+            // sehingga data master tidak lagi disimpan/duplikasi di GitHub.
+            const [txResponse, masterResponse] = await Promise.all([
+                fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'GET',
+                    cache: 'no-store',
+                    signal: controller.signal
+                }),
+                fetch(`${MASTER_DATA_URL}?resource=master`, {
+                    method: 'GET',
+                    cache: 'no-store',
+                    signal: controller.signal
+                })
+            ]);
+            if (!txResponse.ok)
+                throw new Error(`HTTP Transaksi ${txResponse.status}`);
+            if (!masterResponse.ok)
+                throw new Error(`HTTP Master Data ${masterResponse.status}`);
+
+            const [txRawText, masterRawText] = await Promise.all([
+                txResponse.text(),
+                masterResponse.text()
+            ]);
+            if (!txRawText)
+                throw new Error('Respons transaksi kosong');
+            if (!masterRawText)
+                throw new Error('Respons master data kosong');
+
+            const combinedPayload = `${txRawText}|||${masterRawText}`;
+            if (!force && lastServerPayloadRef.current === combinedPayload) {
                 setIsDatabaseReady(true);
                 return true;
             }
-            const txRawData = JSON.parse(rawText);
-            if (txRawData && txRawData.error) {
+
+            const txRawData = JSON.parse(txRawText);
+            const masterData = JSON.parse(masterRawText);
+            if (txRawData && txRawData.error)
                 throw new Error(txRawData.error);
-            }
-            // 1. Olah data transaksi
+            if (masterData && masterData.error)
+                throw new Error(masterData.error);
+
             const txData = Array.isArray(txRawData)
                 ? txRawData
-                : (Array.isArray(txRawData === null || txRawData === void 0 ? void 0 : txRawData.transactions) ? txRawData.transactions : []);
-            // 2. Master inventory tetap mengikuti data Spreadsheet jika tersedia.
-            // initialInventory menjadi fallback struktur master apabila API lama
-            // belum mengirim blok inventory.
-            let finalInventoryMaster = initialInventory;
-            if (!Array.isArray(txRawData) && Array.isArray(txRawData === null || txRawData === void 0 ? void 0 : txRawData.inventory) && txRawData.inventory.length > 0) {
-                finalInventoryMaster = txRawData.inventory.map(item => {
+                : (Array.isArray(txRawData?.transactions) ? txRawData.transactions : []);
+
+            // MASTER INVENTORY: hanya dari Spreadsheet MasterData.gs.
+            const finalInventoryMaster = Array.isArray(masterData?.inventory)
+                ? masterData.inventory.map(item => {
                     const total = Number(item.total) || 0;
                     return {
-                        id: item.id,
-                        category: item.category,
-                        name: item.name,
+                        id: String(item.id || '').trim(),
+                        category: String(item.category || '').trim(),
+                        name: String(item.name || '').trim(),
                         total,
                         available: total
                     };
-                });
-            }
-            // 3. Format transaksi
+                }).filter(item => item.id)
+                : [];
+
+            // MASTER JADWAL: hanya dari Spreadsheet MasterData.gs.
+            const finalSchedule = Array.isArray(masterData?.schedule)
+                ? masterData.schedule.map(item => ({
+                    id: String(item.id || '').trim(),
+                    lab: String(item.lab || 'GT').trim().toUpperCase(),
+                    room: String(item.room || '').trim(),
+                    day: Number(item.day),
+                    course: String(item.course || '').trim(),
+                    class: String(item.class || '').trim(),
+                    start: String(item.start || '').substring(0, 5),
+                    end: String(item.end || '').substring(0, 5)
+                })).filter(item =>
+                    item.id && item.course &&
+                    Number.isFinite(item.day) &&
+                    item.start && item.end
+                )
+                : [];
+
             const formattedTx = txData.map(trx => ({
                 ...trx,
                 borrowDateFormatted: trx.borrowDate
                     ? parseRealDate(trx.borrowDate).toLocaleDateString('id-ID')
                     : '-'
             }));
-            // 4. Hitung ketersediaan satu kali sebelum update state.
+
             const calculatedInventory = calculateInventory(formattedTx, finalInventoryMaster);
-            // 5. Update state dari Spreadsheet.
+
             setTransactions(formattedTx);
             setBaseInventory(finalInventoryMaster);
             setInventory(calculatedInventory);
+            setScheduleData(finalSchedule);
             setIsDatabaseReady(true);
-            lastServerPayloadRef.current = rawText;
+            lastServerPayloadRef.current = combinedPayload;
             return true;
         }
         catch (error) {
@@ -1007,7 +1013,7 @@ function App() {
             if (!silent) {
                 showNotification(error.name === 'AbortError'
                     ? 'Database sedang lambat. Sistem akan mencoba sinkronisasi kembali di background.'
-                    : 'Gagal terhubung ke database Spreadsheet. Sistem akan mencoba kembali.', 'error');
+                    : 'Gagal terhubung ke database Spreadsheet. Periksa MASTER_DATA_URL.', 'error');
             }
             return false;
         }
@@ -1116,8 +1122,8 @@ function App() {
             fetchDatabase({ silent: false, force: true });
             return;
         }
-        if (!borrowForm.borrowerName || !borrowForm.nim || !borrowForm.purpose || !borrowForm.borrowDate || !borrowForm.borrowTime || !borrowForm.returnDateEst || !borrowForm.returnTimeEst || borrowForm.items.length === 0 || !borrowForm.fileBase64) {
-            showNotification('Mohon lengkapi data diri, keperluan, jam, daftar alat, dan unggah surat izin', 'error');
+        if (!borrowForm.borrowerName || !borrowForm.nim || !borrowForm.whatsapp || !borrowForm.purpose || !borrowForm.borrowDate || !borrowForm.borrowTime || !borrowForm.returnDateEst || !borrowForm.returnTimeEst || borrowForm.items.length === 0 || !borrowForm.fileBase64) {
+            showNotification('Mohon lengkapi data diri, nomor WhatsApp, keperluan, jam, daftar alat, dan unggah surat izin', 'error');
             return;
         }
         if (borrowForm.purpose === 'Praktikum') {
@@ -1155,6 +1161,7 @@ function App() {
                 finalPurpose = `Praktikum - ${borrowForm.praktikumCourse} - Kelas ${borrowForm.praktikumClass}`;
             }
         }
+        const borrowerWhatsapp = normalizeWhatsAppNumber(borrowForm.whatsapp);
         const payload = {
             action: "create", id: newTransactionId, borrowerName: borrowForm.borrowerName, nim: borrowForm.nim, purpose: finalPurpose,
             borrowDate: borrowForm.borrowDate, borrowTime: borrowForm.borrowTime, returnDateEst: borrowForm.returnDateEst, returnTimeEst: borrowForm.returnTimeEst,
@@ -1166,7 +1173,7 @@ function App() {
             setTransactions(updatedTransactions);
             setInventory(calculateInventory(updatedTransactions, baseInventory));
             setBorrowForm({
-                borrowerName: '', nim: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
+                borrowerName: '', nim: '', whatsapp: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
                 borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
                 returnDateEst: '', returnTimeEst: '', items: [{ itemId: '', quantity: 1 }], approvalFileName: '', fileBase64: '', mimeType: ''
             });
@@ -1178,6 +1185,22 @@ function App() {
                 method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify(payload)
             });
+            // Nomor WhatsApp disimpan pada sheet KontakWA di Spreadsheet yang sama,
+            // terpisah dari transaksi lama agar struktur sheet transaksi tidak berubah.
+            if (borrowerWhatsapp && MASTER_DATA_URL && !MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE')) {
+                await fetch(MASTER_DATA_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        action: 'saveWhatsApp',
+                        transactionId: newTransactionId,
+                        borrowerName: borrowForm.borrowerName,
+                        nim: borrowForm.nim,
+                        whatsapp: borrowerWhatsapp
+                    })
+                });
+            }
             // Setelah penulisan, ambil kembali data resmi dari Spreadsheet.
             refreshDatabaseAfterWrite();
             showNotification('Peminjaman berhasil dikirim ke Database Spreadsheet!');
@@ -1392,10 +1415,32 @@ function App() {
             setIsSubmittingFeedback(false);
         }
     };
-    const handleAdminToggle = () => {
+    const fetchAdminWhatsAppDirectory = async (adminKey) => {
+        if (!MASTER_DATA_URL || MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE') || !adminKey)
+            return;
+        try {
+            const response = await fetch(`${MASTER_DATA_URL}?resource=contacts&adminKey=${encodeURIComponent(adminKey)}`, {
+                method: 'GET',
+                cache: 'no-store'
+            });
+            if (!response.ok)
+                throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            if (data && data.ok && data.contacts)
+                setWhatsappDirectory(data.contacts);
+        }
+        catch (error) {
+            console.error('Gagal mengambil direktori WhatsApp Admin:', error);
+            setWhatsappDirectory({});
+        }
+    };
+    const handleAdminToggle = async () => {
         if (isAdmin) {
             setIsAdmin(false);
+            setAdminCredential('');
+            setWhatsappDirectory({});
             setShowAddForm(false);
+            setShowScheduleForm(false);
             showNotification(String.fromCharCode(65, 107, 115, 101, 115, 32, 100, 105, 116, 117, 116, 117, 112), String.fromCharCode(115, 117, 99, 99, 101, 115, 115));
         }
         else {
@@ -1413,7 +1458,9 @@ function App() {
                     return true;
                 };
                 if (_0xCheck(_0xClean)) {
+                    setAdminCredential(_0xClean);
                     setIsAdmin(true);
+                    fetchAdminWhatsAppDirectory(_0xClean);
                     showNotification(String.fromCharCode(65, 107, 115, 101, 115, 32, 68, 105, 98, 101, 114, 105, 107, 97, 110, 33), String.fromCharCode(115, 117, 99, 99, 101, 115, 115));
                 }
                 else {
@@ -1424,6 +1471,8 @@ function App() {
     };
     const handleAddNewInventoryItem = async (e) => {
         e.preventDefault();
+        if (!isAdmin || !adminCredential)
+            return showNotification('Akses Admin diperlukan untuk menambah inventaris.', 'error');
         if (!isDatabaseReady) {
             showNotification('Database belum selesai disinkronisasi. Mohon tunggu beberapa saat.', 'error');
             fetchDatabase({ silent: false, force: true });
@@ -1433,66 +1482,111 @@ function App() {
             return showNotification('Data alat belum lengkap!', 'error');
         if (baseInventory.some(i => i.id === newItemForm.id))
             return showNotification('Kode Alat sudah digunakan!', 'error');
-        const newItem = { id: newItemForm.id, category: newItemForm.category, name: newItemForm.name, total: parseInt(newItemForm.total), available: parseInt(newItemForm.total), isLocalOnly: true };
-        const updatedBaseInv = [newItem, ...baseInventory];
-        setBaseInventory(updatedBaseInv);
-        setInventory(calculateInventory(transactions, updatedBaseInv));
-        showNotification('Menyimpan alat ke Database...');
-        setNewItemForm({ id: '', category: '', name: '', total: 1 });
-        setShowAddForm(false);
+
+        const newItem = {
+            id: newItemForm.id,
+            category: newItemForm.category,
+            name: newItemForm.name,
+            total: parseInt(newItemForm.total)
+        };
+        showNotification('Menyimpan alat ke Spreadsheet...');
         try {
             await fetch(ACTIVE_INV_URL, {
-                method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: "addInventory", item: newItem })
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({
+                    action: 'addInventory',
+                    adminKey: adminCredential,
+                    item: newItem
+                })
             });
-            refreshDatabaseAfterWrite();
-            showNotification('Data alat dikirim ke Database Spreadsheet.', 'success');
+            setNewItemForm({ id: '', category: '', name: '', total: 1 });
+            setShowAddForm(false);
+            refreshDatabaseAfterWrite(700);
+            showNotification('Data alat dikirim ke Spreadsheet Master.', 'success');
         }
         catch (e) {
-            console.error("Gagal simpan inv", e);
+            console.error('Gagal simpan inventaris', e);
+            showNotification('Gagal mengirim inventaris ke Spreadsheet.', 'error');
         }
     };
     const handleDeleteInventoryItem = async (itemId) => {
+        if (!isAdmin || !adminCredential)
+            return showNotification('Akses Admin diperlukan untuk menghapus inventaris.', 'error');
         const item = inventory.find(i => i.id === itemId);
+        if (!item)
+            return;
         if (item.available < item.total)
             return showNotification('Tidak bisa menghapus alat yang sedang dipinjam!', 'error');
-        if (window.confirm(`Hapus alat ${item.name} permanen dari Database Spreadsheet?`)) {
-            const updatedBaseInv = baseInventory.filter(i => i.id !== itemId);
-            setBaseInventory(updatedBaseInv);
-            setInventory(calculateInventory(transactions, updatedBaseInv));
-            showNotification('Menghapus alat dari Database...');
+        if (window.confirm(`Hapus alat ${item.name} permanen dari Spreadsheet Master?`)) {
+            showNotification('Menghapus alat dari Spreadsheet...');
             try {
                 await fetch(ACTIVE_INV_URL, {
-                    method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: "deleteInventory", id: itemId })
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        action: 'deleteInventory',
+                        adminKey: adminCredential,
+                        id: itemId
+                    })
                 });
-                refreshDatabaseAfterWrite();
+                refreshDatabaseAfterWrite(700);
             }
             catch (e) {
-                console.error("Gagal hapus inv", e);
+                console.error('Gagal hapus inventaris', e);
+                showNotification('Gagal menghapus inventaris dari Spreadsheet.', 'error');
             }
         }
     };
     const forceSyncToSheet = async () => {
-        const unsynced = baseInventory.filter(i => i.isLocalOnly);
-        if (unsynced.length === 0)
-            return;
-        showNotification(`Mencoba sinkronisasi paksa ${unsynced.length} alat ke Spreadsheet...`);
-        let successCount = 0;
-        for (const item of unsynced) {
-            try {
-                await fetch(ACTIVE_INV_URL, {
-                    method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: "addInventory", item: item })
-                });
-                successCount++;
-            }
-            catch (e) {
-                console.error("Gagal sinkron item", item.id, e);
-            }
+        showNotification('Memuat ulang Inventaris & Jadwal dari Spreadsheet...');
+        await fetchDatabase({ silent: false, force: true });
+    };
+    const handleAddSchedule = async (e) => {
+        e.preventDefault();
+        if (!isAdmin || !adminCredential)
+            return showNotification('Akses Admin diperlukan untuk menambah jadwal.', 'error');
+        if (!newScheduleForm.course || !newScheduleForm.class || !newScheduleForm.start || !newScheduleForm.end)
+            return showNotification('Data jadwal belum lengkap.', 'error');
+
+        const payloadSchedule = {
+            id: `SCH-${Date.now()}`,
+            lab: newScheduleForm.lab,
+            room: newScheduleForm.room,
+            day: Number(newScheduleForm.day),
+            course: newScheduleForm.course,
+            class: newScheduleForm.class,
+            start: newScheduleForm.start,
+            end: newScheduleForm.end,
+            active: true
+        };
+
+        try {
+            showNotification('Menyimpan jadwal ke Spreadsheet...');
+            await fetch(MASTER_DATA_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({
+                    action: 'addSchedule',
+                    adminKey: adminCredential,
+                    schedule: payloadSchedule
+                })
+            });
+            setNewScheduleForm({
+                lab: 'GT', room: 'Lab Geomatika', day: 1,
+                course: '', class: 'RA', start: '07:30', end: '10:10'
+            });
+            setShowScheduleForm(false);
+            refreshDatabaseAfterWrite(700);
+            showNotification('Jadwal dikirim ke Spreadsheet Master.', 'success');
         }
-        showNotification(`Selesai memproses pengiriman. Menyinkronkan ulang Database Spreadsheet...`, "success");
-        refreshDatabaseAfterWrite(1200);
+        catch (error) {
+            console.error('Gagal menambah jadwal:', error);
+            showNotification('Gagal mengirim jadwal ke Spreadsheet.', 'error');
+        }
     };
     const renderDashboard = () => {
         var _a;
@@ -1622,7 +1716,7 @@ function App() {
                 categoryData[mainCat].subs[subCat] = (categoryData[mainCat].subs[subCat] || 0) + 1;
             }
             trx.items.forEach(item => {
-                // Filter: Hanya masukkan Alat Utama ke dalam Analisis Cerdas (Data Pendukung tidak dimasukkan)
+                // Filter: Hanya masukkan Alat Utama ke dalam Analisis Cerdas (Abaikan Safety & Aksesoris)
                 let isMainTool = false;
                 const invItem = inventory.find(inv => inv.id === item.kode || (item.nama && inv.name === item.nama));
                 // Cek apakah item ini masuk dalam daftar mainCategories (Alat Utama Survei)
@@ -2163,58 +2257,7 @@ function App() {
             GEOSPASIAL: 'Praktikum Lab Geospasial FTIK',
             MM: 'Praktikum Lab Multimedia (MM)'
         };
-        const rawSchedule = [
-            // =========================================================
-            // KATEGORI 1 - PRAKTIKUM LAB GT
-            // =========================================================
-            { id: 'gt-m1', lab: 'GT', day: MONDAY, course: 'Pemetaan Dasar', class: 'RA', start: '07:30', end: '10:10' },
-            { id: 'gt-m2', lab: 'GT', day: MONDAY, course: 'Hidrografi I', class: 'RA', start: '13:00', end: '15:40' },
-            { id: 'gt-t1', lab: 'GT', day: TUESDAY, course: 'Pemetaan Dasar', class: 'RB', start: '07:30', end: '10:10' },
-            { id: 'gt-t2', lab: 'GT', day: TUESDAY, course: 'Hidrografi I', class: 'RB', start: '13:00', end: '15:40' },
-            { id: 'gt-w1', lab: 'GT', day: WEDNESDAY, course: 'Pemetaan Dasar', class: 'RC', start: '07:30', end: '10:10' },
-            { id: 'gt-w2', lab: 'GT', day: WEDNESDAY, course: 'Hidrografi I', class: 'RC', start: '13:00', end: '15:40' },
-            { id: 'gt-th1', lab: 'GT', day: THURSDAY, course: 'Pendaftaran Tanah', class: 'RA', start: '07:30', end: '10:10' },
-            { id: 'gt-th2', lab: 'GT', day: THURSDAY, course: 'Perpetaan', class: 'TL', start: '10:15', end: '12:00' },
-            { id: 'gt-th3', lab: 'GT', day: THURSDAY, course: 'Pendaftaran Tanah', class: 'RC', start: '13:00', end: '15:40' },
-            { id: 'gt-f1', lab: 'GT', day: FRIDAY, course: 'Pendaftaran Tanah', class: 'RB', start: '07:30', end: '10:10' },
-            // Perpetaan Jumat dipisah karena ada istirahat 12:00 - 13:00
-            { id: 'gt-f2a', lab: 'GT', day: FRIDAY, course: 'Perpetaan', class: 'TL', start: '10:15', end: '12:00' },
-            { id: 'gt-f2b', lab: 'GT', day: FRIDAY, course: 'Perpetaan', class: 'TL', start: '13:00', end: '14:45' },
-            // =========================================================
-            // KATEGORI 2 - PRAKTIKUM LAB GEOSPASIAL FTIK
-            // =========================================================
-            // RABU - FOTOGRAMETRI DASAR
-            { id: 'geo-w1', lab: 'GEOSPASIAL', day: WEDNESDAY, course: 'Fotogrametri Dasar', class: 'RC', start: '07:30', end: '10:10' },
-            // RB terpisah karena istirahat 12:00 - 13:00
-            { id: 'geo-w2a', lab: 'GEOSPASIAL', day: WEDNESDAY, course: 'Fotogrametri Dasar', class: 'RB', start: '10:15', end: '12:00' },
-            { id: 'geo-w2b', lab: 'GEOSPASIAL', day: WEDNESDAY, course: 'Fotogrametri Dasar', class: 'RB', start: '13:00', end: '13:50' },
-            { id: 'geo-w3', lab: 'GEOSPASIAL', day: WEDNESDAY, course: 'Fotogrametri Dasar', class: 'RA', start: '13:55', end: '16:35' },
-            // KAMIS - PEMETAAN RADAR DAN LiDAR
-            { id: 'geo-th1', lab: 'GEOSPASIAL', day: THURSDAY, course: 'Pemetaan Radar dan LiDAR', class: 'RA', start: '07:30', end: '10:10' },
-            // RB terpisah karena istirahat 12:00 - 13:00
-            { id: 'geo-th2a', lab: 'GEOSPASIAL', day: THURSDAY, course: 'Pemetaan Radar dan LiDAR', class: 'RB', start: '10:15', end: '12:00' },
-            { id: 'geo-th2b', lab: 'GEOSPASIAL', day: THURSDAY, course: 'Pemetaan Radar dan LiDAR', class: 'RB', start: '13:00', end: '13:50' },
-            { id: 'geo-th3', lab: 'GEOSPASIAL', day: THURSDAY, course: 'Pemetaan Radar dan LiDAR', class: 'RC', start: '13:55', end: '16:35' },
-            // =========================================================
-            // KATEGORI 3 - PRAKTIKUM LAB MULTIMEDIA (MM)
-            // =========================================================
-            // SENIN
-            { id: 'mm-m1', lab: 'MM', room: 'Lab MM-1', day: MONDAY, course: 'Geodesi Satelit', class: 'RB', start: '07:30', end: '10:10' },
-            { id: 'mm-m2', lab: 'MM', room: 'Lab MM-2', day: MONDAY, course: 'Penginderaan Jauh Lanjut', class: 'RA', start: '07:30', end: '11:05' },
-            { id: 'mm-m3', lab: 'MM', room: 'Lab MM-1', day: MONDAY, course: 'Geodesi Satelit', class: 'RA', start: '13:00', end: '15:40' },
-            { id: 'mm-m4', lab: 'MM', room: 'Lab MM-2', day: MONDAY, course: 'Penginderaan Jauh Lanjut', class: 'RB', start: '13:00', end: '16:35' },
-            // SELASA
-            { id: 'mm-t1', lab: 'MM', room: 'Lab MM-1', day: TUESDAY, course: 'Geodesi Satelit', class: 'RC', start: '07:30', end: '10:10' },
-            { id: 'mm-t2', lab: 'MM', room: 'Lab MM-2', day: TUESDAY, course: 'Penginderaan Jauh Lanjut', class: 'RC', start: '07:30', end: '11:05' },
-            { id: 'mm-t3', lab: 'MM', room: 'Lab MM-1', day: TUESDAY, course: 'Kartografi', class: 'RA', start: '13:00', end: '15:40' },
-            // RABU
-            { id: 'mm-w1', lab: 'MM', room: 'Lab MM-1', day: WEDNESDAY, course: 'Kartografi', class: 'RB', start: '07:30', end: '10:10' },
-            { id: 'mm-w2', lab: 'MM', room: 'Lab MM-1', day: WEDNESDAY, course: 'Kartografi', class: 'RC', start: '13:00', end: '15:40' },
-            // KAMIS
-            { id: 'mm-th1', lab: 'MM', room: 'Lab MM-1', day: THURSDAY, course: 'Basis Data Spasial', class: 'RA', start: '07:30', end: '10:10' },
-            { id: 'mm-th2', lab: 'MM', room: 'Lab MM-2', day: THURSDAY, course: 'Basis Data Spasial', class: 'RC', start: '07:30', end: '10:10' },
-            { id: 'mm-th3', lab: 'MM', room: 'Lab MM-1', day: THURSDAY, course: 'Basis Data Spasial', class: 'RB', start: '13:00', end: '15:40' }
-        ];
+        const rawSchedule = scheduleData;
         const timeToMins = (t) => {
             const [h, m] = t.split(':').map(Number);
             return h * 60 + m;
@@ -2223,7 +2266,7 @@ function App() {
             const startMins = timeToMins(item.start);
             const endMins = timeToMins(item.end);
             const overlaps = rawSchedule.filter(other => other.lab === item.lab &&
-                (item.lab !== 'MM' || other.room === item.room) &&
+                (!item.room || !other.room || other.room === item.room) &&
                 other.day === item.day &&
                 other.id !== item.id &&
                 timeToMins(other.start) < endMins &&
@@ -2460,6 +2503,80 @@ function App() {
                             React.createElement("div", null,
                                 React.createElement("p", { className: "text-[10px] font-bold uppercase opacity-70" }, "Kategori 3"),
                                 React.createElement("p", { className: "text-xs font-black" }, "Praktikum Lab Multimedia (MM)"))))),
+                isAdmin && React.createElement("div", { className: "mb-4 flex justify-end" },
+                    React.createElement("button", {
+                        type: "button",
+                        onClick: () => setShowScheduleForm(!showScheduleForm),
+                        className: `px-4 py-2 rounded-lg text-xs font-black shadow-sm border transition-all ${showScheduleForm ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-indigo-700 text-white border-indigo-700 hover:bg-indigo-800'}`
+                    },
+                        React.createElement("i", { className: `fas ${showScheduleForm ? 'fa-times' : 'fa-calendar-plus'} mr-2` }),
+                        showScheduleForm ? 'Batal Tambah Jadwal' : 'Tambah Jadwal (Admin)')),
+                showScheduleForm && isAdmin && React.createElement("form", {
+                    onSubmit: handleAddSchedule,
+                    className: "mb-6 grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-3 p-4 rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-white shadow-sm animate-fade-in"
+                },
+                    React.createElement("select", {
+                        className: "p-2.5 border border-slate-300 rounded-lg bg-white text-xs font-bold",
+                        value: newScheduleForm.lab,
+                        onChange: e => {
+                            const lab = e.target.value;
+                            const defaultRoom = lab === 'GT' ? 'Lab Geomatika' : lab === 'GEOSPASIAL' ? 'Lab Geospasial FTIK' : 'Lab MM-1';
+                            setNewScheduleForm({ ...newScheduleForm, lab, room: defaultRoom });
+                        }
+                    },
+                        React.createElement("option", { value: "GT" }, "Lab GT"),
+                        React.createElement("option", { value: "GEOSPASIAL" }, "Lab Geospasial FTIK"),
+                        React.createElement("option", { value: "MM" }, "Lab Multimedia")),
+                    React.createElement("input", {
+                        type: "text", required: true,
+                        className: "p-2.5 border border-slate-300 rounded-lg bg-white text-xs",
+                        value: newScheduleForm.room,
+                        onChange: e => setNewScheduleForm({ ...newScheduleForm, room: e.target.value }),
+                        placeholder: "Ruangan"
+                    }),
+                    React.createElement("select", {
+                        className: "p-2.5 border border-slate-300 rounded-lg bg-white text-xs font-bold",
+                        value: newScheduleForm.day,
+                        onChange: e => setNewScheduleForm({ ...newScheduleForm, day: Number(e.target.value) })
+                    },
+                        React.createElement("option", { value: 1 }, "Senin"),
+                        React.createElement("option", { value: 2 }, "Selasa"),
+                        React.createElement("option", { value: 3 }, "Rabu"),
+                        React.createElement("option", { value: 4 }, "Kamis"),
+                        React.createElement("option", { value: 5 }, "Jumat")),
+                    React.createElement("input", {
+                        type: "text", required: true,
+                        className: "p-2.5 border border-slate-300 rounded-lg bg-white text-xs lg:col-span-2",
+                        value: newScheduleForm.course,
+                        onChange: e => setNewScheduleForm({ ...newScheduleForm, course: e.target.value }),
+                        placeholder: "Mata Kuliah"
+                    }),
+                    React.createElement("input", {
+                        type: "text", required: true,
+                        className: "p-2.5 border border-slate-300 rounded-lg bg-white text-xs",
+                        value: newScheduleForm.class,
+                        onChange: e => setNewScheduleForm({ ...newScheduleForm, class: e.target.value.toUpperCase() }),
+                        placeholder: "Kelas"
+                    }),
+                    React.createElement("input", {
+                        type: "time", required: true,
+                        className: "p-2.5 border border-slate-300 rounded-lg bg-white text-xs font-mono font-bold",
+                        value: newScheduleForm.start,
+                        onChange: e => setNewScheduleForm({ ...newScheduleForm, start: e.target.value })
+                    }),
+                    React.createElement("div", { className: "flex gap-2" },
+                        React.createElement("input", {
+                            type: "time", required: true,
+                            className: "min-w-0 flex-1 p-2.5 border border-slate-300 rounded-lg bg-white text-xs font-mono font-bold",
+                            value: newScheduleForm.end,
+                            onChange: e => setNewScheduleForm({ ...newScheduleForm, end: e.target.value })
+                        }),
+                        React.createElement("button", {
+                            type: "submit",
+                            className: "px-3 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm",
+                            title: "Simpan jadwal ke Spreadsheet"
+                        }, React.createElement("i", { className: "fas fa-save" })))),
+
                 React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-2 gap-4 mb-6" },
                     React.createElement("div", { className: "bg-emerald-50 border border-emerald-200 p-4 rounded-lg flex items-center shadow-sm" },
                         React.createElement("div", { className: "w-12 h-12 bg-emerald-600 rounded flex items-center justify-center text-white text-xl mr-4 shadow-sm relative" },
@@ -2755,9 +2872,9 @@ function App() {
                     React.createElement("i", { className: `fas ${showAddForm ? 'fa-times' : 'fa-plus'} mr-2` }),
                     " ",
                     showAddForm ? 'Batal Tambah Instrumen' : 'Registrasi Instrumen Baru'),
-                baseInventory.some(i => i.isLocalOnly) && (React.createElement("button", { onClick: forceSyncToSheet, className: "px-4 py-2 rounded text-sm font-bold shadow-sm transition flex items-center bg-amber-600 hover:bg-amber-700 text-white animate-pulse" },
-                    React.createElement("i", { className: "fas fa-cloud-upload-alt mr-2" }),
-                    " Sinkronisasi Data Master")))),
+                React.createElement("button", { onClick: forceSyncToSheet, className: "px-4 py-2 rounded text-sm font-bold shadow-sm transition flex items-center bg-sky-600 hover:bg-sky-700 text-white" },
+                    React.createElement("i", { className: "fas fa-sync-alt mr-2" }),
+                    " Muat Ulang Master Spreadsheet"))),
             showAddForm && isAdmin && (React.createElement("form", { onSubmit: handleAddNewInventoryItem, className: "mb-6 bg-slate-50 p-5 rounded border border-slate-300 shadow-sm grid grid-cols-1 md:grid-cols-5 gap-4 items-end animate-fade-in" },
                 React.createElement("div", null,
                     React.createElement("label", { className: "block text-xs font-bold text-slate-800 mb-1" }, "Kode Identifikasi"),
@@ -2807,6 +2924,8 @@ function App() {
             acc[item.category].push(item);
             return acc;
         }, {});
+        const practicumCourseOptions = [...new Set(scheduleData.map(item => item.course).filter(Boolean))].sort();
+        const practicumClassOptions = [...new Set(scheduleData.map(item => item.class).filter(Boolean))].sort();
         return (React.createElement("div", { className: "max-w-4xl mx-auto space-y-6 animate-fade-in" },
             React.createElement("h2", { className: "text-2xl font-bold text-slate-800 border-b border-slate-300 pb-3" }, "Registrasi Peminjaman Instrumen"),
             React.createElement("form", { onSubmit: submitBorrow, className: "bg-white p-6 rounded-lg border border-slate-300 shadow-sm space-y-6" },
@@ -2817,6 +2936,20 @@ function App() {
                     React.createElement("div", null,
                         React.createElement("label", { className: "block text-sm font-bold text-slate-700 mb-1.5" }, "NIM / Nomor Identitas"),
                         React.createElement("input", { type: "text", required: true, className: "w-full p-2.5 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-600 bg-slate-50 transition-all", value: borrowForm.nim, onChange: e => setBorrowForm({ ...borrowForm, nim: e.target.value }), placeholder: "123456789" })),
+                    React.createElement("div", { className: "md:col-span-2" },
+                        React.createElement("label", { className: "block text-sm font-bold text-slate-700 mb-1.5" },
+                            React.createElement("i", { className: "fab fa-whatsapp text-emerald-600 mr-1.5" }),
+                            "Nomor WhatsApp Penanggung Jawab"),
+                        React.createElement("input", {
+                            type: "tel",
+                            required: true,
+                            inputMode: "tel",
+                            className: "w-full p-2.5 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 bg-slate-50 transition-all",
+                            value: borrowForm.whatsapp,
+                            onChange: e => setBorrowForm({ ...borrowForm, whatsapp: e.target.value.replace(/[^0-9+\-\s]/g, '') }),
+                            placeholder: "Contoh: 081234567890"
+                        }),
+                        React.createElement("p", { className: "text-[10px] text-slate-500 mt-1" }, "Nomor hanya ditampilkan pada Mode Admin dan digunakan untuk kontak operasional.")),
                     React.createElement("div", { className: "md:col-span-2" },
                         React.createElement("label", { className: "block text-sm font-bold text-slate-700 mb-1.5" }, "Klasifikasi Keperluan"),
                         React.createElement("select", { required: true, className: "w-full p-2.5 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-600 bg-white cursor-pointer transition-all", value: borrowForm.purpose, onChange: e => setBorrowForm({ ...borrowForm, purpose: e.target.value, praktikumCourse: '', praktikumClass: '', praktikumLayanan: '' }) },
@@ -2832,16 +2965,7 @@ function App() {
                             React.createElement("select", { required: true, className: "w-full p-2.5 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-600 bg-white cursor-pointer", value: borrowForm.praktikumCourse, onChange: e => setBorrowForm({ ...borrowForm, praktikumCourse: e.target.value, praktikumLayanan: e.target.value !== 'Layanan Praktikum GT' ? '' : borrowForm.praktikumLayanan }) },
                                 React.createElement("option", { value: "", disabled: true }, "-- Pilih Mata Kuliah --"),
                                 React.createElement("option", { value: "Layanan Praktikum GT", className: "font-bold text-indigo-700" }, "Layanan Praktikum Terpadu"),
-                                React.createElement("option", { value: "Survei Kontruksi" }, "Survei Konstruksi"),
-                                React.createElement("option", { value: "Pemetaan Dasar" }, "Pemetaan Dasar"),
-                                React.createElement("option", { value: "Pemetaan Terestris" }, "Pemetaan Terestris"),
-                                React.createElement("option", { value: "Hidrografi I" }, "Hidrografi I"),
-                                React.createElement("option", { value: "Hidrografi II" }, "Hidrografi II"),
-                                React.createElement("option", { value: "Kemah Kerja" }, "Kemah Kerja"),
-                                React.createElement("option", { value: "Survei GNSS" }, "Survei GNSS"),
-                                React.createElement("option", { value: "Fotogrametri Dasar" }, "Fotogrametri Dasar"),
-                                React.createElement("option", { value: "Fotogrametri Lanjut" }, "Fotogrametri Lanjut"),
-                                React.createElement("option", { value: "Pemetaan Radar dan LiDAR" }, "Pemetaan Radar dan LiDAR"))),
+                                practicumCourseOptions.map(course => React.createElement("option", { key: course, value: course }, course)))),
                         borrowForm.praktikumCourse === 'Layanan Praktikum GT' && (React.createElement("div", { className: "animate-fade-in" },
                             React.createElement("label", { className: "block text-sm font-bold text-slate-700 mb-1.5" }, "Layanan Akademik Program Studi"),
                             React.createElement("select", { required: true, className: "w-full p-2.5 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-600 bg-white cursor-pointer", value: borrowForm.praktikumLayanan, onChange: e => setBorrowForm({ ...borrowForm, praktikumLayanan: e.target.value }) },
@@ -2855,9 +2979,7 @@ function App() {
                             React.createElement("label", { className: "block text-sm font-bold text-slate-700 mb-1.5" }, "Klasifikasi Kelas"),
                             React.createElement("select", { required: true, className: "w-full p-2.5 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-600 bg-white cursor-pointer", value: borrowForm.praktikumClass, onChange: e => setBorrowForm({ ...borrowForm, praktikumClass: e.target.value }) },
                                 React.createElement("option", { value: "", disabled: true }, "-- Identifikasi Kelas --"),
-                                React.createElement("option", { value: "RA" }, "Reguler A (RA)"),
-                                React.createElement("option", { value: "RB" }, "Reguler B (RB)"),
-                                React.createElement("option", { value: "RC" }, "Reguler C (RC)"))))),
+                                practicumClassOptions.map(cls => React.createElement("option", { key: cls, value: cls }, cls)))))),
                     React.createElement("div", null,
                         React.createElement("label", { className: "block text-sm font-bold text-slate-700 mb-1.5" }, "Waktu Pengeluaran Instrumen"),
                         React.createElement("div", { className: "flex gap-2 relative" },
@@ -2986,6 +3108,15 @@ function App() {
                                 React.createElement("p", { className: "text-slate-600 text-xs mt-0.5" },
                                     "Identitas: ",
                                     React.createElement("span", { className: "font-semibold font-mono" }, trx.nim)),
+                                isAdmin && whatsappDirectory[trx.id] && React.createElement("a", {
+                                    href: `https://wa.me/${normalizeWhatsAppNumber(whatsappDirectory[trx.id])}?text=${encodeURIComponent(`Halo ${trx.borrowerName}, kami dari Laboratorium Geomatika ITERA terkait peminjaman alat ${trx.id}.`)}`,
+                                    target: "_blank",
+                                    rel: "noopener noreferrer",
+                                    className: "mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded hover:bg-emerald-100 transition-colors",
+                                    title: "Hubungi melalui WhatsApp"
+                                },
+                                    React.createElement("i", { className: "fab fa-whatsapp text-emerald-600" }),
+                                    formatWhatsAppNumber(whatsappDirectory[trx.id])),
                                 trx.purpose && React.createElement("p", { className: "text-indigo-700 text-xs font-bold mt-1 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded w-max" },
                                     React.createElement("i", { className: "fas fa-tag mr-1" }),
                                     " ",
