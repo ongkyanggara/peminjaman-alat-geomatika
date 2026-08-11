@@ -647,7 +647,7 @@ function App() {
     const GOOGLE_SCRIPT_INV_FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwGry5HOdHq2v6NmPoOIdDbQYAXAjupfbyeHwRyIK1ymGVJMf2-g0S8CiwjOZm-JF6v/exec';
     // Deploy file MasterData.gs sebagai Web App pada Spreadsheet yang SAMA,
     // lalu tempel URL /exec di bawah ini.
-    const MASTER_DATA_URL = 'https://script.google.com/macros/s/AKfycbyFYMKIg-Djxq5uqmSw6LUkDQE5jg2a4La891pF7r54RShYkywPVvPlkrPg8HKQ_Z0etg/exec';
+    const MASTER_DATA_URL = 'https://script.google.com/macros/s/AKfycbxoTTeHMEIJkQ-ce7TBw7QqBN3N_OGSxyB0pZyrYJx-MPCeOPjbHabVVyoAWbZXDIAidQ/exec'; // WAJIB: URL Web App /exec deployment terbaru
     const ACTIVE_INV_URL = MASTER_DATA_URL;
     const [borrowForm, setBorrowForm] = useState({
         borrowerName: '', nim: '', whatsapp: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
@@ -1492,11 +1492,9 @@ function App() {
                 method: 'GET',
                 cache: 'no-store'
             });
-            if (!response.ok)
-                throw new Error(`HTTP ${response.status}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            if (!data || !data.ok)
-                throw new Error((data && data.error) || 'Akses direktori WhatsApp ditolak oleh Apps Script.');
+            if (!data || !data.ok) throw new Error((data && data.error) || 'Akses direktori WhatsApp ditolak oleh Apps Script.');
 
             const contacts = data.contacts || {};
             setWhatsappDirectory(contacts);
@@ -1508,10 +1506,30 @@ function App() {
         }
         catch (error) {
             console.error('Gagal mengambil direktori WhatsApp Admin:', error);
-            setWhatsappDirectory({});
             if (notify) showNotification(`WhatsApp belum terhubung: ${error.message || error}`, 'error');
             return false;
         }
+    };
+
+    const authenticateAdminAndLoadContacts = async (adminKey) => {
+        if (!MASTER_DATA_URL || MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE')) {
+            throw new Error('MASTER_DATA_URL belum dikonfigurasi.');
+        }
+        const response = await fetch(`${MASTER_DATA_URL}?resource=adminbundle&adminKey=${encodeURIComponent(adminKey)}&_=${Date.now()}`, {
+            method: 'GET',
+            cache: 'no-store'
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+        if (!data || !data.ok) throw new Error((data && data.error) || 'Autentikasi Admin ditolak oleh Apps Script.');
+        if (data.authenticated !== true) {
+            throw new Error('Deployment Apps Script belum menggunakan versi Admin/WhatsApp terbaru.');
+        }
+
+        const contacts = data.contacts || {};
+        setWhatsappDirectory(contacts);
+        return contacts;
     };
 
     const handleAdminToggle = async () => {
@@ -1521,36 +1539,33 @@ function App() {
             setWhatsappDirectory({});
             setShowAddForm(false);
             setShowScheduleForm(false);
-            showNotification(String.fromCharCode(65, 107, 115, 101, 115, 32, 100, 105, 116, 117, 116, 117, 112), String.fromCharCode(115, 117, 99, 99, 101, 115, 115));
+            showNotification('Akses Admin ditutup.');
+            return;
         }
-        else {
-            const _0xInput = prompt(String.fromCharCode(75, 111, 100, 101, 32, 65, 117, 116, 101, 110, 116, 105, 107, 97, 115, 105, 58));
-            if (_0xInput !== null) {
-                const _0xClean = _0xInput.trim();
-                const _0xCheck = function (_0xStr) {
-                    const _0xTarget = [0xC7, 0xCD, 0xDF, 0xD7, 0xE1, 0x59, 0xDD, 0xC7, 0xC9, 0x6D, 0x6D];
-                    if (_0xStr.length !== 0xB)
-                        return false;
-                    for (let i = 0x0; i < 0xB; i++) {
-                        if (((_0xStr.charCodeAt(i) * 0x2) + 0x5) !== _0xTarget[i])
-                            return false;
-                    }
-                    return true;
-                };
-                if (_0xCheck(_0xClean)) {
-                    setAdminCredential(_0xClean);
-                    setIsAdmin(true);
-                    const waConnected = await fetchAdminWhatsAppDirectory(_0xClean, false);
-                    if (waConnected) {
-                        showNotification('Akses Admin diberikan dan direktori WhatsApp terhubung.');
-                    } else {
-                        showNotification('Akses Admin aktif, tetapi direktori WhatsApp belum terhubung. Pastikan password Apps Script sama dan deployment terbaru.', 'error');
-                    }
-                }
-                else {
-                    showNotification(String.fromCharCode(75, 111, 100, 101, 32, 116, 105, 100, 97, 107, 32, 118, 97, 108, 105, 100, 33), String.fromCharCode(101, 114, 114, 111, 114));
-                }
-            }
+
+        const input = prompt('Kode Autentikasi:');
+        if (input === null) return;
+        const clean = input.trim();
+        if (!clean) {
+            showNotification('Kode Admin tidak boleh kosong.', 'error');
+            return;
+        }
+
+        try {
+            // Admin baru dianggap aktif setelah Apps Script memverifikasi password
+            // dan mengirim direktori WhatsApp dalam request yang sama.
+            const contacts = await authenticateAdminAndLoadContacts(clean);
+            setAdminCredential(clean);
+            setIsAdmin(true);
+            const total = Object.keys(contacts).filter(k => !String(k).startsWith('nim:')).length;
+            showNotification(`Akses Admin aktif • ${total} kontak WhatsApp terhubung.`);
+        }
+        catch (error) {
+            console.error('Autentikasi Admin/WhatsApp gagal:', error);
+            setAdminCredential('');
+            setIsAdmin(false);
+            setWhatsappDirectory({});
+            showNotification(`Login Admin gagal: ${error.message || error}`, 'error');
         }
     };
     const handleAddNewInventoryItem = async (e) => {
