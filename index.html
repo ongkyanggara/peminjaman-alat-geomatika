@@ -647,7 +647,7 @@ function App() {
     const GOOGLE_SCRIPT_INV_FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwGry5HOdHq2v6NmPoOIdDbQYAXAjupfbyeHwRyIK1ymGVJMf2-g0S8CiwjOZm-JF6v/exec';
     // Deploy file MasterData.gs sebagai Web App pada Spreadsheet yang SAMA,
     // lalu tempel URL /exec di bawah ini.
-    const MASTER_DATA_URL = 'https://script.google.com/macros/s/AKfycbzLikA842nYTvy3EJHtNoh_SPamg_b3nhG2OGaDkYb6PAdB62mr6tAXFrnLfqF5T5L9jQ/exec';
+    const MASTER_DATA_URL = 'https://script.google.com/macros/s/AKfycbyFYMKIg-Djxq5uqmSw6LUkDQE5jg2a4La891pF7r54RShYkywPVvPlkrPg8HKQ_Z0etg/exec';
     const ACTIVE_INV_URL = MASTER_DATA_URL;
     const [borrowForm, setBorrowForm] = useState({
         borrowerName: '', nim: '', whatsapp: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
@@ -792,6 +792,55 @@ function App() {
         if (!normalized)
             return '';
         return '+' + normalized;
+    };
+    const getTransactionWhatsApp = (trx) => {
+        const directNumber = normalizeWhatsAppNumber(trx && trx.whatsapp ? trx.whatsapp : '');
+        if (directNumber)
+            return directNumber;
+        const trxId = String((trx && trx.id) || '').trim();
+        const nim = String((trx && trx.nim) || '').trim();
+        return normalizeWhatsAppNumber(whatsappDirectory[trxId] || whatsappDirectory[`nim:${nim}`] || '');
+    };
+    const buildWhatsAppMessage = (trx) => {
+        const items = Array.isArray(trx && trx.items) ? trx.items : [];
+        const itemLines = items.map((item, index) => {
+            const code = String(item.kode || item.id || '').trim();
+            const name = String(item.nama || item.name || '').trim();
+            const qty = Math.max(1, parseInt(item.jumlah || item.quantity || 1) || 1);
+            const label = `${code ? `[${code}] ` : ''}${name || 'Alat'}`.trim();
+            return `${index + 1}. ${label} — ${qty} unit`;
+        });
+        let statusLabel = 'Selesai';
+        if (trx && trx.status === 'active') {
+            const target = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
+            statusLabel = target.getTime() <= currentTime.getTime() ? 'TERLAMBAT' : 'Masih dipinjam';
+        }
+        const borrowerName = String((trx && trx.borrowerName) || 'Peminjam').trim();
+        const transactionId = String((trx && trx.id) || '-').trim();
+        const purpose = String((trx && trx.purpose) || '-').trim();
+        const borrowDateText = trx && trx.borrowDate ? formatDate(trx.borrowDate) : '-';
+        const borrowTimeText = trx && trx.borrowTime ? formatTimeStr(trx.borrowTime) : '-';
+        const returnDateText = trx && trx.returnDateEst ? formatDate(trx.returnDateEst) : '-';
+        const returnTimeText = trx && trx.returnTimeEst ? formatTimeStr(trx.returnTimeEst) : '-';
+        return [
+            `Halo *${borrowerName}*,`,
+            '',
+            'Kami dari *Laboratorium Geomatika ITERA* menghubungi terkait peminjaman alat laboratorium.',
+            '',
+            `*ID Transaksi:* ${transactionId}`,
+            `*Keperluan:* ${purpose}`,
+            `*Waktu Peminjaman:* ${borrowDateText} • ${borrowTimeText} WIB`,
+            `*Tenggat Pengembalian:* ${returnDateText} • ${returnTimeText} WIB`,
+            `*Status:* ${statusLabel}`,
+            '',
+            '*Rincian alat yang dipinjam:*',
+            ...(itemLines.length ? itemLines : ['- Rincian alat tidak tersedia']),
+            '',
+            'Mohon memastikan seluruh alat dikembalikan sesuai tenggat dalam kondisi baik, lengkap, dan sesuai daftar peminjaman.',
+            '',
+            'Terima kasih.',
+            '*Laboratorium Geomatika ITERA*'
+        ].join('\n');
     };
     const renderCountdownBadge = (returnDateEst, returnTimeEst, status) => {
         if (status && status.startsWith('completed')) {
@@ -1170,7 +1219,7 @@ function App() {
             approvalFileName: borrowForm.approvalFileName, fileBase64: borrowForm.fileBase64, mimeType: borrowForm.mimeType, items: alatLengkap
         };
         try {
-            const newTransaction = { ...payload, status: 'active', borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID') };
+            const newTransaction = { ...payload, whatsapp: borrowerWhatsapp, status: 'active', borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID') };
             const updatedTransactions = [newTransaction, ...transactions];
             setTransactions(updatedTransactions);
             setInventory(calculateInventory(updatedTransactions, baseInventory));
@@ -1189,28 +1238,36 @@ function App() {
             });
             // Nomor WhatsApp disimpan pada sheet KontakWA di Spreadsheet yang sama,
             // terpisah dari transaksi lama agar struktur sheet transaksi tidak berubah.
-            if (borrowerWhatsapp && MASTER_DATA_URL && !MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE')) {
-                await fetch(MASTER_DATA_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({
-                        action: 'saveWhatsApp',
-                        transactionId: newTransactionId,
-                        borrowerName: borrowerNameSnapshot,
-                        nim: borrowerNimSnapshot,
-                        whatsapp: borrowerWhatsapp
-                    })
-                });
-            }
-            // Setelah penulisan, ambil kembali data resmi dari Spreadsheet.
-            refreshDatabaseAfterWrite();
-            if (isAdmin && adminCredential) {
+            if (borrowerWhatsapp) {
+                // Nomor langsung tersedia pada sesi saat ini tetapi tetap tidak dirender untuk pengguna umum.
                 setWhatsappDirectory(prev => ({
                     ...prev,
                     [newTransactionId]: borrowerWhatsapp,
                     [`nim:${borrowerNimSnapshot}`]: borrowerWhatsapp
                 }));
+            }
+            if (borrowerWhatsapp && MASTER_DATA_URL && !MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE')) {
+                try {
+                    await fetch(MASTER_DATA_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'saveWhatsApp',
+                            transactionId: newTransactionId,
+                            borrowerName: borrowerNameSnapshot,
+                            nim: borrowerNimSnapshot,
+                            whatsapp: borrowerWhatsapp
+                        })
+                    });
+                }
+                catch (waError) {
+                    console.error('Sinkronisasi WhatsApp gagal, transaksi utama tetap tersimpan:', waError);
+                }
+            }
+            // Setelah penulisan, ambil kembali data resmi dari Spreadsheet.
+            refreshDatabaseAfterWrite();
+            if (isAdmin && adminCredential) {
                 setTimeout(() => fetchAdminWhatsAppDirectory(adminCredential, false), 1200);
             }
             showNotification('Peminjaman berhasil dikirim ke Database Spreadsheet!');
@@ -1457,48 +1514,6 @@ function App() {
         }
     };
 
-    const saveAdminWhatsAppForTransaction = async (trx) => {
-        if (!isAdmin || !adminCredential)
-            return showNotification('Mode Admin diperlukan untuk mengelola nomor WhatsApp.', 'error');
-        if (!MASTER_DATA_URL || MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE'))
-            return showNotification('MASTER_DATA_URL belum dikonfigurasi.', 'error');
-
-        const current = whatsappDirectory[trx.id] || whatsappDirectory[`nim:${String(trx.nim || '').trim()}`] || '';
-        const input = prompt(`Nomor WhatsApp ${trx.borrowerName}\nGunakan format 08xxxxxxxxxx atau 628xxxxxxxxxx:`, current ? formatWhatsAppNumber(current) : '');
-        if (input === null) return;
-
-        const normalized = normalizeWhatsAppNumber(input);
-        if (!/^62\d{8,13}$/.test(normalized))
-            return showNotification('Format nomor WhatsApp tidak valid.', 'error');
-
-        // Update tampilan admin langsung, lalu sinkronkan ke Spreadsheet.
-        setWhatsappDirectory(prev => ({
-            ...prev,
-            [trx.id]: normalized,
-            [`nim:${String(trx.nim || '').trim()}`]: normalized
-        }));
-
-        try {
-            await fetch(MASTER_DATA_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({
-                    action: 'saveWhatsApp',
-                    transactionId: trx.id,
-                    borrowerName: trx.borrowerName,
-                    nim: trx.nim,
-                    whatsapp: normalized
-                })
-            });
-            showNotification('Nomor WhatsApp disinkronkan ke Spreadsheet.');
-            setTimeout(() => fetchAdminWhatsAppDirectory(adminCredential, false), 1200);
-        }
-        catch (error) {
-            console.error('Gagal menyimpan WhatsApp:', error);
-            showNotification('Gagal menghubungkan nomor WhatsApp ke Spreadsheet.', 'error');
-        }
-    };
     const handleAdminToggle = async () => {
         if (isAdmin) {
             setIsAdmin(false);
@@ -3154,7 +3169,7 @@ function App() {
                             React.createElement("th", { className: "p-4 text-center text-xs uppercase tracking-wider font-semibold" }, "Validasi Pengembalian"),
                             React.createElement("th", { className: "p-4 text-center text-xs uppercase tracking-wider font-semibold" }, "Tindakan Otoritas"))),
                     React.createElement("tbody", { className: "divide-y divide-slate-200" }, displayedTx.map(trx => {
-                        const adminWhatsapp = whatsappDirectory[trx.id] || whatsappDirectory[`nim:${String(trx.nim || '').trim()}`] || '';
+                        const adminWhatsapp = getTransactionWhatsApp(trx);
                         const targetDate = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
                         const diffMs = targetDate.getTime() - currentTime.getTime();
                         const isLate = diffMs <= 0;
@@ -3179,7 +3194,7 @@ function App() {
                                     "Identitas: ",
                                     React.createElement("span", { className: "font-semibold font-mono" }, trx.nim)),
                                 isAdmin && adminWhatsapp && React.createElement("a", {
-                                    href: `https://wa.me/${normalizeWhatsAppNumber(adminWhatsapp)}?text=${encodeURIComponent(`Halo ${trx.borrowerName}, kami dari Laboratorium Geomatika ITERA terkait peminjaman alat ${trx.id}.`)}`,
+                                    href: `https://wa.me/${normalizeWhatsAppNumber(adminWhatsapp)}?text=${encodeURIComponent(buildWhatsAppMessage(trx))}`,
                                     target: "_blank",
                                     rel: "noopener noreferrer",
                                     className: "mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-bold text-white bg-emerald-600 border border-emerald-700 px-2.5 py-1.5 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm",
@@ -3188,14 +3203,12 @@ function App() {
                                     React.createElement("i", { className: "fab fa-whatsapp text-sm" }),
                                     formatWhatsAppNumber(adminWhatsapp),
                                     React.createElement("i", { className: "fas fa-external-link-alt text-[8px] opacity-70 ml-0.5" })),
-                                isAdmin && !adminWhatsapp && React.createElement("button", {
-                                    type: "button",
-                                    onClick: () => saveAdminWhatsAppForTransaction(trx),
-                                    className: "mt-1.5 inline-flex items-center gap-1.5 text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg hover:bg-amber-100 transition-colors",
-                                    title: "Tambahkan nomor WhatsApp untuk arsip lama"
+                                isAdmin && !adminWhatsapp && React.createElement("span", {
+                                    className: "mt-1.5 inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-1 rounded-lg",
+                                    title: "Nomor WhatsApp belum tersimpan pada transaksi ini. Transaksi baru akan merekam nomor secara otomatis dari form."
                                 },
-                                    React.createElement("i", { className: "fab fa-whatsapp text-emerald-600" }),
-                                    "Hubungkan WA"),
+                                    React.createElement("i", { className: "fab fa-whatsapp text-slate-400" }),
+                                    "WA belum tersedia"),
                                 trx.purpose && React.createElement("p", { className: "text-indigo-700 text-xs font-bold mt-1 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded w-max" },
                                     React.createElement("i", { className: "fas fa-tag mr-1" }),
                                     " ",
