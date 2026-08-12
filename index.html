@@ -647,7 +647,7 @@ function App() {
     const GOOGLE_SCRIPT_INV_FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwGry5HOdHq2v6NmPoOIdDbQYAXAjupfbyeHwRyIK1ymGVJMf2-g0S8CiwjOZm-JF6v/exec';
     // Deploy file MasterData.gs sebagai Web App pada Spreadsheet yang SAMA,
     // lalu tempel URL /exec di bawah ini.
-    const MASTER_DATA_URL = 'https://script.google.com/macros/s/AKfycbxoTTeHMEIJkQ-ce7TBw7QqBN3N_OGSxyB0pZyrYJx-MPCeOPjbHabVVyoAWbZXDIAidQ/exec'; // WAJIB: URL Web App /exec deployment terbaru
+    const MASTER_DATA_URL = 'https://script.google.com/macros/s/AKfycbxe9k_386yn1wV-mjeOGSyzOOgk1uPic47_MgP8-z41gyv1fEVogLhjZDEekymejovwqA/exec'; // WAJIB: URL Web App /exec deployment terbaru
     const ACTIVE_INV_URL = MASTER_DATA_URL;
     const [borrowForm, setBorrowForm] = useState({
         borrowerName: '', nim: '', whatsapp: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
@@ -798,8 +798,27 @@ function App() {
         if (directNumber)
             return directNumber;
         const trxId = String((trx && trx.id) || '').trim();
-        const nim = String((trx && trx.nim) || '').trim();
-        return normalizeWhatsAppNumber(whatsappDirectory[trxId] || whatsappDirectory[`nim:${nim}`] || '');
+        // Kontak WA dipasangkan ketat berdasarkan Transaction ID.
+        // NIM sengaja tidak dipakai sebagai fallback agar registrasi berbeda
+        // milik NIM yang sama tidak saling menimpa/tertukar.
+        return normalizeWhatsAppNumber(whatsappDirectory[trxId] || '');
+    };
+
+    const createUniqueTransactionId = () => {
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+        let randomPart = '';
+        try {
+            if (window.crypto && window.crypto.getRandomValues) {
+                const buffer = new Uint32Array(1);
+                window.crypto.getRandomValues(buffer);
+                randomPart = (buffer[0] % 1000000).toString().padStart(6, '0');
+            }
+        } catch (_) {}
+        if (!randomPart)
+            randomPart = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+        return `TRX-${stamp}-${randomPart}`;
     };
     const buildWhatsAppMessage = (trx) => {
         const items = Array.isArray(trx && trx.items) ? trx.items : [];
@@ -1196,7 +1215,7 @@ function App() {
             }
         }
         setIsSubmitting(true);
-        const newTransactionId = 'TRX-' + Math.floor(Math.random() * 1000000);
+        const newTransactionId = createUniqueTransactionId();
         const alatLengkap = borrowForm.items.map(item => {
             const invItem = inventory.find(i => i.id === item.itemId);
             return { kode: invItem.id, nama: invItem.name, jumlah: parseInt(item.quantity) };
@@ -1242,8 +1261,7 @@ function App() {
                 // Nomor langsung tersedia pada sesi saat ini tetapi tetap tidak dirender untuk pengguna umum.
                 setWhatsappDirectory(prev => ({
                     ...prev,
-                    [newTransactionId]: borrowerWhatsapp,
-                    [`nim:${borrowerNimSnapshot}`]: borrowerWhatsapp
+                    [newTransactionId]: borrowerWhatsapp
                 }));
             }
             if (borrowerWhatsapp && MASTER_DATA_URL && !MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE')) {
@@ -1499,7 +1517,7 @@ function App() {
             const contacts = data.contacts || {};
             setWhatsappDirectory(contacts);
             if (notify) {
-                const total = Object.keys(contacts).filter(k => !String(k).startsWith('nim:')).length;
+                const total = Object.keys(contacts).length;
                 showNotification(`Direktori WhatsApp terhubung (${total} kontak).`);
             }
             return true;
@@ -1557,7 +1575,7 @@ function App() {
             const contacts = await authenticateAdminAndLoadContacts(clean);
             setAdminCredential(clean);
             setIsAdmin(true);
-            const total = Object.keys(contacts).filter(k => !String(k).startsWith('nim:')).length;
+            const total = Object.keys(contacts).length;
             showNotification(`Akses Admin aktif • ${total} kontak WhatsApp terhubung.`);
         }
         catch (error) {
@@ -3150,6 +3168,528 @@ function App() {
             return getTxCategory(trx) === txFilter;
         });
         const displayedTx = txLimit === 'Semua' ? filteredTx : filteredTx.slice(0, txLimit);
+        // --- LAPORAN PDF OPERASIONAL PEMINJAMAN & PENGGUNAAN ALAT ---
+        // Report ini hanya membaca data transaksi yang sudah tersedia pada aplikasi.
+        // txLimit hanya mengatur tampilan layar; laporan selalu memakai seluruh data yang sesuai Kriteria Filter.
+        const handleGenerateBorrowerUsageReport = () => {
+            if (!isAdmin) {
+                showNotification('Laporan operasional hanya dapat diakses melalui Mode Admin.', 'error');
+                return;
+            }
+            try {
+                if (!window.jspdf || !window.jspdf.jsPDF) {
+                    showNotification('Modul PDF belum siap. Silakan tunggu beberapa detik lalu coba kembali.', 'error');
+                    return;
+                }
+                if (!filteredTx.length) {
+                    showNotification('Tidak ada transaksi sesuai kriteria filter untuk dibuatkan laporan.', 'error');
+                    return;
+                }
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('p', 'mm', 'a4');
+                const generatedAt = new Date();
+                const marginX = 14;
+                const mainCategoriesReport = ['Total Station', 'GNSS', 'Laser Scanner', 'Hidrografi', 'Theodolite', 'Leveling', 'Fotogrametri'];
+
+                const safeNumber = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
+                const cleanText = (v) => String(v == null || v === '' ? '-' : v);
+                const formatPdfDate = (date) => {
+                    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '-';
+                    return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+                };
+                const formatPdfTime = (date) => {
+                    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '-';
+                    return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\./g, ':') + ' WIB';
+                };
+                const formatDateTime = (date) => `${formatPdfDate(date)} ${formatPdfTime(date)}`;
+                const formatDurationCompact = (ms) => {
+                    if (!Number.isFinite(ms) || ms <= 0) return '0 menit';
+                    const totalMinutes = Math.floor(ms / 60000);
+                    const days = Math.floor(totalMinutes / 1440);
+                    const hours = Math.floor((totalMinutes % 1440) / 60);
+                    const minutes = totalMinutes % 60;
+                    const parts = [];
+                    if (days) parts.push(`${days} hari`);
+                    if (hours) parts.push(`${hours} jam`);
+                    if (minutes || parts.length === 0) parts.push(`${minutes} menit`);
+                    return parts.join(' ');
+                };
+                const purposeGroup = (purpose) => {
+                    const p = String(purpose || 'Lainnya').trim();
+                    if (/^Praktikum/i.test(p)) return 'Praktikum';
+                    if (/^Tugas akhir/i.test(p)) return 'Tugas Akhir';
+                    if (/^Penelitian/i.test(p)) return 'Penelitian';
+                    if (/^Proyek/i.test(p)) return 'Proyek';
+                    return 'Lainnya';
+                };
+                const getOperationalStatus = (trx) => {
+                    const start = parseTargetDate(trx.borrowDate, trx.borrowTime);
+                    const due = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
+                    let returned = null;
+                    let effectiveEnd = currentTime;
+                    let label = 'Sedang Dipinjam';
+                    let key = 'active';
+                    let latenessMs = 0;
+
+                    if (trx.status && trx.status.startsWith('completed')) {
+                        if (trx.status.includes('|')) {
+                            const parsedReturn = new Date(trx.status.split('|')[1].replace(' ', 'T'));
+                            if (!Number.isNaN(parsedReturn.getTime())) returned = parsedReturn;
+                        }
+                        effectiveEnd = returned || due;
+                        if (returned && returned.getTime() > due.getTime()) {
+                            label = 'Selesai Terlambat';
+                            key = 'completedLate';
+                            latenessMs = returned.getTime() - due.getTime();
+                        } else {
+                            label = 'Selesai Tepat Waktu';
+                            key = 'completedOnTime';
+                        }
+                    } else if (due.getTime() <= currentTime.getTime()) {
+                        label = 'Aktif Terlambat';
+                        key = 'activeLate';
+                        latenessMs = currentTime.getTime() - due.getTime();
+                    }
+
+                    const durationMs = Math.max(0, effectiveEnd.getTime() - start.getTime());
+                    let timeNote = '';
+                    if (key === 'active') timeNote = `Sisa ${formatDurationCompact(Math.max(0, due.getTime() - currentTime.getTime()))}`;
+                    else if (key === 'activeLate' || key === 'completedLate') timeNote = `Terlambat ${formatDurationCompact(latenessMs)}`;
+                    else timeNote = 'Sesuai tenggat';
+
+                    return { start, due, returned, effectiveEnd, label, key, latenessMs, durationMs, timeNote };
+                };
+
+                const statusMeta = {
+                    active: { label: 'Sedang Dipinjam', color: [79, 70, 229] },
+                    activeLate: { label: 'Aktif Terlambat', color: [220, 38, 38] },
+                    completedOnTime: { label: 'Selesai Tepat Waktu', color: [5, 150, 105] },
+                    completedLate: { label: 'Selesai Terlambat', color: [234, 88, 12] }
+                };
+                const statusCounts = { active: 0, activeLate: 0, completedOnTime: 0, completedLate: 0 };
+                const purposeMap = {};
+                const borrowerMap = {};
+                const itemMap = {};
+                let totalUnitUsage = 0;
+                let totalTransactionHours = 0;
+                let totalLateMinutes = 0;
+
+                const detailedRows = filteredTx.map((trx, index) => {
+                    const status = getOperationalStatus(trx);
+                    statusCounts[status.key] += 1;
+                    totalTransactionHours += status.durationMs / 3600000;
+                    totalLateMinutes += status.latenessMs / 60000;
+
+                    const purpose = purposeGroup(trx.purpose);
+                    purposeMap[purpose] = (purposeMap[purpose] || 0) + 1;
+
+                    const borrowerKey = String(trx.nim || '').trim() || String(trx.borrowerName || '').trim().toLowerCase() || `unknown-${index}`;
+                    if (!borrowerMap[borrowerKey]) {
+                        borrowerMap[borrowerKey] = {
+                            name: cleanText(trx.borrowerName),
+                            nim: cleanText(trx.nim),
+                            transactions: 0,
+                            units: 0,
+                            late: 0
+                        };
+                    }
+                    borrowerMap[borrowerKey].transactions += 1;
+                    if (status.key === 'activeLate' || status.key === 'completedLate') borrowerMap[borrowerKey].late += 1;
+
+                    const itemLines = [];
+                    (Array.isArray(trx.items) ? trx.items : []).forEach(item => {
+                        const code = String(item.kode || item.id || '-').trim() || '-';
+                        const rawName = String(item.nama || item.name || 'Instrumen').replace(/^\[[^\]]+\]\s*/, '').trim();
+                        const qty = Math.max(1, parseInt(item.jumlah || item.quantity || 1) || 1);
+                        const invItem = inventory.find(inv => inv.id === code || inv.name === rawName);
+                        const category = invItem ? invItem.category : 'Lainnya';
+                        const itemKey = code !== '-' ? code : rawName.toLowerCase();
+                        totalUnitUsage += qty;
+                        borrowerMap[borrowerKey].units += qty;
+
+                        if (!itemMap[itemKey]) {
+                            itemMap[itemKey] = { code, name: rawName, category, count: 0, hours: 0 };
+                        }
+                        itemMap[itemKey].count += qty;
+                        itemMap[itemKey].hours += (status.durationMs / 3600000) * qty;
+                        itemLines.push(`[${code}] ${rawName} (${qty} unit)`);
+                    });
+
+                    return {
+                        no: index + 1,
+                        id: cleanText(trx.id),
+                        borrower: cleanText(trx.borrowerName),
+                        nim: cleanText(trx.nim),
+                        purpose: cleanText(trx.purpose),
+                        borrowText: formatDateTime(status.start),
+                        dueText: formatDateTime(status.due),
+                        returnText: status.returned ? formatDateTime(status.returned) : '-',
+                        status: status.label,
+                        statusKey: status.key,
+                        timeNote: status.timeNote,
+                        duration: formatDurationCompact(status.durationMs),
+                        items: itemLines.length ? itemLines.join('\n') : '-'
+                    };
+                });
+
+                const uniqueBorrowers = Object.keys(borrowerMap).length;
+                const lateTotal = statusCounts.activeLate + statusCounts.completedLate;
+                const completedTotal = statusCounts.completedOnTime + statusCounts.completedLate;
+                const lateRate = filteredTx.length ? Math.round((lateTotal / filteredTx.length) * 100) : 0;
+                const avgTransactionHours = filteredTx.length ? totalTransactionHours / filteredTx.length : 0;
+
+                const purposeData = Object.entries(purposeMap)
+                    .map(([name, count]) => ({ name, count }))
+                    .sort((a, b) => b.count - a.count);
+                const borrowerData = Object.values(borrowerMap)
+                    .sort((a, b) => b.transactions - a.transactions || b.units - a.units);
+                const allTools = Object.values(itemMap)
+                    .map(item => ({ ...item, hours: Math.round(item.hours * 10) / 10 }))
+                    .sort((a, b) => b.count - a.count);
+                const mainTools = allTools.filter(item => mainCategoriesReport.includes(item.category));
+                const strategicTools = (mainTools.length ? mainTools : allTools).slice(0, 8);
+
+                const borrowDates = detailedRows.map(r => parseTargetDate(filteredTx[r.no - 1].borrowDate, filteredTx[r.no - 1].borrowTime)).filter(d => !Number.isNaN(d.getTime())).sort((a, b) => a - b);
+                const periodText = borrowDates.length
+                    ? `${formatPdfDate(borrowDates[0])} s.d. ${formatPdfDate(borrowDates[borrowDates.length - 1])}`
+                    : 'Tidak tersedia';
+                const filterLabel = txFilter === 'Semua' ? 'Semua Status' : txFilter;
+                const reportCode = `LGT-${generatedAt.getFullYear()}${String(generatedAt.getMonth() + 1).padStart(2, '0')}${String(generatedAt.getDate()).padStart(2, '0')}-${String(generatedAt.getHours()).padStart(2, '0')}${String(generatedAt.getMinutes()).padStart(2, '0')}`;
+
+                const addHeader = (title, subtitle = '') => {
+                    const pw = doc.internal.pageSize.getWidth();
+                    doc.setFillColor(15, 23, 42);
+                    doc.rect(0, 0, pw, 31, 'F');
+                    doc.setFillColor(79, 70, 229);
+                    doc.rect(0, 0, 5, 31, 'F');
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(13);
+                    doc.text('INSTITUT TEKNOLOGI SUMATERA', marginX, 10);
+                    doc.setFontSize(8.5);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text('PROGRAM STUDI TEKNIK GEOMATIKA | LABORATORIUM GEOMATIKA', marginX, 16);
+                    doc.setFontSize(11.5);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(title, marginX, 24);
+                    if (subtitle) {
+                        doc.setFontSize(7.5);
+                        doc.setFont('helvetica', 'normal');
+                        doc.text(subtitle, pw - marginX, 24, { align: 'right' });
+                    }
+                    doc.setTextColor(15, 23, 42);
+                };
+                const sectionTitle = (title, y, width = null) => {
+                    const pw = doc.internal.pageSize.getWidth();
+                    const w = width || (pw - marginX * 2);
+                    doc.setFillColor(238, 242, 255);
+                    doc.roundedRect(marginX, y - 4, w, 9, 1.5, 1.5, 'F');
+                    doc.setTextColor(55, 48, 163);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(9.5);
+                    doc.text(title, marginX + 4, y + 1.5);
+                    doc.setTextColor(15, 23, 42);
+                    return y + 10;
+                };
+                const metricCard = (x, y, w, label, value, note, accent = [79, 70, 229]) => {
+                    doc.setFillColor(248, 250, 252);
+                    doc.setDrawColor(226, 232, 240);
+                    doc.roundedRect(x, y, w, 26, 2, 2, 'FD');
+                    doc.setFillColor(...accent);
+                    doc.roundedRect(x, y, 2.5, 26, 1, 1, 'F');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(6.8);
+                    doc.setTextColor(100, 116, 139);
+                    doc.text(label.toUpperCase(), x + 5, y + 6);
+                    doc.setFontSize(15);
+                    doc.setTextColor(15, 23, 42);
+                    doc.text(String(value), x + 5, y + 15);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(6.5);
+                    doc.setTextColor(100, 116, 139);
+                    const lines = doc.splitTextToSize(note || '', w - 9);
+                    doc.text(lines.slice(0, 2), x + 5, y + 20);
+                };
+                const barChart = (items, y, title, valueKey = 'count', suffix = '', maxItems = 6, barColor = [79, 70, 229]) => {
+                    const pw = doc.internal.pageSize.getWidth();
+                    const contentW = pw - marginX * 2;
+                    y = sectionTitle(title, y, contentW);
+                    const data = items.slice(0, maxItems);
+                    if (!data.length) {
+                        doc.setFontSize(8);
+                        doc.setTextColor(100, 116, 139);
+                        doc.text('Belum ada data.', marginX + 2, y + 3);
+                        return y + 10;
+                    }
+                    const maxVal = Math.max(...data.map(v => safeNumber(v[valueKey])), 1);
+                    const labelW = 58;
+                    const chartX = marginX + labelW;
+                    const chartW = contentW - labelW - 27;
+                    data.forEach((item, idx) => {
+                        const rowY = y + idx * 9;
+                        const value = safeNumber(item[valueKey]);
+                        doc.setFont('helvetica', idx === 0 ? 'bold' : 'normal');
+                        doc.setFontSize(7.2);
+                        doc.setTextColor(51, 65, 85);
+                        const label = doc.splitTextToSize(`${idx + 1}. ${item.name || '-'}`, labelW - 4)[0];
+                        doc.text(label, marginX, rowY + 4);
+                        doc.setFillColor(241, 245, 249);
+                        doc.roundedRect(chartX, rowY + 1, chartW, 4, 1, 1, 'F');
+                        doc.setFillColor(...(idx === 0 ? barColor : barColor.map(v => Math.min(255, v + 45))));
+                        doc.roundedRect(chartX, rowY + 1, Math.max(1, value / maxVal * chartW), 4, 1, 1, 'F');
+                        doc.setFont('helvetica', 'bold');
+                        doc.setFontSize(7);
+                        doc.setTextColor(30, 41, 59);
+                        doc.text(`${value.toLocaleString('id-ID')}${suffix}`, pw - marginX, rowY + 4.2, { align: 'right' });
+                    });
+                    return y + data.length * 9 + 4;
+                };
+                const statusChart = (y) => {
+                    const pw = doc.internal.pageSize.getWidth();
+                    const contentW = pw - marginX * 2;
+                    y = sectionTitle('Distribusi Status Transaksi', y, contentW);
+                    const total = filteredTx.length || 1;
+                    let x = marginX;
+                    const barY = y + 2;
+                    Object.keys(statusMeta).forEach(key => {
+                        const count = statusCounts[key];
+                        if (!count) return;
+                        const w = (count / total) * contentW;
+                        doc.setFillColor(...statusMeta[key].color);
+                        doc.rect(x, barY, w, 7, 'F');
+                        x += w;
+                    });
+                    let legendY = barY + 13;
+                    let legendX = marginX;
+                    Object.keys(statusMeta).forEach(key => {
+                        const meta = statusMeta[key];
+                        const count = statusCounts[key];
+                        const pct = Math.round((count / total) * 100);
+                        doc.setFillColor(...meta.color);
+                        doc.circle(legendX + 2, legendY - 1, 1.5, 'F');
+                        doc.setFont('helvetica', 'normal');
+                        doc.setFontSize(6.6);
+                        doc.setTextColor(71, 85, 105);
+                        const label = `${meta.label}: ${count} (${pct}%)`;
+                        doc.text(label, legendX + 5, legendY);
+                        legendX += 45;
+                        if (legendX > pw - 55) {
+                            legendX = marginX;
+                            legendY += 6;
+                        }
+                    });
+                    return legendY + 7;
+                };
+
+                const dominantPurpose = purposeData[0] || null;
+                const topBorrower = borrowerData[0] || null;
+                const topTool = strategicTools[0] || null;
+                const analysisParts = [];
+                analysisParts.push(`Pada periode ${periodText}, tercatat ${filteredTx.length} transaksi yang melibatkan ${uniqueBorrowers} peminjam dan ${totalUnitUsage} unit-pemakaian alat.`);
+                if (dominantPurpose) analysisParts.push(`Kebutuhan ${dominantPurpose.name} merupakan aktivitas paling dominan dengan ${dominantPurpose.count} transaksi.`);
+                if (topTool) analysisParts.push(`Instrumen utama dengan frekuensi pemakaian tertinggi adalah ${topTool.name} (${topTool.code}) sebanyak ${topTool.count} unit-pemakaian.`);
+                if (lateTotal > 0) analysisParts.push(`Terdapat ${lateTotal} transaksi berstatus terlambat (${lateRate}% dari seluruh transaksi pada filter ini), terdiri atas ${statusCounts.activeLate} transaksi yang masih aktif melewati tenggat dan ${statusCounts.completedLate} transaksi yang selesai setelah tenggat.`);
+                else analysisParts.push('Tidak terdapat transaksi terlambat pada data yang masuk dalam kriteria laporan.');
+                if (topBorrower) analysisParts.push(`${topBorrower.name} tercatat sebagai peminjam dengan aktivitas tertinggi, yaitu ${topBorrower.transactions} transaksi dan ${topBorrower.units} unit alat.`);
+                const analysisText = analysisParts.join(' ');
+
+                // HALAMAN 1 - RINGKASAN EKSEKUTIF
+                addHeader('LAPORAN OPERASIONAL PEMINJAMAN & PENGGUNAAN ALAT', `Dokumen: ${reportCode}`);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(7.5);
+                doc.setTextColor(100, 116, 139);
+                doc.text(`Periode data: ${periodText} | Filter: ${filterLabel} | Dicetak: ${formatDateTime(generatedAt)}`, marginX, 38);
+                doc.setTextColor(220, 38, 38);
+                doc.setFont('helvetica', 'bold');
+                doc.text('DOKUMEN INTERNAL - MODE ADMIN', doc.internal.pageSize.getWidth() - marginX, 38, { align: 'right' });
+
+                const contentW = doc.internal.pageSize.getWidth() - marginX * 2;
+                const gap = 3.5;
+                const cardW = (contentW - gap * 3) / 4;
+                metricCard(marginX, 44, cardW, 'Total Transaksi', filteredTx.length, `${uniqueBorrowers} peminjam unik`, [79, 70, 229]);
+                metricCard(marginX + cardW + gap, 44, cardW, 'Unit Digunakan', totalUnitUsage, 'Akumulasi unit-pemakaian', [14, 116, 144]);
+                metricCard(marginX + (cardW + gap) * 2, 44, cardW, 'Aktif', statusCounts.active + statusCounts.activeLate, `${statusCounts.activeLate} melewati tenggat`, [37, 99, 235]);
+                metricCard(marginX + (cardW + gap) * 3, 44, cardW, 'Terlambat', `${lateRate}%`, `${lateTotal} transaksi`, [220, 38, 38]);
+
+                let y = statusChart(79);
+                y = sectionTitle('Analisis Eksekutif', y + 2, contentW);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.4);
+                doc.setTextColor(51, 65, 85);
+                const analysisLines = doc.splitTextToSize(analysisText, contentW - 4);
+                doc.text(analysisLines, marginX + 2, y);
+                y += analysisLines.length * 4.3 + 6;
+
+                const operationalNotes = [];
+                if (statusCounts.activeLate > 0) operationalNotes.push(`Prioritas segera: tindak lanjuti ${statusCounts.activeLate} transaksi aktif yang telah melewati tenggat pengembalian.`);
+                if (lateRate >= 20) operationalNotes.push(`Rasio keterlambatan ${lateRate}% tergolong signifikan; pengingat otomatis menjelang tenggat dan evaluasi kepatuhan peminjam direkomendasikan.`);
+                if (topTool) operationalNotes.push(`Prioritaskan pemeriksaan kondisi dan kesiapan ${topTool.name} (${topTool.code}) karena memiliki intensitas pemakaian tertinggi.`);
+                if (!operationalNotes.length) operationalNotes.push('Kinerja pengembalian pada filter ini terkendali; pertahankan proses pengingat, inspeksi alat, dan dokumentasi serah terima.');
+
+                y = sectionTitle('Rekomendasi Operasional', y + 2, contentW);
+                doc.setFontSize(8.1);
+                operationalNotes.forEach((note, idx) => {
+                    const lines = doc.splitTextToSize(`${idx + 1}. ${note}`, contentW - 5);
+                    doc.text(lines, marginX + 2, y);
+                    y += lines.length * 4.1 + 2;
+                });
+
+                // HALAMAN 2 - GRAFIK
+                doc.addPage('a4', 'portrait');
+                addHeader('ANALISIS POLA PEMINJAMAN', `Filter: ${filterLabel}`);
+                y = 42;
+                y = barChart(purposeData, y, 'Grafik Jenis Kegiatan Peminjaman', 'count', ' trx', 5, [5, 150, 105]);
+                y = barChart(strategicTools, y + 2, mainTools.length ? 'Grafik Alat Utama Paling Sering Digunakan' : 'Grafik Alat Paling Sering Digunakan', 'count', 'x', 8, [79, 70, 229]);
+                const borrowerChartData = borrowerData.slice(0, 7).map(b => ({ name: `${b.name} (${b.nim})`, count: b.transactions }));
+                y = barChart(borrowerChartData, y + 2, 'Grafik Peminjam dengan Aktivitas Tertinggi', 'count', ' trx', 7, [14, 116, 144]);
+
+                if (y < 250) {
+                    y = sectionTitle('Indikator Penggunaan', y + 2, contentW);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8);
+                    doc.setTextColor(71, 85, 105);
+                    const indicatorLines = [
+                        `Rata-rata durasi transaksi berjalan/selesai: ${avgTransactionHours.toFixed(1)} jam per transaksi.`,
+                        `Total keterlambatan terakumulasi: ${formatDurationCompact(totalLateMinutes * 60000)} pada seluruh transaksi terlambat.`,
+                        `Transaksi selesai: ${completedTotal}; masih aktif: ${statusCounts.active + statusCounts.activeLate}.`
+                    ];
+                    indicatorLines.forEach((line, idx) => doc.text(`${idx + 1}. ${line}`, marginX + 2, y + idx * 5));
+                }
+
+                // HALAMAN 3+ - DATA RINCI TRANSAKSI DALAM LANDSCAPE
+                doc.addPage('a4', 'landscape');
+                addHeader('DATA RINCI TRANSAKSI PEMINJAMAN', `${filteredTx.length} transaksi | ${filterLabel}`);
+                const detailBody = detailedRows.map(r => [
+                    r.no,
+                    r.id,
+                    `${r.borrower}\nID: ${r.nim}`,
+                    r.purpose,
+                    r.borrowText,
+                    r.dueText,
+                    r.returnText,
+                    r.status,
+                    `${r.timeNote}\nDurasi: ${r.duration}`,
+                    r.items
+                ]);
+                doc.autoTable({
+                    startY: 39,
+                    head: [['No', 'ID Transaksi', 'Peminjam', 'Keperluan', 'Waktu Pinjam', 'Tenggat', 'Kembali Aktual', 'Status', 'Keterangan Waktu', 'Rincian Alat']],
+                    body: detailBody,
+                    theme: 'grid',
+                    margin: { left: 8, right: 8, bottom: 16 },
+                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 6.4, halign: 'center', valign: 'middle' },
+                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    styles: { fontSize: 6.1, cellPadding: 1.6, textColor: [51, 65, 85], valign: 'top', overflow: 'linebreak' },
+                    columnStyles: {
+                        0: { cellWidth: 7, halign: 'center' },
+                        1: { cellWidth: 26 },
+                        2: { cellWidth: 30 },
+                        3: { cellWidth: 35 },
+                        4: { cellWidth: 25 },
+                        5: { cellWidth: 25 },
+                        6: { cellWidth: 25 },
+                        7: { cellWidth: 23, halign: 'center' },
+                        8: { cellWidth: 25 },
+                        9: { cellWidth: 55 }
+                    },
+                    didParseCell: function(data) {
+                        if (data.section === 'body' && data.column.index === 7) {
+                            const value = String(data.cell.raw || '');
+                            if (value === 'Aktif Terlambat') {
+                                data.cell.styles.fillColor = [254, 226, 226];
+                                data.cell.styles.textColor = [185, 28, 28];
+                                data.cell.styles.fontStyle = 'bold';
+                            } else if (value === 'Selesai Terlambat') {
+                                data.cell.styles.fillColor = [255, 237, 213];
+                                data.cell.styles.textColor = [194, 65, 12];
+                                data.cell.styles.fontStyle = 'bold';
+                            } else if (value === 'Selesai Tepat Waktu') {
+                                data.cell.styles.fillColor = [209, 250, 229];
+                                data.cell.styles.textColor = [4, 120, 87];
+                                data.cell.styles.fontStyle = 'bold';
+                            } else {
+                                data.cell.styles.fillColor = [224, 231, 255];
+                                data.cell.styles.textColor = [67, 56, 202];
+                                data.cell.styles.fontStyle = 'bold';
+                            }
+                        }
+                    }
+                });
+
+                // HALAMAN PENGESAHAN
+                doc.addPage('a4', 'portrait');
+                addHeader('PENGESAHAN LAPORAN OPERASIONAL', `Dokumen: ${reportCode}`);
+                let sy = 46;
+                sy = sectionTitle('Pernyataan Laporan', sy, contentW);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.7);
+                doc.setTextColor(51, 65, 85);
+                const declaration = `Laporan ini merupakan rekap operasional peminjaman dan penggunaan alat Laboratorium Geomatika berdasarkan ${filteredTx.length} transaksi yang tersinkron pada sistem. Status keterlambatan ditentukan dengan membandingkan tenggat pengembalian terhadap waktu pengembalian aktual atau waktu pencetakan laporan untuk transaksi yang masih aktif.`;
+                const declarationLines = doc.splitTextToSize(declaration, contentW - 5);
+                doc.text(declarationLines, marginX + 2, sy);
+                sy += declarationLines.length * 4.5 + 9;
+
+                sy = sectionTitle('Ringkasan Pengesahan', sy, contentW);
+                doc.autoTable({
+                    startY: sy,
+                    body: [
+                        ['Periode Data', periodText],
+                        ['Kriteria Status', filterLabel],
+                        ['Jumlah Transaksi', String(filteredTx.length)],
+                        ['Peminjam Unik', String(uniqueBorrowers)],
+                        ['Transaksi Terlambat', `${lateTotal} (${lateRate}%)`],
+                        ['Kode Laporan', reportCode]
+                    ],
+                    theme: 'plain',
+                    margin: { left: marginX, right: marginX },
+                    styles: { fontSize: 8, cellPadding: 2.2, textColor: [51, 65, 85] },
+                    columnStyles: { 0: { cellWidth: 45, fontStyle: 'bold', textColor: [71, 85, 105] } }
+                });
+                sy = doc.lastAutoTable.finalY + 12;
+                doc.setFontSize(8);
+                doc.setTextColor(71, 85, 105);
+                doc.text(`Lampung Selatan, ${generatedAt.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, doc.internal.pageSize.getWidth() - marginX, sy, { align: 'right' });
+                const sigY = sy + 12;
+                const leftX = marginX + contentW * 0.25;
+                const rightX = marginX + contentW * 0.75;
+                doc.setTextColor(15, 23, 42);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.5);
+                doc.text('Mengetahui,', leftX, sigY, { align: 'center' });
+                doc.text('Diverifikasi oleh,', rightX, sigY, { align: 'center' });
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(9);
+                doc.text('Koordinator Laboratorium GT', leftX, sigY + 6, { align: 'center' });
+                doc.text('Laboran Geomatika', rightX, sigY + 6, { align: 'center' });
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(100, 116, 139);
+                doc.text('(........................................................)', leftX, sigY + 35, { align: 'center' });
+                doc.text('(........................................................)', rightX, sigY + 35, { align: 'center' });
+
+                // FOOTER SETIAP HALAMAN - mendukung portrait dan landscape.
+                const pageCount = doc.getNumberOfPages();
+                for (let p = 1; p <= pageCount; p++) {
+                    doc.setPage(p);
+                    const pw = doc.internal.pageSize.getWidth();
+                    const ph = doc.internal.pageSize.getHeight();
+                    doc.setDrawColor(226, 232, 240);
+                    doc.line(10, ph - 12, pw - 10, ph - 12);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(6.7);
+                    doc.setTextColor(100, 116, 139);
+                    doc.text('Sistem Informasi Pusat Laboratorium Geomatika - ITERA', 10, ph - 7);
+                    doc.text(`${reportCode} | Halaman ${p} dari ${pageCount}`, pw - 10, ph - 7, { align: 'right' });
+                }
+
+                const fileFilter = String(filterLabel).replace(/[^a-zA-Z0-9_-]+/g, '_');
+                doc.save(`Laporan_Operasional_Peminjaman_Lab_Geomatika_${fileFilter}_${reportCode}.pdf`);
+                showNotification(`Laporan PDF berhasil dibuat (${filteredTx.length} transaksi).`, 'success');
+            } catch (error) {
+                console.error('Gagal membuat laporan operasional peminjaman:', error);
+                showNotification('Gagal membuat laporan PDF operasional. Periksa Console untuk detail.', 'error');
+            }
+        };
         return (React.createElement("div", { className: "space-y-6 animate-fade-in" },
             React.createElement("h2", { className: "text-2xl font-bold text-slate-800 border-b border-slate-300 pb-3" }, "Log Transaksi & Pengembalian Dokumen"),
             React.createElement("div", { className: "flex flex-col md:flex-row justify-between gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200 shadow-sm" },
@@ -3170,7 +3710,17 @@ function App() {
                         React.createElement("option", { value: 10 }, "Batasi 10 Arsip Teratas"),
                         React.createElement("option", { value: 25 }, "Batasi 25 Arsip Teratas"),
                         React.createElement("option", { value: 50 }, "Batasi 50 Arsip Teratas"),
-                        React.createElement("option", { value: "Semua" }, "Akses Seluruh Arsip")))),
+                        React.createElement("option", { value: "Semua" }, "Akses Seluruh Arsip")),
+                    isAdmin && React.createElement("button", {
+                        type: "button",
+                        onClick: handleGenerateBorrowerUsageReport,
+                        className: "lab-report-btn inline-flex items-center gap-2 px-4 py-2 text-white text-xs font-bold rounded-xl shadow-sm transition-all border whitespace-nowrap",
+                        title: "Export laporan operasional peminjaman, penggunaan alat, peminjam, dan status"
+                    },
+                        React.createElement("span", { className: "lab-report-icon" },
+                            React.createElement("i", { className: "fas fa-file-pdf" })),
+                        React.createElement("span", null, "Export Laporan PDF"),
+                        React.createElement("span", { className: "lab-admin-mini" }, "ADMIN")))),
             React.createElement("div", { className: "bg-white rounded-lg border border-slate-300 overflow-hidden shadow-sm" }, displayedTx.length === 0 ? (React.createElement("div", { className: "p-10 text-center text-slate-400" },
                 React.createElement("i", { className: "fas fa-clipboard-check text-5xl mb-4 opacity-30" }),
                 React.createElement("p", { className: "font-medium text-lg" }, "Basis data tidak memuat arsip dengan kriteria tersebut."))) : (React.createElement("div", { className: "overflow-x-auto" },
