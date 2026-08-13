@@ -633,6 +633,8 @@ function App() {
     });
     const [txFilter, setTxFilter] = useState('Semua');
     const [txLimit, setTxLimit] = useState(10);
+    const [txMonth, setTxMonth] = useState('Semua');
+    const [txYear, setTxYear] = useState('Semua');
     const [analysisMonth, setAnalysisMonth] = useState('Semua');
     const fileInputRef = useRef(null);
     const feedbackFileInputRef = useRef(null);
@@ -642,13 +644,17 @@ function App() {
     const syncAbortRef = useRef(null);
     const lastServerPayloadRef = useRef('');
     const lastSyncAttemptRef = useRef(0);
+    const lastSuccessfulSyncRef = useRef(0);
+    const retryTimerRef = useRef(null);
+    const retryCountRef = useRef(0);
+    const latestMasterDataRef = useRef(null);
+    const dbChannelRef = useRef(null);
     // --- PENGATURAN LINK DATABASE ---
-    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPlSeyXWP0ALhXp4VqJ_NUmB433jHqLUn4hButn2UFzHu2J9hOfEeRlj-Zdky0TA_b/exec';
-    const GOOGLE_SCRIPT_INV_FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwGry5HOdHq2v6NmPoOIdDbQYAXAjupfbyeHwRyIK1ymGVJMf2-g0S8CiwjOZm-JF6v/exec';
-    // Deploy file MasterData.gs sebagai Web App pada Spreadsheet yang SAMA,
-    // lalu tempel URL /exec di bawah ini.
-    const MASTER_DATA_URL = 'https://script.google.com/macros/s/AKfycbxe9k_386yn1wV-mjeOGSyzOOgk1uPic47_MgP8-z41gyv1fEVogLhjZDEekymejovwqA/exec'; // WAJIB: URL Web App /exec deployment terbaru
+    // SATU endpoint MASTER_DATA_URL untuk transaksi, inventaris, jadwal, dan KontakWA.
+    const MASTER_DATA_URL = 'https://script.google.com/macros/s/AKfycbxe9k_386yn1wV-mjeOGSyzOOgk1uPic47_MgP8-z41gyv1fEVogLhjZDEekymejovwqA/exec';
     const ACTIVE_INV_URL = MASTER_DATA_URL;
+    // Kotak Saran dipertahankan pada endpoint lama agar struktur fitur tersebut tidak berubah.
+    const GOOGLE_SCRIPT_INV_FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwGry5HOdHq2v6NmPoOIdDbQYAXAjupfbyeHwRyIK1ymGVJMf2-g0S8CiwjOZm-JF6v/exec';
     const [borrowForm, setBorrowForm] = useState({
         borrowerName: '', nim: '', whatsapp: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
         borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
@@ -951,15 +957,144 @@ function App() {
         }
     };
     // ============================================================
-    // SINKRONISASI DATABASE SPREADSHEET
-    // - Tanpa localStorage/cache data aktivitas
-    // - UI dirender lebih dulu, sinkronisasi berjalan di background
-    // - Request dicegah agar tidak bertumpuk
-    // - Timeout mencegah halaman menunggu Apps Script terlalu lama
+    // SINKRONISASI DATABASE SPREADSHEET - HTML ONLY STABILITY LAYER
+    // Apps Script TIDAK perlu diubah.
+    // Strategi:
+    // 1) satu request pada satu waktu (dedupe),
+    // 2) timeout lebih toleran untuk cold-start Apps Script,
+    // 3) retry eksponensial + jitter saat layanan lambat,
+    // 4) interval background lebih jarang,
+    // 5) snapshot sessionStorage hanya sebagai tampilan sementara,
+    //    bukan sumber kebenaran dan tidak pernah dipakai untuk write,
+    // 6) BroadcastChannel membagi data fresh antar-tab browser bila tersedia.
     // ============================================================
+    const DB_SESSION_KEY = 'lab_geom_master_snapshot_v1';
+    const DB_SESSION_MAX_AGE = 5 * 60 * 1000;       // 5 menit, hanya fallback visual
+    const DB_REQUEST_TIMEOUT = 20000;               // 20 detik untuk cold-start Google Apps Script
+    const DB_BACKGROUND_INTERVAL = 120000;          // 2 menit
+    const DB_VISIBILITY_MIN_AGE = 60000;             // jangan request lagi jika data < 1 menit
+    const DB_MIN_REQUEST_GAP = 12000;                // cegah burst request
+
+    const applyMasterPayload = (masterData, rawText = '', markFresh = false) => {
+        if (!masterData || typeof masterData !== 'object')
+            throw new Error('Format Master Database tidak valid.');
+        if (masterData.error)
+            throw new Error(masterData.error);
+        if (masterData.ok === false)
+            throw new Error(masterData.error || 'Master Database menolak permintaan.');
+
+        const txData = Array.isArray(masterData.transactions) ? masterData.transactions : [];
+        const finalInventoryMaster = Array.isArray(masterData.inventory)
+            ? masterData.inventory.map(item => {
+                const total = Number(item.total) || 0;
+                return {
+                    id: String(item.id || '').trim(),
+                    category: String(item.category || '').trim(),
+                    name: String(item.name || '').trim(),
+                    total,
+                    available: total
+                };
+            }).filter(item => item.id)
+            : [];
+        const finalSchedule = Array.isArray(masterData.schedule)
+            ? masterData.schedule.map(item => ({
+                id: String(item.id || '').trim(),
+                lab: String(item.lab || 'GT').trim().toUpperCase(),
+                room: String(item.room || '').trim(),
+                day: Number(item.day),
+                course: String(item.course || '').trim(),
+                class: String(item.class || '').trim(),
+                start: String(item.start || '').substring(0, 5),
+                end: String(item.end || '').substring(0, 5)
+            })).filter(item =>
+                item.id && item.course &&
+                Number.isFinite(item.day) &&
+                item.start && item.end
+            )
+            : [];
+        const formattedTx = txData.map(trx => ({
+            ...trx,
+            borrowDateFormatted: trx.borrowDate
+                ? parseRealDate(trx.borrowDate).toLocaleDateString('id-ID')
+                : '-'
+        }));
+        const calculatedInventory = calculateInventory(formattedTx, finalInventoryMaster);
+
+        setTransactions(formattedTx);
+        setBaseInventory(finalInventoryMaster);
+        setInventory(calculatedInventory);
+        setScheduleData(finalSchedule);
+        latestMasterDataRef.current = masterData;
+        if (rawText)
+            lastServerPayloadRef.current = rawText;
+
+        if (markFresh) {
+            setIsDatabaseReady(true);
+            lastSuccessfulSyncRef.current = Date.now();
+            retryCountRef.current = 0;
+        }
+        return true;
+    };
+
+    const saveSessionSnapshot = (rawText) => {
+        try {
+            if (!rawText) return;
+            sessionStorage.setItem(DB_SESSION_KEY, JSON.stringify({
+                savedAt: Date.now(),
+                rawText
+            }));
+        } catch (e) {
+            // Storage mungkin dibatasi browser/private mode. Abaikan tanpa mengganggu aplikasi.
+        }
+    };
+
+    const restoreSessionSnapshot = () => {
+        try {
+            const saved = sessionStorage.getItem(DB_SESSION_KEY);
+            if (!saved) return false;
+            const parsed = JSON.parse(saved);
+            if (!parsed || !parsed.rawText || !parsed.savedAt) return false;
+            if (Date.now() - Number(parsed.savedAt) > DB_SESSION_MAX_AGE) {
+                sessionStorage.removeItem(DB_SESSION_KEY);
+                return false;
+            }
+            const masterData = JSON.parse(parsed.rawText);
+            // Snapshot hanya membuat data lama tetap terlihat. isDatabaseReady tetap false
+            // sampai server benar-benar berhasil dijangkau, sehingga proses write tidak
+            // menggunakan stok/data sesi lama sebagai otorisasi.
+            applyMasterPayload(masterData, parsed.rawText, false);
+            return true;
+        } catch (e) {
+            try { sessionStorage.removeItem(DB_SESSION_KEY); } catch (_) {}
+            return false;
+        }
+    };
+
+    const clearRetryTimer = () => {
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+        }
+    };
+
+    const scheduleDatabaseRetry = () => {
+        clearRetryTimer();
+        const steps = [5000, 12000, 25000, 45000, 70000, 120000];
+        const index = Math.min(retryCountRef.current, steps.length - 1);
+        const jitter = Math.floor(Math.random() * 1800);
+        const delay = steps[index] + jitter;
+        retryCountRef.current += 1;
+        retryTimerRef.current = setTimeout(() => {
+            retryTimerRef.current = null;
+            if (document.visibilityState === 'visible' && navigator.onLine !== false) {
+                fetchDatabase({ silent: true, force: true });
+            }
+        }, delay);
+    };
+
     const fetchDatabase = async ({ silent = false, force = false } = {}) => {
         const now = Date.now();
-        if (!force && now - lastSyncAttemptRef.current < 5000)
+        if (!force && now - lastSyncAttemptRef.current < DB_MIN_REQUEST_GAP)
             return false;
         if (syncInProgressRef.current)
             return false;
@@ -968,120 +1103,74 @@ function App() {
                 showNotification('MASTER_DATA_URL belum dikonfigurasi. Deploy MasterData.gs lalu tempel URL Web App.', 'error');
             return false;
         }
+        if (navigator.onLine === false) {
+            if (!silent && !latestMasterDataRef.current)
+                showNotification('Perangkat sedang offline. Data akan disinkronkan saat koneksi kembali.', 'error');
+            scheduleDatabaseRetry();
+            return false;
+        }
+
         lastSyncAttemptRef.current = now;
         syncInProgressRef.current = true;
         if (!silent)
             setIsSyncing(true);
+        clearRetryTimer();
+
         const controller = new AbortController();
         syncAbortRef.current = controller;
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const timeoutId = setTimeout(() => controller.abort(), DB_REQUEST_TIMEOUT);
         try {
-            // Transaksi tetap berasal dari endpoint lama.
-            // Inventaris + jadwal berasal dari Spreadsheet Master Data yang sama,
-            // sehingga data master tidak lagi disimpan/duplikasi di GitHub.
-            const [txResponse, masterResponse] = await Promise.all([
-                fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'GET',
-                    cache: 'no-store',
-                    signal: controller.signal
-                }),
-                fetch(`${MASTER_DATA_URL}?resource=master`, {
-                    method: 'GET',
-                    cache: 'no-store',
-                    signal: controller.signal
-                })
-            ]);
-            if (!txResponse.ok)
-                throw new Error(`HTTP Transaksi ${txResponse.status}`);
-            if (!masterResponse.ok)
-                throw new Error(`HTTP Master Data ${masterResponse.status}`);
+            // URL dibuat stabil; cache:no-store tetap memastikan sumber data berasal dari server,
+            // namun tidak lagi membuat URL unik setiap request dengan timestamp.
+            const response = await fetch(`${MASTER_DATA_URL}?resource=master`, {
+                method: 'GET',
+                cache: 'no-store',
+                signal: controller.signal
+            });
+            if (!response.ok)
+                throw new Error(`HTTP Master Database ${response.status}`);
 
-            const [txRawText, masterRawText] = await Promise.all([
-                txResponse.text(),
-                masterResponse.text()
-            ]);
-            if (!txRawText)
-                throw new Error('Respons transaksi kosong');
-            if (!masterRawText)
-                throw new Error('Respons master data kosong');
+            const rawText = await response.text();
+            if (!rawText)
+                throw new Error('Respons Master Database kosong');
 
-            const combinedPayload = `${txRawText}|||${masterRawText}`;
-            if (!force && lastServerPayloadRef.current === combinedPayload) {
+            // Jika payload sama, cukup tandai koneksi fresh tanpa render ulang seluruh dashboard.
+            if (lastServerPayloadRef.current === rawText) {
                 setIsDatabaseReady(true);
+                lastSuccessfulSyncRef.current = Date.now();
+                retryCountRef.current = 0;
+                saveSessionSnapshot(rawText);
                 return true;
             }
 
-            const txRawData = JSON.parse(txRawText);
-            const masterData = JSON.parse(masterRawText);
-            if (txRawData && txRawData.error)
-                throw new Error(txRawData.error);
-            if (masterData && masterData.error)
-                throw new Error(masterData.error);
+            const masterData = JSON.parse(rawText);
+            applyMasterPayload(masterData, rawText, true);
+            saveSessionSnapshot(rawText);
 
-            const txData = Array.isArray(txRawData)
-                ? txRawData
-                : (Array.isArray(txRawData?.transactions) ? txRawData.transactions : []);
-
-            // MASTER INVENTORY: hanya dari Spreadsheet MasterData.gs.
-            const finalInventoryMaster = Array.isArray(masterData?.inventory)
-                ? masterData.inventory.map(item => {
-                    const total = Number(item.total) || 0;
-                    return {
-                        id: String(item.id || '').trim(),
-                        category: String(item.category || '').trim(),
-                        name: String(item.name || '').trim(),
-                        total,
-                        available: total
-                    };
-                }).filter(item => item.id)
-                : [];
-
-            // MASTER JADWAL: hanya dari Spreadsheet MasterData.gs.
-            const finalSchedule = Array.isArray(masterData?.schedule)
-                ? masterData.schedule.map(item => ({
-                    id: String(item.id || '').trim(),
-                    lab: String(item.lab || 'GT').trim().toUpperCase(),
-                    room: String(item.room || '').trim(),
-                    day: Number(item.day),
-                    course: String(item.course || '').trim(),
-                    class: String(item.class || '').trim(),
-                    start: String(item.start || '').substring(0, 5),
-                    end: String(item.end || '').substring(0, 5)
-                })).filter(item =>
-                    item.id && item.course &&
-                    Number.isFinite(item.day) &&
-                    item.start && item.end
-                )
-                : [];
-
-            const formattedTx = txData.map(trx => ({
-                ...trx,
-                borrowDateFormatted: trx.borrowDate
-                    ? parseRealDate(trx.borrowDate).toLocaleDateString('id-ID')
-                    : '-'
-            }));
-
-            const calculatedInventory = calculateInventory(formattedTx, finalInventoryMaster);
-
-            setTransactions(formattedTx);
-            setBaseInventory(finalInventoryMaster);
-            setInventory(calculatedInventory);
-            setScheduleData(finalSchedule);
-            setIsDatabaseReady(true);
-            lastServerPayloadRef.current = combinedPayload;
+            // Bagikan payload fresh ke tab lain di browser yang sama tanpa request Apps Script tambahan.
+            if (dbChannelRef.current) {
+                try {
+                    dbChannelRef.current.postMessage({
+                        type: 'master-data',
+                        sentAt: Date.now(),
+                        rawText
+                    });
+                } catch (_) {}
+            }
             return true;
         }
         catch (error) {
-            if (error.name === 'AbortError') {
-                console.warn('Sinkronisasi Spreadsheet timeout setelah 8 detik.');
-            }
-            else {
+            if (error.name === 'AbortError')
+                console.warn(`Sinkronisasi Spreadsheet timeout setelah ${DB_REQUEST_TIMEOUT / 1000} detik.`);
+            else
                 console.error('Gagal sinkronisasi Spreadsheet:', error);
-            }
-            if (!silent) {
+
+            // Jangan hapus data yang sudah tampil. Retry dilakukan terkontrol di background.
+            scheduleDatabaseRetry();
+            if (!silent && !latestMasterDataRef.current) {
                 showNotification(error.name === 'AbortError'
-                    ? 'Database sedang lambat. Sistem akan mencoba sinkronisasi kembali di background.'
-                    : 'Gagal terhubung ke database Spreadsheet. Periksa MASTER_DATA_URL.', 'error');
+                    ? 'Database sedang lambat. Sistem tetap aktif dan akan mencoba sinkronisasi kembali otomatis.'
+                    : 'Koneksi database belum berhasil. Sistem akan mencoba kembali otomatis.', 'error');
             }
             return false;
         }
@@ -1093,40 +1182,106 @@ function App() {
                 setIsSyncing(false);
         }
     };
+
     // Refresh ulang sesudah operasi POST agar UI kembali mengikuti Spreadsheet.
+    // Tetap force karena sesudah write kita memang membutuhkan data resmi terbaru.
     const refreshDatabaseAfterWrite = (delay = 900) => {
         setTimeout(() => {
             fetchDatabase({ silent: true, force: true });
         }, delay);
     };
+
     useEffect(() => {
-        // Jam real-time tetap dipertahankan seperti struktur lama.
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-        // useEffect berjalan setelah render pertama, sehingga dashboard tidak lagi
-        // diblokir oleh proses GET Spreadsheet.
+        const restoredSnapshot = restoreSessionSnapshot();
+
+        // Sinkronisasi antar-tab bersifat ephemeral; tidak menyimpan database permanen di browser.
+        if ('BroadcastChannel' in window) {
+            try {
+                const channel = new BroadcastChannel('lab-geom-master-data-v1');
+                dbChannelRef.current = channel;
+                channel.onmessage = (event) => {
+                    const message = event && event.data ? event.data : null;
+                    if (!message) return;
+
+                    if (message.type === 'request-master-data') {
+                        const age = Date.now() - lastSuccessfulSyncRef.current;
+                        if (latestMasterDataRef.current && lastServerPayloadRef.current && age >= 0 && age < DB_VISIBILITY_MIN_AGE) {
+                            channel.postMessage({
+                                type: 'master-data',
+                                sentAt: Date.now(),
+                                rawText: lastServerPayloadRef.current
+                            });
+                        }
+                        return;
+                    }
+
+                    if (message.type === 'master-data' && message.rawText) {
+                        try {
+                            const age = Date.now() - Number(message.sentAt || 0);
+                            if (age > DB_VISIBILITY_MIN_AGE) return;
+                            if (message.rawText === lastServerPayloadRef.current && isDatabaseReady) return;
+                            const masterData = JSON.parse(message.rawText);
+                            applyMasterPayload(masterData, message.rawText, true);
+                            saveSessionSnapshot(message.rawText);
+                            clearRetryTimer();
+                        } catch (_) {}
+                    }
+                };
+                channel.postMessage({ type: 'request-master-data' });
+            } catch (_) {
+                dbChannelRef.current = null;
+            }
+        }
+
+        // Beri tab lain kesempatan singkat mengirim data fresh sebelum request jaringan pertama.
         const initialSyncTimer = setTimeout(() => {
-            fetchDatabase({ silent: false, force: true });
-        }, 0);
-        // Sinkronisasi background setiap 30 detik hanya ketika tab sedang aktif.
+            const freshFromAnotherTab = lastSuccessfulSyncRef.current &&
+                (Date.now() - lastSuccessfulSyncRef.current < DB_VISIBILITY_MIN_AGE);
+            if (!freshFromAnotherTab) {
+                fetchDatabase({ silent: restoredSnapshot, force: true });
+            }
+        }, dbChannelRef.current ? 350 : 0);
+
+        // Background sync dikurangi agar banyak pengguna tidak menembak Apps Script tiap 30 detik.
         const backgroundSyncTimer = setInterval(() => {
-            if (document.visibilityState === 'visible') {
+            if (document.visibilityState !== 'visible' || navigator.onLine === false)
+                return;
+            const age = Date.now() - lastSuccessfulSyncRef.current;
+            if (!lastSuccessfulSyncRef.current || age >= DB_BACKGROUND_INTERVAL) {
                 fetchDatabase({ silent: true });
             }
-        }, 30000);
-        // Saat pengguna kembali ke tab, cek data terbaru tanpa menunggu interval berikutnya.
+        }, DB_BACKGROUND_INTERVAL);
+
+        // Saat kembali ke tab, hanya sync jika data cukup lama; tidak langsung request setiap focus.
         const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
+            if (document.visibilityState !== 'visible' || navigator.onLine === false)
+                return;
+            const age = Date.now() - lastSuccessfulSyncRef.current;
+            if (!lastSuccessfulSyncRef.current || age >= DB_VISIBILITY_MIN_AGE) {
                 fetchDatabase({ silent: true });
             }
         };
+
+        const handleOnline = () => {
+            retryCountRef.current = 0;
+            fetchDatabase({ silent: true, force: true });
+        };
+
         document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('online', handleOnline);
         return () => {
             clearInterval(timer);
             clearTimeout(initialSyncTimer);
             clearInterval(backgroundSyncTimer);
+            clearRetryTimer();
             document.removeEventListener('visibilitychange', handleVisibilityChange);
-            if (syncAbortRef.current) {
+            window.removeEventListener('online', handleOnline);
+            if (syncAbortRef.current)
                 syncAbortRef.current.abort();
+            if (dbChannelRef.current) {
+                try { dbChannelRef.current.close(); } catch (_) {}
+                dbChannelRef.current = null;
             }
         };
     }, []);
@@ -1235,7 +1390,8 @@ function App() {
         const payload = {
             action: "create", id: newTransactionId, borrowerName: borrowerNameSnapshot, nim: borrowerNimSnapshot, purpose: finalPurpose,
             borrowDate: borrowForm.borrowDate, borrowTime: borrowForm.borrowTime, returnDateEst: borrowForm.returnDateEst, returnTimeEst: borrowForm.returnTimeEst,
-            approvalFileName: borrowForm.approvalFileName, fileBase64: borrowForm.fileBase64, mimeType: borrowForm.mimeType, items: alatLengkap
+            approvalFileName: borrowForm.approvalFileName, fileBase64: borrowForm.fileBase64, mimeType: borrowForm.mimeType, items: alatLengkap,
+            whatsapp: borrowerWhatsapp
         };
         try {
             const newTransaction = { ...payload, whatsapp: borrowerWhatsapp, status: 'active', borrowDateFormatted: new Date(borrowForm.borrowDate).toLocaleDateString('id-ID') };
@@ -1251,37 +1407,18 @@ function App() {
                 fileInputRef.current.value = "";
             setActiveTab('transactions');
             showNotification('Memproses peminjaman...');
-            await fetch(GOOGLE_SCRIPT_URL, {
+            await fetch(MASTER_DATA_URL, {
                 method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify(payload)
             });
-            // Nomor WhatsApp disimpan pada sheet KontakWA di Spreadsheet yang sama,
-            // terpisah dari transaksi lama agar struktur sheet transaksi tidak berubah.
+            // Nomor WhatsApp dikirim bersama transaksi ke MASTER_DATA_URL.
+            // Apps Script menyimpannya otomatis ke sheet KontakWA tanpa menambah kolom pada sheet Data.
             if (borrowerWhatsapp) {
                 // Nomor langsung tersedia pada sesi saat ini tetapi tetap tidak dirender untuk pengguna umum.
                 setWhatsappDirectory(prev => ({
                     ...prev,
                     [newTransactionId]: borrowerWhatsapp
                 }));
-            }
-            if (borrowerWhatsapp && MASTER_DATA_URL && !MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE')) {
-                try {
-                    await fetch(MASTER_DATA_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({
-                            action: 'saveWhatsApp',
-                            transactionId: newTransactionId,
-                            borrowerName: borrowerNameSnapshot,
-                            nim: borrowerNimSnapshot,
-                            whatsapp: borrowerWhatsapp
-                        })
-                    });
-                }
-                catch (waError) {
-                    console.error('Sinkronisasi WhatsApp gagal, transaksi utama tetap tersimpan:', waError);
-                }
             }
             // Setelah penulisan, ambil kembali data resmi dari Spreadsheet.
             refreshDatabaseAfterWrite();
@@ -1311,7 +1448,7 @@ function App() {
             setInventory(calculateInventory(newTransactions, baseInventory));
             showNotification('Mensinkronisasi pengembalian ke sistem...');
             try {
-                await fetch(GOOGLE_SCRIPT_URL, {
+                await fetch(MASTER_DATA_URL, {
                     method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: "updateStatus", id: transactionId, status: newStatusRecord })
                 });
@@ -1329,7 +1466,7 @@ function App() {
             setInventory(calculateInventory(newTransactions, baseInventory));
             showNotification('Menghapus data dari server...');
             try {
-                await fetch(GOOGLE_SCRIPT_URL, {
+                await fetch(MASTER_DATA_URL, {
                     method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: "delete", id: transactionId })
                 });
@@ -1957,21 +2094,53 @@ function App() {
                     });
                 });
 
-                const reportTools = Object.values(reportItemFrequency)
+                const allMeasuredTools = Object.values(reportItemFrequency)
                     .map(item => ({
                         ...item,
                         hours: Math.round(item.totalHours * 10) / 10,
                         avgHours: item.count === 0 ? 0 : Math.round((item.totalHours / item.count) * 10) / 10
-                    }))
-                    .sort((a, b) => b.count - a.count);
+                    }));
 
-                const durationRanking = [...reportTools].sort((a, b) => b.hours - a.hours);
+                // Report strategis hanya menggunakan ALAT UTAMA. Seluruh master alat utama
+                // tetap dimasukkan ke tabel (termasuk alat dengan 0 penggunaan pada periode ini).
+                const mainToolMap = new Map();
+                inventory
+                    .filter(inv => mainCategories.includes(inv.category))
+                    .forEach(inv => {
+                        const measured = allMeasuredTools.find(item => item.code === inv.id);
+                        mainToolMap.set(inv.id, measured || {
+                            code: inv.id,
+                            name: inv.name,
+                            category: inv.category,
+                            count: 0,
+                            totalHours: 0,
+                            transactionCount: 0,
+                            hours: 0,
+                            avgHours: 0
+                        });
+                    });
+
+                // Fallback untuk data historis alat utama yang tidak lagi ada di master inventaris.
+                allMeasuredTools.forEach(item => {
+                    const isMainCategory = mainCategories.includes(item.category);
+                    const isMainPrefix = /^(TS|DT|AL|G|DN|F)-/i.test(item.code || '');
+                    if ((isMainCategory || isMainPrefix) && !mainToolMap.has(item.code)) {
+                        mainToolMap.set(item.code, item);
+                    }
+                });
+
+                const reportTools = Array.from(mainToolMap.values())
+                    .sort((a, b) => b.count - a.count || b.hours - a.hours || String(a.code).localeCompare(String(b.code)));
+
+                const usedMainTools = reportTools.filter(item => item.count > 0 || item.hours > 0);
+                const durationRanking = [...usedMainTools].sort((a, b) => b.hours - a.hours || b.count - a.count);
+                const frequencyRanking = [...usedMainTools].sort((a, b) => b.count - a.count || b.hours - a.hours);
                 const totalToolUses = reportTools.reduce((sum, item) => sum + item.count, 0);
                 const totalUsageHours = reportTools.reduce((sum, item) => sum + item.hours, 0);
                 const avgUsageHours = totalToolUses === 0 ? 0 : totalUsageHours / totalToolUses;
-                const topTool = reportTools[0] || null;
+                const topTool = frequencyRanking[0] || null;
                 const topDurationTool = durationRanking[0] || null;
-                const top3Uses = reportTools.slice(0, 3).reduce((sum, item) => sum + item.count, 0);
+                const top3Uses = frequencyRanking.slice(0, 3).reduce((sum, item) => sum + item.count, 0);
                 const top3Share = totalToolUses === 0 ? 0 : Math.round((top3Uses / totalToolUses) * 100);
 
                 const reportCategoryMap = {};
@@ -2182,8 +2351,8 @@ function App() {
                 const cardGap = 4;
                 const cardW = (contentWidth - (cardGap * 3)) / 4;
                 drawMetricCard(marginX, 44, cardW, 'Total Peminjaman', reportTransactions.length, 'Transaksi pada periode laporan');
-                drawMetricCard(marginX + cardW + cardGap, 44, cardW, 'Frekuensi Alat', totalToolUses, 'Akumulasi unit-pemakaian');
-                drawMetricCard(marginX + ((cardW + cardGap) * 2), 44, cardW, 'Durasi Penggunaan', `${Math.round(totalUsageHours).toLocaleString('id-ID')} jam`, 'Akumulasi seluruh alat');
+                drawMetricCard(marginX + cardW + cardGap, 44, cardW, 'Frekuensi Alat Utama', totalToolUses, 'Akumulasi unit-pemakaian alat utama');
+                drawMetricCard(marginX + ((cardW + cardGap) * 2), 44, cardW, 'Durasi Alat Utama', `${Math.round(totalUsageHours).toLocaleString('id-ID')} jam`, 'Akumulasi jam penggunaan alat utama');
                 drawMetricCard(marginX + ((cardW + cardGap) * 3), 44, cardW, 'Rata-rata Durasi', `${avgUsageHours.toFixed(1)} jam`, 'Per unit-pemakaian');
 
                 let y = addSectionTitle('Ringkasan Eksekutif', 78);
@@ -2194,8 +2363,8 @@ function App() {
                 doc.text(executiveLines, marginX + 2, y);
                 y += (executiveLines.length * 4.4) + 6;
 
-                y = drawHorizontalBarChart(reportTools, y, {
-                    title: 'Grafik Frekuensi Penggunaan Instrumen',
+                y = drawHorizontalBarChart(frequencyRanking, y, {
+                    title: 'Grafik Frekuensi Penggunaan Instrumen Utama',
                     valueKey: 'count',
                     valueSuffix: 'x',
                     maxItems: 8,
@@ -2213,7 +2382,7 @@ function App() {
                 addHeader('ANALISIS INTENSITAS PEMANFAATAN INSTRUMEN', `Periode: ${periodLabel}`);
                 y = 42;
                 y = drawHorizontalBarChart(durationRanking, y, {
-                    title: 'Grafik Akumulasi Durasi Penggunaan',
+                    title: 'Grafik Akumulasi Durasi Instrumen Utama',
                     valueKey: 'hours',
                     valueSuffix: ' jam',
                     maxItems: 8,
@@ -2243,10 +2412,10 @@ function App() {
                 // HALAMAN 3 - DATA RINCI
                 // ==============================
                 doc.addPage();
-                addHeader('DATA RINCI PENGGUNAAN ALAT', `Periode: ${periodLabel}`);
+                addHeader('DATA RINCI PENGGUNAAN ALAT UTAMA', `Periode: ${periodLabel}`);
                 doc.setFontSize(8);
                 doc.setTextColor(100, 116, 139);
-                doc.text('Data diurutkan berdasarkan frekuensi penggunaan tertinggi.', marginX, 39);
+                doc.text('Seluruh alat utama ditampilkan; alat pendukung tidak dimasukkan dalam analisis strategis.', marginX, 39);
 
                 const toolRows = reportTools.map((item, idx) => [
                     idx + 1,
@@ -2294,7 +2463,8 @@ function App() {
                     'Frekuensi penggunaan dihitung dari jumlah unit alat yang tercatat pada transaksi peminjaman dalam periode terpilih.',
                     'Durasi transaksi selesai dihitung dari waktu peminjaman hingga waktu pengembalian aktual yang tercatat pada status transaksi.',
                     'Untuk transaksi yang masih aktif, durasi mengikuti estimasi pengembalian; apabila estimasi telah terlewati, durasi dihitung hingga waktu laporan dibuat.',
-                    'Seluruh data laporan bersumber dari data transaksi dan inventaris yang telah disinkronkan dari Google Spreadsheet pada aplikasi.'
+                    'Seluruh data laporan bersumber dari data transaksi dan inventaris yang telah disinkronkan dari Google Spreadsheet pada aplikasi.',
+                    'Grafik dan tabel analisis strategis hanya memuat alat utama; Safety dan Aksesoris tidak dimasukkan.'
                 ];
                 methodology.forEach((line, idx) => {
                     const wrapped = doc.splitTextToSize(`${idx + 1}. ${line}`, contentWidth - 5);
@@ -3162,11 +3332,34 @@ function App() {
             const dateB = parseTargetDate(b.borrowDate, b.borrowTime).getTime();
             return dateB - dateA;
         });
+        const archiveYears = [...new Set(sortedTx.map(trx => {
+            const d = parseRealDate(trx.borrowDate);
+            return Number.isNaN(d.getTime()) ? null : d.getFullYear();
+        }).filter(Boolean))].sort((a, b) => b - a);
+        const archiveMonths = [
+            { value: '1', label: 'Januari' }, { value: '2', label: 'Februari' },
+            { value: '3', label: 'Maret' }, { value: '4', label: 'April' },
+            { value: '5', label: 'Mei' }, { value: '6', label: 'Juni' },
+            { value: '7', label: 'Juli' }, { value: '8', label: 'Agustus' },
+            { value: '9', label: 'September' }, { value: '10', label: 'Oktober' },
+            { value: '11', label: 'November' }, { value: '12', label: 'Desember' }
+        ];
         const filteredTx = sortedTx.filter(trx => {
-            if (txFilter === 'Semua')
-                return true;
-            return getTxCategory(trx) === txFilter;
+            if (txFilter !== 'Semua' && getTxCategory(trx) !== txFilter) return false;
+            const d = parseRealDate(trx.borrowDate);
+            if (Number.isNaN(d.getTime())) return txMonth === 'Semua' && txYear === 'Semua';
+            if (txYear !== 'Semua' && d.getFullYear() !== Number(txYear)) return false;
+            if (txMonth !== 'Semua' && (d.getMonth() + 1) !== Number(txMonth)) return false;
+            return true;
         });
+        const archivePeriodLabel = (() => {
+            const monthLabel = txMonth === 'Semua' ? 'Semua Bulan' : (archiveMonths.find(m => m.value === String(txMonth))?.label || 'Bulan');
+            const yearLabel = txYear === 'Semua' ? 'Semua Tahun' : String(txYear);
+            if (txMonth === 'Semua' && txYear === 'Semua') return 'Keseluruhan Waktu';
+            if (txMonth === 'Semua') return `Tahun ${yearLabel}`;
+            if (txYear === 'Semua') return `${monthLabel} - Semua Tahun`;
+            return `${monthLabel} ${yearLabel}`;
+        })();
         const displayedTx = txLimit === 'Semua' ? filteredTx : filteredTx.slice(0, txLimit);
         // --- LAPORAN PDF OPERASIONAL PEMINJAMAN & PENGGUNAAN ALAT ---
         // Report ini hanya membaca data transaksi yang sudah tersedia pada aplikasi.
@@ -3291,10 +3484,12 @@ function App() {
                             nim: cleanText(trx.nim),
                             transactions: 0,
                             units: 0,
+                            hours: 0,
                             late: 0
                         };
                     }
                     borrowerMap[borrowerKey].transactions += 1;
+                    borrowerMap[borrowerKey].hours += status.durationMs / 3600000;
                     if (status.key === 'activeLate' || status.key === 'completedLate') borrowerMap[borrowerKey].late += 1;
 
                     const itemLines = [];
@@ -3337,24 +3532,37 @@ function App() {
                 const lateTotal = statusCounts.activeLate + statusCounts.completedLate;
                 const completedTotal = statusCounts.completedOnTime + statusCounts.completedLate;
                 const lateRate = filteredTx.length ? Math.round((lateTotal / filteredTx.length) * 100) : 0;
+                const onTimeCompletedRate = completedTotal ? Math.round((statusCounts.completedOnTime / completedTotal) * 100) : 0;
+                const lateCompletedRate = completedTotal ? 100 - onTimeCompletedRate : 0;
+                const activeTotal = statusCounts.active + statusCounts.activeLate;
+                const activeLateRate = activeTotal ? Math.round((statusCounts.activeLate / activeTotal) * 100) : 0;
+                const complianceLabel = completedTotal === 0 ? 'Belum Dinilai'
+                    : onTimeCompletedRate >= 90 ? 'Sangat Baik'
+                    : onTimeCompletedRate >= 80 ? 'Baik'
+                    : onTimeCompletedRate >= 70 ? 'Cukup'
+                    : 'Perlu Perbaikan';
                 const avgTransactionHours = filteredTx.length ? totalTransactionHours / filteredTx.length : 0;
 
                 const purposeData = Object.entries(purposeMap)
                     .map(([name, count]) => ({ name, count }))
                     .sort((a, b) => b.count - a.count);
                 const borrowerData = Object.values(borrowerMap)
-                    .sort((a, b) => b.transactions - a.transactions || b.units - a.units);
-                const allTools = Object.values(itemMap)
                     .map(item => ({ ...item, hours: Math.round(item.hours * 10) / 10 }))
+                    .sort((a, b) => b.transactions - a.transactions || b.hours - a.hours || b.units - a.units);
+                const borrowerDurationData = [...borrowerData].sort((a, b) => b.hours - a.hours || b.transactions - a.transactions);
+                const allTools = Object.values(itemMap)
+                    .map(item => ({ ...item, hours: Math.round(item.hours * 10) / 10, avgHours: item.count ? Math.round((item.hours / item.count) * 10) / 10 : 0 }))
                     .sort((a, b) => b.count - a.count);
                 const mainTools = allTools.filter(item => mainCategoriesReport.includes(item.category));
-                const strategicTools = (mainTools.length ? mainTools : allTools).slice(0, 8);
+                const strategicTools = [...mainTools].sort((a, b) => b.count - a.count || b.hours - a.hours);
+                const mainToolsByDuration = [...mainTools].sort((a, b) => b.hours - a.hours || b.count - a.count);
 
                 const borrowDates = detailedRows.map(r => parseTargetDate(filteredTx[r.no - 1].borrowDate, filteredTx[r.no - 1].borrowTime)).filter(d => !Number.isNaN(d.getTime())).sort((a, b) => a - b);
                 const periodText = borrowDates.length
                     ? `${formatPdfDate(borrowDates[0])} s.d. ${formatPdfDate(borrowDates[borrowDates.length - 1])}`
                     : 'Tidak tersedia';
                 const filterLabel = txFilter === 'Semua' ? 'Semua Status' : txFilter;
+                const fullFilterLabel = `${filterLabel} | ${archivePeriodLabel}`;
                 const reportCode = `LGT-${generatedAt.getFullYear()}${String(generatedAt.getMonth() + 1).padStart(2, '0')}${String(generatedAt.getDate()).padStart(2, '0')}-${String(generatedAt.getHours()).padStart(2, '0')}${String(generatedAt.getMinutes()).padStart(2, '0')}`;
 
                 const addHeader = (title, subtitle = '') => {
@@ -3481,17 +3689,55 @@ function App() {
                     });
                     return legendY + 7;
                 };
+                const complianceChart = (y) => {
+                    const pw = doc.internal.pageSize.getWidth();
+                    const contentW = pw - marginX * 2;
+                    y = sectionTitle('Penilaian Kepatuhan Pengembalian', y, contentW);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(7.2);
+                    doc.setTextColor(71, 85, 105);
+                    if (!completedTotal) {
+                        doc.text('Belum terdapat transaksi selesai pada periode/filter ini sehingga persentase ketepatan waktu belum dapat dinilai.', marginX + 2, y + 2);
+                        return y + 12;
+                    }
+                    const barY = y + 3;
+                    const greenW = contentW * (onTimeCompletedRate / 100);
+                    doc.setFillColor(5, 150, 105);
+                    if (greenW > 0) doc.rect(marginX, barY, greenW, 8, 'F');
+                    doc.setFillColor(234, 88, 12);
+                    if (greenW < contentW) doc.rect(marginX + greenW, barY, contentW - greenW, 8, 'F');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(8);
+                    doc.setTextColor(5, 150, 105);
+                    doc.text(`TEPAT WAKTU ${onTimeCompletedRate}% (${statusCounts.completedOnTime})`, marginX, barY + 14);
+                    doc.setTextColor(194, 65, 12);
+                    doc.text(`TERLAMBAT ${lateCompletedRate}% (${statusCounts.completedLate})`, pw - marginX, barY + 14, { align: 'right' });
+                    doc.setTextColor(51, 65, 85);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(7.2);
+                    doc.text(`Penilaian kepatuhan: ${complianceLabel} | Basis penilaian: ${completedTotal} transaksi yang sudah selesai.`, marginX, barY + 20);
+                    if (statusCounts.activeLate > 0) {
+                        doc.setTextColor(185, 28, 28);
+                        doc.text(`Catatan operasional: ${statusCounts.activeLate} transaksi aktif masih melewati tenggat (${activeLateRate}% dari transaksi aktif).`, marginX, barY + 25);
+                    }
+                    return barY + 31;
+                };
 
                 const dominantPurpose = purposeData[0] || null;
                 const topBorrower = borrowerData[0] || null;
                 const topTool = strategicTools[0] || null;
+                const topDurationTool = mainToolsByDuration[0] || null;
+                const topBorrowerDuration = borrowerDurationData[0] || null;
                 const analysisParts = [];
                 analysisParts.push(`Pada periode ${periodText}, tercatat ${filteredTx.length} transaksi yang melibatkan ${uniqueBorrowers} peminjam dan ${totalUnitUsage} unit-pemakaian alat.`);
                 if (dominantPurpose) analysisParts.push(`Kebutuhan ${dominantPurpose.name} merupakan aktivitas paling dominan dengan ${dominantPurpose.count} transaksi.`);
                 if (topTool) analysisParts.push(`Instrumen utama dengan frekuensi pemakaian tertinggi adalah ${topTool.name} (${topTool.code}) sebanyak ${topTool.count} unit-pemakaian.`);
+                if (topDurationTool) analysisParts.push(`Durasi penggunaan alat utama tertinggi tercatat pada ${topDurationTool.name} (${topDurationTool.code}) sebesar ${topDurationTool.hours.toLocaleString('id-ID')} jam.`);
                 if (lateTotal > 0) analysisParts.push(`Terdapat ${lateTotal} transaksi berstatus terlambat (${lateRate}% dari seluruh transaksi pada filter ini), terdiri atas ${statusCounts.activeLate} transaksi yang masih aktif melewati tenggat dan ${statusCounts.completedLate} transaksi yang selesai setelah tenggat.`);
                 else analysisParts.push('Tidak terdapat transaksi terlambat pada data yang masuk dalam kriteria laporan.');
+                if (completedTotal > 0) analysisParts.push(`Dari ${completedTotal} transaksi yang sudah selesai, ${onTimeCompletedRate}% dikembalikan tepat waktu dan ${lateCompletedRate}% dikembalikan terlambat; penilaian kepatuhan: ${complianceLabel}.`);
                 if (topBorrower) analysisParts.push(`${topBorrower.name} tercatat sebagai peminjam dengan aktivitas tertinggi, yaitu ${topBorrower.transactions} transaksi dan ${topBorrower.units} unit alat.`);
+                if (topBorrowerDuration) analysisParts.push(`Akumulasi durasi peminjaman tertinggi tercatat pada ${topBorrowerDuration.name} sebesar ${topBorrowerDuration.hours.toLocaleString('id-ID')} jam.`);
                 const analysisText = analysisParts.join(' ');
 
                 // HALAMAN 1 - RINGKASAN EKSEKUTIF
@@ -3499,7 +3745,7 @@ function App() {
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(7.5);
                 doc.setTextColor(100, 116, 139);
-                doc.text(`Periode data: ${periodText} | Filter: ${filterLabel} | Dicetak: ${formatDateTime(generatedAt)}`, marginX, 38);
+                doc.text(`Periode data: ${periodText} | Filter: ${fullFilterLabel} | Dicetak: ${formatDateTime(generatedAt)}`, marginX, 38);
                 doc.setTextColor(220, 38, 38);
                 doc.setFont('helvetica', 'bold');
                 doc.text('DOKUMEN INTERNAL - MODE ADMIN', doc.internal.pageSize.getWidth() - marginX, 38, { align: 'right' });
@@ -3508,11 +3754,12 @@ function App() {
                 const gap = 3.5;
                 const cardW = (contentW - gap * 3) / 4;
                 metricCard(marginX, 44, cardW, 'Total Transaksi', filteredTx.length, `${uniqueBorrowers} peminjam unik`, [79, 70, 229]);
-                metricCard(marginX + cardW + gap, 44, cardW, 'Unit Digunakan', totalUnitUsage, 'Akumulasi unit-pemakaian', [14, 116, 144]);
-                metricCard(marginX + (cardW + gap) * 2, 44, cardW, 'Aktif', statusCounts.active + statusCounts.activeLate, `${statusCounts.activeLate} melewati tenggat`, [37, 99, 235]);
-                metricCard(marginX + (cardW + gap) * 3, 44, cardW, 'Terlambat', `${lateRate}%`, `${lateTotal} transaksi`, [220, 38, 38]);
+                metricCard(marginX + cardW + gap, 44, cardW, 'Tepat Waktu', `${onTimeCompletedRate}%`, `${statusCounts.completedOnTime}/${completedTotal || 0} transaksi selesai`, [5, 150, 105]);
+                metricCard(marginX + (cardW + gap) * 2, 44, cardW, 'Terlambat Selesai', `${lateCompletedRate}%`, `${statusCounts.completedLate}/${completedTotal || 0} transaksi selesai`, [234, 88, 12]);
+                metricCard(marginX + (cardW + gap) * 3, 44, cardW, 'Aktif Terlambat', statusCounts.activeLate, `${activeLateRate}% dari transaksi aktif`, [220, 38, 38]);
 
                 let y = statusChart(79);
+                y = complianceChart(y + 1);
                 y = sectionTitle('Analisis Eksekutif', y + 2, contentW);
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8.4);
@@ -3535,15 +3782,22 @@ function App() {
                     y += lines.length * 4.1 + 2;
                 });
 
-                // HALAMAN 2 - GRAFIK
+                // HALAMAN 2 - GRAFIK ALAT UTAMA
                 doc.addPage('a4', 'portrait');
-                addHeader('ANALISIS POLA PEMINJAMAN', `Filter: ${filterLabel}`);
+                addHeader('ANALISIS PEMANFAATAN ALAT UTAMA', `Filter: ${fullFilterLabel}`);
                 y = 42;
                 y = barChart(purposeData, y, 'Grafik Jenis Kegiatan Peminjaman', 'count', ' trx', 5, [5, 150, 105]);
-                y = barChart(strategicTools, y + 2, mainTools.length ? 'Grafik Alat Utama Paling Sering Digunakan' : 'Grafik Alat Paling Sering Digunakan', 'count', 'x', 8, [79, 70, 229]);
-                const borrowerChartData = borrowerData.slice(0, 7).map(b => ({ name: `${b.name} (${b.nim})`, count: b.transactions }));
-                y = barChart(borrowerChartData, y + 2, 'Grafik Peminjam dengan Aktivitas Tertinggi', 'count', ' trx', 7, [14, 116, 144]);
+                y = barChart(strategicTools, y + 2, 'Grafik Frekuensi Alat Utama', 'count', 'x', 8, [79, 70, 229]);
+                y = barChart(mainToolsByDuration, y + 2, 'Grafik Durasi Penggunaan Alat Utama', 'hours', ' jam', 8, [124, 58, 237]);
 
+                // HALAMAN 3 - GRAFIK PEMINJAM (frekuensi + durasi)
+                doc.addPage('a4', 'portrait');
+                addHeader('ANALISIS PEMINJAM', `Filter: ${fullFilterLabel}`);
+                y = 42;
+                const borrowerChartData = borrowerData.slice(0, 8).map(b => ({ name: `${b.name} (${b.nim})`, count: b.transactions }));
+                const borrowerDurationChartData = borrowerDurationData.slice(0, 8).map(b => ({ name: `${b.name} (${b.nim})`, hours: b.hours }));
+                y = barChart(borrowerChartData, y, 'Grafik Frekuensi Peminjaman per Peminjam', 'count', ' trx', 8, [14, 116, 144]);
+                y = barChart(borrowerDurationChartData, y + 2, 'Grafik Akumulasi Durasi Peminjaman per Peminjam', 'hours', ' jam', 8, [2, 132, 199]);
                 if (y < 250) {
                     y = sectionTitle('Indikator Penggunaan', y + 2, contentW);
                     doc.setFont('helvetica', 'normal');
@@ -3552,14 +3806,52 @@ function App() {
                     const indicatorLines = [
                         `Rata-rata durasi transaksi berjalan/selesai: ${avgTransactionHours.toFixed(1)} jam per transaksi.`,
                         `Total keterlambatan terakumulasi: ${formatDurationCompact(totalLateMinutes * 60000)} pada seluruh transaksi terlambat.`,
-                        `Transaksi selesai: ${completedTotal}; masih aktif: ${statusCounts.active + statusCounts.activeLate}.`
+                        `Kepatuhan pengembalian selesai: tepat waktu ${onTimeCompletedRate}% vs terlambat ${lateCompletedRate}% (${complianceLabel}).`
                     ];
                     indicatorLines.forEach((line, idx) => doc.text(`${idx + 1}. ${line}`, marginX + 2, y + idx * 5));
                 }
 
-                // HALAMAN 3+ - DATA RINCI TRANSAKSI DALAM LANDSCAPE
+                // HALAMAN 4 - TABEL RINGKAS ALAT UTAMA & PEMINJAM DENGAN DURASI
                 doc.addPage('a4', 'landscape');
-                addHeader('DATA RINCI TRANSAKSI PEMINJAMAN', `${filteredTx.length} transaksi | ${filterLabel}`);
+                addHeader('RINGKASAN DURASI ALAT UTAMA & PEMINJAM', `Filter: ${fullFilterLabel}`);
+                const mainToolSummaryRows = mainToolsByDuration.map((item, idx) => [
+                    idx + 1, item.code, item.name, item.category, item.count,
+                    `${item.hours.toLocaleString('id-ID')} jam`, `${item.avgHours.toLocaleString('id-ID')} jam`
+                ]);
+                doc.autoTable({
+                    startY: 39,
+                    head: [['No', 'Kode', 'Alat Utama', 'Kategori', 'Frekuensi', 'Total Durasi', 'Rata-rata/Unit']],
+                    body: mainToolSummaryRows,
+                    theme: 'grid', margin: { left: 9, right: 9 },
+                    headStyles: { fillColor: [55, 48, 163], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
+                    styles: { fontSize: 6.7, cellPadding: 1.8, textColor: [51, 65, 85] },
+                    alternateRowStyles: { fillColor: [248, 250, 252] }
+                });
+                let summaryY = doc.lastAutoTable.finalY + 8;
+                if (summaryY > 135) {
+                    doc.addPage('a4', 'landscape');
+                    addHeader('RINGKASAN DURASI PEMINJAM', `Filter: ${fullFilterLabel}`);
+                    summaryY = 39;
+                } else {
+                    summaryY = sectionTitle('Ringkasan Peminjam', summaryY, doc.internal.pageSize.getWidth() - marginX * 2);
+                }
+                const borrowerSummaryRows = borrowerDurationData.map((b, idx) => [
+                    idx + 1, b.name, b.nim, b.transactions, b.units,
+                    `${b.hours.toLocaleString('id-ID')} jam`, b.late
+                ]);
+                doc.autoTable({
+                    startY: summaryY,
+                    head: [['No', 'Peminjam', 'Identitas', 'Transaksi', 'Unit', 'Total Durasi', 'Terlambat']],
+                    body: borrowerSummaryRows,
+                    theme: 'grid', margin: { left: 9, right: 9, bottom: 16 },
+                    headStyles: { fillColor: [14, 116, 144], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
+                    styles: { fontSize: 6.6, cellPadding: 1.7, textColor: [51, 65, 85] },
+                    alternateRowStyles: { fillColor: [248, 250, 252] }
+                });
+
+                // HALAMAN 5+ - DATA RINCI TRANSAKSI DALAM LANDSCAPE
+                doc.addPage('a4', 'landscape');
+                addHeader('DATA RINCI TRANSAKSI PEMINJAMAN', `${filteredTx.length} transaksi | ${fullFilterLabel}`);
                 const detailBody = detailedRows.map(r => [
                     r.no,
                     r.id,
@@ -3625,7 +3917,7 @@ function App() {
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8.7);
                 doc.setTextColor(51, 65, 85);
-                const declaration = `Laporan ini merupakan rekap operasional peminjaman dan penggunaan alat Laboratorium Geomatika berdasarkan ${filteredTx.length} transaksi yang tersinkron pada sistem. Status keterlambatan ditentukan dengan membandingkan tenggat pengembalian terhadap waktu pengembalian aktual atau waktu pencetakan laporan untuk transaksi yang masih aktif.`;
+                const declaration = `Laporan ini merupakan rekap operasional peminjaman dan penggunaan alat Laboratorium Geomatika berdasarkan ${filteredTx.length} transaksi pada ${archivePeriodLabel}. Status keterlambatan ditentukan dengan membandingkan tenggat pengembalian terhadap waktu pengembalian aktual atau waktu pencetakan laporan untuk transaksi yang masih aktif. Penilaian persentase tepat waktu dan terlambat menggunakan transaksi yang telah selesai sebagai basis kepatuhan pengembalian.`;
                 const declarationLines = doc.splitTextToSize(declaration, contentW - 5);
                 doc.text(declarationLines, marginX + 2, sy);
                 sy += declarationLines.length * 4.5 + 9;
@@ -3634,11 +3926,14 @@ function App() {
                 doc.autoTable({
                     startY: sy,
                     body: [
-                        ['Periode Data', periodText],
+                        ['Periode Data', `${archivePeriodLabel} | ${periodText}`],
                         ['Kriteria Status', filterLabel],
                         ['Jumlah Transaksi', String(filteredTx.length)],
                         ['Peminjam Unik', String(uniqueBorrowers)],
-                        ['Transaksi Terlambat', `${lateTotal} (${lateRate}%)`],
+                        ['Ketepatan Waktu (selesai)', `${onTimeCompletedRate}% (${statusCounts.completedOnTime} dari ${completedTotal})`],
+                        ['Terlambat (selesai)', `${lateCompletedRate}% (${statusCounts.completedLate} dari ${completedTotal})`],
+                        ['Aktif Melewati Tenggat', `${statusCounts.activeLate} (${activeLateRate}% dari transaksi aktif)`],
+                        ['Penilaian Kepatuhan', complianceLabel],
                         ['Kode Laporan', reportCode]
                     ],
                     theme: 'plain',
@@ -3682,7 +3977,7 @@ function App() {
                     doc.text(`${reportCode} | Halaman ${p} dari ${pageCount}`, pw - 10, ph - 7, { align: 'right' });
                 }
 
-                const fileFilter = String(filterLabel).replace(/[^a-zA-Z0-9_-]+/g, '_');
+                const fileFilter = String(`${filterLabel}_${archivePeriodLabel}`).replace(/[^a-zA-Z0-9_-]+/g, '_');
                 doc.save(`Laporan_Operasional_Peminjaman_Lab_Geomatika_${fileFilter}_${reportCode}.pdf`);
                 showNotification(`Laporan PDF berhasil dibuat (${filteredTx.length} transaksi).`, 'success');
             } catch (error) {
@@ -3693,7 +3988,7 @@ function App() {
         return (React.createElement("div", { className: "space-y-6 animate-fade-in" },
             React.createElement("h2", { className: "text-2xl font-bold text-slate-800 border-b border-slate-300 pb-3" }, "Log Transaksi & Pengembalian Dokumen"),
             React.createElement("div", { className: "flex flex-col md:flex-row justify-between gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200 shadow-sm" },
-                React.createElement("div", { className: "flex items-center gap-3" },
+                React.createElement("div", { className: "flex flex-wrap items-center gap-3" },
                     React.createElement("label", { className: "text-sm font-bold text-slate-700 w-24 md:w-auto" },
                         React.createElement("i", { className: "fas fa-filter mr-1 text-indigo-600" }),
                         " Kriteria Filter:"),
@@ -3701,7 +3996,21 @@ function App() {
                         React.createElement("option", { value: "Semua" }, "Menampilkan Semua Arsip"),
                         React.createElement("option", { value: "Dipinjam" }, "Operasional (Belum Kembali)"),
                         React.createElement("option", { value: "Tepat Waktu" }, "Selesai (Tepat Waktu)"),
-                        React.createElement("option", { value: "Terlambat" }, "Selesai/Operasional (Terdapat Keterlambatan)"))),
+                        React.createElement("option", { value: "Terlambat" }, "Selesai/Operasional (Terdapat Keterlambatan)")),
+                    React.createElement("div", { className: "inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 px-2 py-1.5 rounded-lg" },
+                        React.createElement("i", { className: "fas fa-calendar-alt text-indigo-600" }),
+                        React.createElement("select", { className: "p-1.5 border border-indigo-200 rounded text-xs bg-white font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500", value: txYear, onChange: (e) => setTxYear(e.target.value), title: "Filter tahun peminjaman" },
+                            React.createElement("option", { value: "Semua" }, "Semua Tahun"),
+                            archiveYears.map(year => React.createElement("option", { key: year, value: String(year) }, String(year)))),
+                        React.createElement("select", { className: "p-1.5 border border-indigo-200 rounded text-xs bg-white font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500", value: txMonth, onChange: (e) => setTxMonth(e.target.value), title: "Filter bulan peminjaman" },
+                            React.createElement("option", { value: "Semua" }, "Semua Bulan"),
+                            archiveMonths.map(month => React.createElement("option", { key: month.value, value: month.value }, month.label))),
+                        (txMonth !== 'Semua' || txYear !== 'Semua') && React.createElement("button", {
+                            type: "button",
+                            onClick: () => { setTxMonth('Semua'); setTxYear('Semua'); },
+                            className: "px-2 py-1.5 rounded text-[10px] font-bold text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-100 transition-colors",
+                            title: "Reset periode arsip"
+                        }, React.createElement("i", { className: "fas fa-undo-alt" })))),
                 React.createElement("div", { className: "flex items-center gap-3" },
                     React.createElement("label", { className: "text-sm font-bold text-slate-700 w-24 md:w-auto" },
                         React.createElement("i", { className: "fas fa-list-ol mr-1 text-indigo-600" }),
@@ -3721,6 +4030,9 @@ function App() {
                             React.createElement("i", { className: "fas fa-file-pdf" })),
                         React.createElement("span", null, "Export Laporan PDF"),
                         React.createElement("span", { className: "lab-admin-mini" }, "ADMIN")))),
+            (txMonth !== 'Semua' || txYear !== 'Semua') && React.createElement("div", { className: "-mt-2 flex items-center gap-2 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-2 rounded-lg w-max" },
+                React.createElement("i", { className: "fas fa-calendar-check" }),
+                `Periode arsip: ${archivePeriodLabel} • ${filteredTx.length} transaksi`),
             React.createElement("div", { className: "bg-white rounded-lg border border-slate-300 overflow-hidden shadow-sm" }, displayedTx.length === 0 ? (React.createElement("div", { className: "p-10 text-center text-slate-400" },
                 React.createElement("i", { className: "fas fa-clipboard-check text-5xl mb-4 opacity-30" }),
                 React.createElement("p", { className: "font-medium text-lg" }, "Basis data tidak memuat arsip dengan kriteria tersebut."))) : (React.createElement("div", { className: "overflow-x-auto" },
