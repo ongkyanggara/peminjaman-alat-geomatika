@@ -650,11 +650,14 @@ function App() {
     const latestMasterDataRef = useRef(null);
     const dbChannelRef = useRef(null);
     // --- PENGATURAN LINK DATABASE ---
-    // SATU endpoint MASTER_DATA_URL untuk transaksi, inventaris, jadwal, dan KontakWA.
+    // TIGA Apps Script dipertahankan sesuai konfigurasi pengguna:
+    // 1) Transaksi peminjaman/pengembalian -> GOOGLE_SCRIPT_URL
+    // 2) Kotak saran -> GOOGLE_SCRIPT_INV_FEEDBACK_URL
+    // 3) Inventaris, jadwal, WhatsApp Admin -> MASTER_DATA_URL
+    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPlSeyXWP0ALhXp4VqJ_NUmB433jHqLUn4hButn2UFzHu2J9hOfEeRlj-Zdky0TA_b/exec';
+    const GOOGLE_SCRIPT_INV_FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwGry5HOdHq2v6NmPoOIdDbQYAXAjupfbyeHwRyIK1ymGVJMf2-g0S8CiwjOZm-JF6v/exec';
     const MASTER_DATA_URL = 'https://script.google.com/macros/s/AKfycbxe9k_386yn1wV-mjeOGSyzOOgk1uPic47_MgP8-z41gyv1fEVogLhjZDEekymejovwqA/exec';
     const ACTIVE_INV_URL = MASTER_DATA_URL;
-    // Kotak Saran dipertahankan pada endpoint lama agar struktur fitur tersebut tidak berubah.
-    const GOOGLE_SCRIPT_INV_FEEDBACK_URL = 'https://script.google.com/macros/s/AKfycbwGry5HOdHq2v6NmPoOIdDbQYAXAjupfbyeHwRyIK1ymGVJMf2-g0S8CiwjOZm-JF6v/exec';
     const [borrowForm, setBorrowForm] = useState({
         borrowerName: '', nim: '', whatsapp: '', purpose: '', praktikumCourse: '', praktikumClass: '', praktikumLayanan: '',
         borrowDate: new Date().toISOString().split('T')[0], borrowTime: '',
@@ -1098,9 +1101,9 @@ function App() {
             return false;
         if (syncInProgressRef.current)
             return false;
-        if (!MASTER_DATA_URL || MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE')) {
+        if (!GOOGLE_SCRIPT_URL || !MASTER_DATA_URL || MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE')) {
             if (!silent)
-                showNotification('MASTER_DATA_URL belum dikonfigurasi. Deploy MasterData.gs lalu tempel URL Web App.', 'error');
+                showNotification('Konfigurasi database belum lengkap. Periksa URL transaksi dan MASTER_DATA_URL.', 'error');
             return false;
         }
         if (navigator.onLine === false) {
@@ -1120,40 +1123,77 @@ function App() {
         syncAbortRef.current = controller;
         const timeoutId = setTimeout(() => controller.abort(), DB_REQUEST_TIMEOUT);
         try {
-            // URL dibuat stabil; cache:no-store tetap memastikan sumber data berasal dari server,
-            // namun tidak lagi membuat URL unik setiap request dengan timestamp.
-            const response = await fetch(`${MASTER_DATA_URL}?resource=master`, {
-                method: 'GET',
-                cache: 'no-store',
-                signal: controller.signal
-            });
-            if (!response.ok)
-                throw new Error(`HTTP Master Database ${response.status}`);
+            // TIGA Apps Script tetap dipertahankan. Untuk proses load hanya dua sumber data yang dibutuhkan:
+            // - Transaksi berasal dari GOOGLE_SCRIPT_URL lama (supaya Log Transaksi tetap tampil).
+            // - Inventaris + Jadwal berasal dari MASTER_DATA_URL.
+            const [txResponse, masterResponse] = await Promise.all([
+                fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'GET',
+                    cache: 'no-store',
+                    signal: controller.signal
+                }),
+                fetch(`${MASTER_DATA_URL}?resource=master`, {
+                    method: 'GET',
+                    cache: 'no-store',
+                    signal: controller.signal
+                })
+            ]);
 
-            const rawText = await response.text();
-            if (!rawText)
-                throw new Error('Respons Master Database kosong');
+            if (!txResponse.ok)
+                throw new Error(`HTTP Transaksi ${txResponse.status}`);
+            if (!masterResponse.ok)
+                throw new Error(`HTTP Master Data ${masterResponse.status}`);
 
-            // Jika payload sama, cukup tandai koneksi fresh tanpa render ulang seluruh dashboard.
-            if (lastServerPayloadRef.current === rawText) {
+            const [txRawText, masterRawText] = await Promise.all([
+                txResponse.text(),
+                masterResponse.text()
+            ]);
+            if (!txRawText)
+                throw new Error('Respons transaksi kosong');
+            if (!masterRawText)
+                throw new Error('Respons master data kosong');
+
+            const txRawData = JSON.parse(txRawText);
+            const masterData = JSON.parse(masterRawText);
+            if (txRawData && txRawData.error)
+                throw new Error(txRawData.error);
+            if (masterData && masterData.error)
+                throw new Error(masterData.error);
+            if (masterData && masterData.ok === false)
+                throw new Error(masterData.error || 'Master Data menolak permintaan.');
+
+            const txData = Array.isArray(txRawData)
+                ? txRawData
+                : (Array.isArray(txRawData?.transactions) ? txRawData.transactions : []);
+
+            // Bentuk payload gabungan hanya di sisi browser. Tidak mengubah Apps Script mana pun.
+            const combinedData = {
+                ok: true,
+                transactions: txData,
+                inventory: Array.isArray(masterData?.inventory) ? masterData.inventory : [],
+                schedule: Array.isArray(masterData?.schedule) ? masterData.schedule : []
+            };
+            const combinedRawText = JSON.stringify(combinedData);
+
+            // Jika isi data sama, hindari render ulang seluruh dashboard.
+            if (lastServerPayloadRef.current === combinedRawText) {
                 setIsDatabaseReady(true);
                 lastSuccessfulSyncRef.current = Date.now();
                 retryCountRef.current = 0;
-                saveSessionSnapshot(rawText);
+                saveSessionSnapshot(combinedRawText);
                 return true;
             }
 
-            const masterData = JSON.parse(rawText);
-            applyMasterPayload(masterData, rawText, true);
-            saveSessionSnapshot(rawText);
+            applyMasterPayload(combinedData, combinedRawText, true);
+            saveSessionSnapshot(combinedRawText);
 
-            // Bagikan payload fresh ke tab lain di browser yang sama tanpa request Apps Script tambahan.
+            // Bagikan payload gabungan ke tab lain agar tidak menambah request Apps Script.
             if (dbChannelRef.current) {
                 try {
                     dbChannelRef.current.postMessage({
                         type: 'master-data',
                         sentAt: Date.now(),
-                        rawText
+                        rawText: combinedRawText
                     });
                 } catch (_) {}
             }
@@ -1165,7 +1205,7 @@ function App() {
             else
                 console.error('Gagal sinkronisasi Spreadsheet:', error);
 
-            // Jangan hapus data yang sudah tampil. Retry dilakukan terkontrol di background.
+            // Data yang telah tampil tidak dihapus; retry tetap berjalan terkontrol di background.
             scheduleDatabaseRetry();
             if (!silent && !latestMasterDataRef.current) {
                 showNotification(error.name === 'AbortError'
@@ -1407,18 +1447,35 @@ function App() {
                 fileInputRef.current.value = "";
             setActiveTab('transactions');
             showNotification('Memproses peminjaman...');
-            await fetch(MASTER_DATA_URL, {
+            await fetch(GOOGLE_SCRIPT_URL, {
                 method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 body: JSON.stringify(payload)
             });
-            // Nomor WhatsApp dikirim bersama transaksi ke MASTER_DATA_URL.
-            // Apps Script menyimpannya otomatis ke sheet KontakWA tanpa menambah kolom pada sheet Data.
+            // Nomor WhatsApp tetap dipisahkan ke MASTER_DATA_URL/KontakWA.
             if (borrowerWhatsapp) {
                 // Nomor langsung tersedia pada sesi saat ini tetapi tetap tidak dirender untuk pengguna umum.
                 setWhatsappDirectory(prev => ({
                     ...prev,
                     [newTransactionId]: borrowerWhatsapp
                 }));
+                if (MASTER_DATA_URL && !MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE')) {
+                    try {
+                        await fetch(MASTER_DATA_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify({
+                                action: 'saveWhatsApp',
+                                transactionId: newTransactionId,
+                                borrowerName: borrowerNameSnapshot,
+                                nim: borrowerNimSnapshot,
+                                whatsapp: borrowerWhatsapp
+                            })
+                        });
+                    } catch (waError) {
+                        console.error('Sinkronisasi WhatsApp gagal, transaksi utama tetap tersimpan:', waError);
+                    }
+                }
             }
             // Setelah penulisan, ambil kembali data resmi dari Spreadsheet.
             refreshDatabaseAfterWrite();
@@ -1448,7 +1505,7 @@ function App() {
             setInventory(calculateInventory(newTransactions, baseInventory));
             showNotification('Mensinkronisasi pengembalian ke sistem...');
             try {
-                await fetch(MASTER_DATA_URL, {
+                await fetch(GOOGLE_SCRIPT_URL, {
                     method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: "updateStatus", id: transactionId, status: newStatusRecord })
                 });
@@ -1466,7 +1523,7 @@ function App() {
             setInventory(calculateInventory(newTransactions, baseInventory));
             showNotification('Menghapus data dari server...');
             try {
-                await fetch(MASTER_DATA_URL, {
+                await fetch(GOOGLE_SCRIPT_URL, {
                     method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: "delete", id: transactionId })
                 });
