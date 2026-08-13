@@ -1939,137 +1939,222 @@ function App() {
         });
 
         // --- LAPORAN PDF PENGGUNAAN ALAT ---
-        // Hanya menambahkan fungsi report; struktur dashboard dan sumber data Spreadsheet tetap dipertahankan.
+        // Fokus hanya pada generator laporan PDF; struktur dashboard dan sumber data Spreadsheet tetap dipertahankan.
         const handleGenerateUsageReport = () => {
-            // Laporan penggunaan alat adalah dokumen internal dan hanya dapat dibuat dalam Mode Admin.
             if (!isAdmin) {
                 showNotification('Laporan penggunaan alat hanya dapat diakses melalui Mode Admin.', 'error');
                 return;
             }
+
             try {
                 if (!window.jspdf || !window.jspdf.jsPDF) {
                     showNotification('Modul PDF belum siap. Silakan tunggu beberapa detik lalu coba kembali.', 'error');
                     return;
                 }
-
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF('p', 'mm', 'a4');
-                const pageWidth = doc.internal.pageSize.getWidth();
-                const pageHeight = doc.internal.pageSize.getHeight();
-                const marginX = 15;
-                const contentWidth = pageWidth - (marginX * 2);
-                const reportTransactions = filteredAnalysisTx;
-                const periodLabel = analysisMonth === 'Semua' ? 'Keseluruhan Waktu' : formatMonthYearText(analysisMonth);
-                const generatedAt = new Date();
-
-                if (reportTransactions.length === 0) {
-                    showNotification('Tidak ada data pada periode yang dipilih untuk dibuatkan laporan.', 'error');
+                if (!Array.isArray(inventory) || inventory.length === 0) {
+                    showNotification('Master inventaris belum tersedia. Sinkronkan data inventaris sebelum membuat laporan.', 'error');
                     return;
                 }
 
-                // Statistik instrumen khusus periode laporan.
-                const reportItemFrequency = {};
-                reportTransactions.forEach(trx => {
-                    if (!Array.isArray(trx.items)) return;
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('p', 'mm', 'a4');
+                const generatedAt = new Date();
+                const marginX = 14;
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const contentWidth = pageWidth - (marginX * 2);
+                const reportTransactions = Array.isArray(filteredAnalysisTx) ? filteredAnalysisTx : [];
+                const periodLabel = analysisMonth === 'Semua' ? 'Keseluruhan Waktu' : formatMonthYearText(analysisMonth);
 
+                const pdfText = (value) => String(value == null || value === '' ? '-' : value);
+                const safeName = (value) => pdfText(value).replace(/[^a-zA-Z0-9_-]+/g, '_');
+                const safeNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+                const round1 = (value) => Math.round(safeNumber(value) * 10) / 10;
+                const formatHours = (value) => `${round1(value).toLocaleString('id-ID')} jam`;
+                const formatPercent = (value) => `${Math.round(safeNumber(value))}%`;
+                const formatDateTime = (date) => {
+                    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '-';
+                    const dateText = date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+                    const timeText = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\./g, ':');
+                    return `${dateText} ${timeText} WIB`;
+                };
+
+                const getTransactionDurationHours = (trx) => {
                     const startDate = parseTargetDate(trx.borrowDate, trx.borrowTime);
-                    let durationMs = 0;
+                    if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return 0;
 
+                    let effectiveEnd = null;
                     if (trx.status && trx.status.startsWith('completed|')) {
                         const returnedAt = new Date(trx.status.split('|')[1].replace(' ', 'T'));
-                        durationMs = returnedAt.getTime() - startDate.getTime();
-                    } else {
-                        const estimatedEnd = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
-                        const effectiveEnd = estimatedEnd.getTime() < currentTime.getTime() ? currentTime : estimatedEnd;
-                        durationMs = effectiveEnd.getTime() - startDate.getTime();
+                        if (!Number.isNaN(returnedAt.getTime())) effectiveEnd = returnedAt;
                     }
 
-                    if (!Number.isFinite(durationMs) || durationMs < 0) durationMs = 0;
-                    const durationHours = durationMs / (1000 * 60 * 60);
+                    if (!effectiveEnd) {
+                        const estimatedEnd = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
+                        if (estimatedEnd instanceof Date && !Number.isNaN(estimatedEnd.getTime())) {
+                            effectiveEnd = estimatedEnd.getTime() < currentTime.getTime() ? currentTime : estimatedEnd;
+                        } else {
+                            effectiveEnd = currentTime;
+                        }
+                    }
 
-                    trx.items.forEach(item => {
-                        const code = item.kode || (item.name && item.name.match(/\[(.*?)\]/) ? item.name.match(/\[(.*?)\]/)[1] : '-') || '-';
+                    const durationMs = Math.max(0, effectiveEnd.getTime() - startDate.getTime());
+                    return durationMs / 3600000;
+                };
+
+                // ==========================================================
+                // 1. AGREGASI TRANSAKSI PER ALAT
+                // ==========================================================
+                const measuredByCode = new Map();
+                const measuredByName = new Map();
+
+                reportTransactions.forEach((trx, trxIndex) => {
+                    const durationHours = getTransactionDurationHours(trx);
+                    const transactionId = String(trx.id || `trx-${trxIndex}`);
+
+                    (Array.isArray(trx.items) ? trx.items : []).forEach(item => {
+                        const rawCode = item.kode || item.id || '';
+                        const codeMatch = !rawCode && item.name ? String(item.name).match(/\[(.*?)\]/) : null;
+                        const code = String(rawCode || (codeMatch ? codeMatch[1] : '')).trim();
                         const rawName = item.nama || item.name || 'Instrumen';
-                        const cleanName = String(rawName).replace(/^\[[^\]]+\]\s*/, '');
-                        const qty = parseInt(item.jumlah || item.quantity) || 1;
-                        const invItem = inventory.find(inv => inv.id === code || inv.name === cleanName);
-                        const category = invItem ? invItem.category : 'Lainnya';
+                        const cleanName = String(rawName).replace(/^\[[^\]]+\]\s*/, '').trim();
+                        const qty = Math.max(1, parseInt(item.jumlah || item.quantity || 1) || 1);
+                        const key = code || cleanName.toLowerCase();
 
-                        if (!reportItemFrequency[code]) {
-                            reportItemFrequency[code] = {
-                                code,
-                                name: cleanName,
-                                category,
+                        if (!measuredByCode.has(key)) {
+                            measuredByCode.set(key, {
+                                code: code || '-',
+                                name: cleanName || 'Instrumen',
                                 count: 0,
                                 totalHours: 0,
-                                transactionCount: 0
-                            };
+                                transactionIds: new Set()
+                            });
                         }
 
-                        reportItemFrequency[code].count += qty;
-                        reportItemFrequency[code].totalHours += (durationHours * qty);
-                        reportItemFrequency[code].transactionCount += 1;
+                        const itemStat = measuredByCode.get(key);
+                        itemStat.count += qty;
+                        itemStat.totalHours += durationHours * qty;
+                        itemStat.transactionIds.add(transactionId);
+
+                        const nameKey = cleanName.toLowerCase();
+                        if (nameKey && !measuredByName.has(nameKey)) measuredByName.set(nameKey, itemStat);
                     });
                 });
 
-                const allMeasuredTools = Object.values(reportItemFrequency)
+                // ==========================================================
+                // 2. MASTER INVENTARIS = BASIS TABEL.
+                // Seluruh item master tetap masuk, termasuk yang 0 pemakaian.
+                // ==========================================================
+                const inventoryReportTools = inventory.map((inv, index) => {
+                    const code = String(inv.id || '').trim();
+                    const name = String(inv.name || 'Instrumen').trim();
+                    const measured = measuredByCode.get(code) || measuredByName.get(name.toLowerCase()) || null;
+                    const inventoryQty = Math.max(0, safeNumber(inv.total != null ? inv.total : inv.available));
+                    const currentAvailable = Math.max(0, safeNumber(inv.available));
+                    const count = measured ? safeNumber(measured.count) : 0;
+                    const totalHours = measured ? safeNumber(measured.totalHours) : 0;
+                    const transactionCount = measured ? measured.transactionIds.size : 0;
+
+                    return {
+                        order: index + 1,
+                        code: code || '-',
+                        name,
+                        category: String(inv.category || 'Lainnya'),
+                        inventoryQty,
+                        currentAvailable,
+                        count,
+                        transactionCount,
+                        hours: round1(totalHours),
+                        avgHours: count > 0 ? round1(totalHours / count) : 0,
+                        utilizationStatus: count > 0 ? 'Dipinjam pada periode' : 'Tidak dipinjam pada periode'
+                    };
+                });
+
+                const mainInventoryTools = inventoryReportTools
+                    .filter(item => mainCategories.includes(item.category));
+
+                // Grafik harus memuat SEMUA alat utama, termasuk nilai 0.
+                const mainToolsByFrequency = [...mainInventoryTools]
+                    .sort((a, b) => b.count - a.count || b.hours - a.hours || String(a.code).localeCompare(String(b.code)));
+                const mainToolsByDuration = [...mainInventoryTools]
+                    .sort((a, b) => b.hours - a.hours || b.count - a.count || String(a.code).localeCompare(String(b.code)));
+
+                const allInventoryForTable = [...inventoryReportTools]
+                    .sort((a, b) => String(a.category).localeCompare(String(b.category), 'id') || String(a.code).localeCompare(String(b.code), 'id'));
+
+                const totalInventoryTypes = inventoryReportTools.length;
+                const totalInventoryUnits = inventoryReportTools.reduce((sum, item) => sum + item.inventoryQty, 0);
+                const usedInventoryTypes = inventoryReportTools.filter(item => item.count > 0).length;
+                const unusedInventoryTypes = Math.max(0, totalInventoryTypes - usedInventoryTypes);
+                const inventoryCoverage = totalInventoryTypes ? Math.round((usedInventoryTypes / totalInventoryTypes) * 100) : 0;
+
+                const totalMainTypes = mainInventoryTools.length;
+                const usedMainTypes = mainInventoryTools.filter(item => item.count > 0).length;
+                const unusedMainTypes = Math.max(0, totalMainTypes - usedMainTypes);
+                const mainCoverage = totalMainTypes ? Math.round((usedMainTypes / totalMainTypes) * 100) : 0;
+
+                const totalUnitUsesAll = inventoryReportTools.reduce((sum, item) => sum + item.count, 0);
+                const totalUsageHoursAll = inventoryReportTools.reduce((sum, item) => sum + item.hours, 0);
+                const totalMainUses = mainInventoryTools.reduce((sum, item) => sum + item.count, 0);
+                const totalMainHours = mainInventoryTools.reduce((sum, item) => sum + item.hours, 0);
+                const avgMainUsageHours = totalMainUses ? totalMainHours / totalMainUses : 0;
+
+                const usedMainRanking = mainToolsByFrequency.filter(item => item.count > 0);
+                const usedMainDurationRanking = mainToolsByDuration.filter(item => item.hours > 0);
+                const topMainTool = usedMainRanking[0] || null;
+                const topDurationTool = usedMainDurationRanking[0] || null;
+                const top3Uses = usedMainRanking.slice(0, 3).reduce((sum, item) => sum + item.count, 0);
+                const top3Share = totalMainUses ? Math.round((top3Uses / totalMainUses) * 100) : 0;
+
+                // Distribusi kategori berdasarkan seluruh master inventaris.
+                const categoryMap = {};
+                inventoryReportTools.forEach(item => {
+                    if (!categoryMap[item.category]) {
+                        categoryMap[item.category] = {
+                            name: item.category,
+                            inventoryTypes: 0,
+                            inventoryUnits: 0,
+                            usedTypes: 0,
+                            count: 0,
+                            hours: 0
+                        };
+                    }
+                    const cat = categoryMap[item.category];
+                    cat.inventoryTypes += 1;
+                    cat.inventoryUnits += item.inventoryQty;
+                    cat.count += item.count;
+                    cat.hours += item.hours;
+                    if (item.count > 0) cat.usedTypes += 1;
+                });
+
+                const categoryData = Object.values(categoryMap)
                     .map(item => ({
                         ...item,
-                        hours: Math.round(item.totalHours * 10) / 10,
-                        avgHours: item.count === 0 ? 0 : Math.round((item.totalHours / item.count) * 10) / 10
-                    }));
+                        hours: round1(item.hours),
+                        coverage: item.inventoryTypes ? Math.round((item.usedTypes / item.inventoryTypes) * 100) : 0
+                    }))
+                    .sort((a, b) => b.count - a.count || b.hours - a.hours || a.name.localeCompare(b.name, 'id'));
 
-                // Report strategis hanya menggunakan ALAT UTAMA. Seluruh master alat utama
-                // tetap dimasukkan ke tabel (termasuk alat dengan 0 penggunaan pada periode ini).
-                const mainToolMap = new Map();
-                inventory
-                    .filter(inv => mainCategories.includes(inv.category))
-                    .forEach(inv => {
-                        const measured = allMeasuredTools.find(item => item.code === inv.id);
-                        mainToolMap.set(inv.id, measured || {
-                            code: inv.id,
-                            name: inv.name,
-                            category: inv.category,
-                            count: 0,
-                            totalHours: 0,
-                            transactionCount: 0,
-                            hours: 0,
-                            avgHours: 0
-                        });
-                    });
-
-                // Fallback untuk data historis alat utama yang tidak lagi ada di master inventaris.
-                allMeasuredTools.forEach(item => {
-                    const isMainCategory = mainCategories.includes(item.category);
-                    const isMainPrefix = /^(TS|DT|AL|G|DN|F)-/i.test(item.code || '');
-                    if ((isMainCategory || isMainPrefix) && !mainToolMap.has(item.code)) {
-                        mainToolMap.set(item.code, item);
-                    }
+                // Distribusi tujuan peminjaman.
+                const purposeMap = {};
+                reportTransactions.forEach(trx => {
+                    const rawPurpose = String(trx.purpose || 'Lainnya').trim();
+                    const purpose = /^Praktikum/i.test(rawPurpose)
+                        ? 'Praktikum'
+                        : /^Tugas akhir/i.test(rawPurpose)
+                            ? 'Tugas Akhir'
+                            : /^Penelitian/i.test(rawPurpose)
+                                ? 'Penelitian'
+                                : /^Proyek/i.test(rawPurpose)
+                                    ? 'Proyek'
+                                    : 'Lainnya';
+                    purposeMap[purpose] = (purposeMap[purpose] || 0) + 1;
                 });
-
-                const reportTools = Array.from(mainToolMap.values())
-                    .sort((a, b) => b.count - a.count || b.hours - a.hours || String(a.code).localeCompare(String(b.code)));
-
-                const usedMainTools = reportTools.filter(item => item.count > 0 || item.hours > 0);
-                const durationRanking = [...usedMainTools].sort((a, b) => b.hours - a.hours || b.count - a.count);
-                const frequencyRanking = [...usedMainTools].sort((a, b) => b.count - a.count || b.hours - a.hours);
-                const totalToolUses = reportTools.reduce((sum, item) => sum + item.count, 0);
-                const totalUsageHours = reportTools.reduce((sum, item) => sum + item.hours, 0);
-                const avgUsageHours = totalToolUses === 0 ? 0 : totalUsageHours / totalToolUses;
-                const topTool = frequencyRanking[0] || null;
-                const topDurationTool = durationRanking[0] || null;
-                const top3Uses = frequencyRanking.slice(0, 3).reduce((sum, item) => sum + item.count, 0);
-                const top3Share = totalToolUses === 0 ? 0 : Math.round((top3Uses / totalToolUses) * 100);
-
-                const reportCategoryMap = {};
-                reportTools.forEach(item => {
-                    if (!reportCategoryMap[item.category]) reportCategoryMap[item.category] = 0;
-                    reportCategoryMap[item.category] += item.count;
-                });
-                const reportCategories = Object.entries(reportCategoryMap)
+                const purposeData = Object.entries(purposeMap)
                     .map(([name, count]) => ({ name, count }))
                     .sort((a, b) => b.count - a.count);
+                const dominantPurpose = purposeData[0] || null;
 
+                // Tren transaksi bulanan.
                 const monthlyMap = {};
                 reportTransactions.forEach(trx => {
                     const key = getMonthYear(trx.borrowDate);
@@ -2082,334 +2167,616 @@ function App() {
                     count: monthlyMap[key]
                 }));
 
-                const pdfText = (value) => String(value == null ? '-' : value);
-                const safeName = (value) => pdfText(value).replace(/[^a-zA-Z0-9_-]+/g, '_');
+                const unmatchedHistoricalRecords = Array.from(measuredByCode.values()).filter(measured => {
+                    const codeMatch = inventoryReportTools.some(inv => inv.code === measured.code);
+                    const nameMatch = inventoryReportTools.some(inv => inv.name.toLowerCase() === measured.name.toLowerCase());
+                    return !codeMatch && !nameMatch;
+                });
 
+                // ==========================================================
+                // 3. KOMPONEN VISUAL PDF
+                // ==========================================================
                 const addHeader = (title, subtitle = '') => {
-                    doc.setFillColor(30, 41, 59);
-                    doc.rect(0, 0, pageWidth, 31, 'F');
+                    const pw = doc.internal.pageSize.getWidth();
+                    doc.setFillColor(15, 23, 42);
+                    doc.rect(0, 0, pw, 31, 'F');
                     doc.setFillColor(79, 70, 229);
                     doc.rect(0, 0, 5, 31, 'F');
+
                     doc.setTextColor(255, 255, 255);
                     doc.setFont('helvetica', 'bold');
                     doc.setFontSize(13);
                     doc.text('INSTITUT TEKNOLOGI SUMATERA', marginX, 10);
-                    doc.setFontSize(9);
+
                     doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8.4);
                     doc.text('PROGRAM STUDI TEKNIK GEOMATIKA | LABORATORIUM GEOMATIKA', marginX, 16);
-                    doc.setFontSize(12);
+
                     doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(11.5);
                     doc.text(title, marginX, 24);
+
                     if (subtitle) {
-                        doc.setFontSize(8);
                         doc.setFont('helvetica', 'normal');
-                        doc.text(subtitle, pageWidth - marginX, 24, { align: 'right' });
+                        doc.setFontSize(7.4);
+                        doc.text(subtitle, pw - marginX, 24, { align: 'right' });
                     }
                     doc.setTextColor(15, 23, 42);
                 };
 
-                const addSectionTitle = (title, y) => {
+                const addSectionTitle = (title, y, customMarginX = marginX, customWidth = null) => {
+                    const pw = doc.internal.pageSize.getWidth();
+                    const width = customWidth || (pw - (customMarginX * 2));
                     doc.setFillColor(238, 242, 255);
-                    doc.roundedRect(marginX, y - 4, contentWidth, 9, 1.5, 1.5, 'F');
+                    doc.roundedRect(customMarginX, y - 4, width, 9, 1.5, 1.5, 'F');
                     doc.setTextColor(55, 48, 163);
                     doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(10);
-                    doc.text(title, marginX + 4, y + 1.5);
+                    doc.setFontSize(9.5);
+                    doc.text(title, customMarginX + 4, y + 1.5);
                     doc.setTextColor(15, 23, 42);
                     return y + 10;
                 };
 
-                const drawMetricCard = (x, y, w, label, value, note = '') => {
+                const drawMetricCard = (x, y, w, label, value, note = '', accent = [79, 70, 229]) => {
                     doc.setFillColor(248, 250, 252);
                     doc.setDrawColor(226, 232, 240);
-                    doc.roundedRect(x, y, w, 25, 2, 2, 'FD');
+                    doc.roundedRect(x, y, w, 27, 2, 2, 'FD');
+                    doc.setFillColor(...accent);
+                    doc.roundedRect(x, y, 2.4, 27, 1, 1, 'F');
+
                     doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(7.5);
+                    doc.setFontSize(6.7);
                     doc.setTextColor(100, 116, 139);
-                    doc.text(label.toUpperCase(), x + 4, y + 6);
-                    doc.setFontSize(17);
+                    doc.text(label.toUpperCase(), x + 5, y + 6);
+
+                    doc.setFontSize(15);
                     doc.setTextColor(15, 23, 42);
-                    doc.text(pdfText(value), x + 4, y + 15);
-                    if (note) {
-                        doc.setFont('helvetica', 'normal');
-                        doc.setFontSize(7);
-                        doc.setTextColor(100, 116, 139);
-                        const wrapped = doc.splitTextToSize(note, w - 8);
-                        doc.text(wrapped.slice(0, 2), x + 4, y + 20);
-                    }
+                    doc.text(pdfText(value), x + 5, y + 15);
+
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(6.4);
+                    doc.setTextColor(100, 116, 139);
+                    const lines = doc.splitTextToSize(note, w - 9);
+                    doc.text(lines.slice(0, 2), x + 5, y + 20);
                 };
 
-                const drawHorizontalBarChart = (items, y, options = {}) => {
-                    const {
-                        title = '',
-                        valueKey = 'count',
-                        valueSuffix = '',
-                        maxItems = 8,
-                        height = 72
-                    } = options;
+                const drawStandardBars = (items, y, title, valueKey = 'count', suffix = '', maxItems = 6, barColor = [79, 70, 229]) => {
+                    y = addSectionTitle(title, y);
                     const data = items.slice(0, maxItems);
-                    if (title) y = addSectionTitle(title, y);
-                    if (data.length === 0) {
-                        doc.setFontSize(9);
+                    if (!data.length) {
+                        doc.setFont('helvetica', 'normal');
+                        doc.setFontSize(8);
                         doc.setTextColor(100, 116, 139);
-                        doc.text('Belum ada data.', marginX, y + 4);
-                        return y + 12;
+                        doc.text('Belum ada data pada periode laporan.', marginX + 2, y + 3);
+                        return y + 10;
                     }
-                    const chartX = marginX + 58;
-                    const chartW = contentWidth - 78;
-                    const rowH = Math.min(9, height / data.length);
-                    const maxValue = Math.max(...data.map(item => Number(item[valueKey]) || 0), 1);
-                    data.forEach((item, index) => {
-                        const rowY = y + (index * rowH);
-                        const value = Number(item[valueKey]) || 0;
-                        const label = `${index + 1}. ${item.name || item.label || '-'}`;
-                        doc.setFont('helvetica', index === 0 ? 'bold' : 'normal');
-                        doc.setFontSize(7.3);
+
+                    const maxVal = Math.max(...data.map(item => safeNumber(item[valueKey])), 1);
+                    const labelW = 50;
+                    const chartX = marginX + labelW;
+                    const chartW = contentWidth - labelW - 28;
+
+                    data.forEach((item, idx) => {
+                        const rowY = y + idx * 9;
+                        const value = safeNumber(item[valueKey]);
+                        doc.setFont('helvetica', idx === 0 ? 'bold' : 'normal');
+                        doc.setFontSize(7.1);
                         doc.setTextColor(51, 65, 85);
-                        const clippedLabel = doc.splitTextToSize(label, 52)[0];
-                        doc.text(clippedLabel, marginX, rowY + 4);
+                        const label = doc.splitTextToSize(`${idx + 1}. ${item.name || '-'}`, labelW - 3)[0];
+                        doc.text(label, marginX, rowY + 4);
+
                         doc.setFillColor(241, 245, 249);
                         doc.roundedRect(chartX, rowY + 1, chartW, 4, 1, 1, 'F');
-                        const barW = Math.max(1, (value / maxValue) * chartW);
-                        if (index === 0) doc.setFillColor(79, 70, 229);
-                        else doc.setFillColor(129, 140, 248);
-                        doc.roundedRect(chartX, rowY + 1, barW, 4, 1, 1, 'F');
-                        doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(7.2);
-                        doc.setTextColor(30, 41, 59);
-                        doc.text(`${value.toLocaleString('id-ID')}${valueSuffix}`, pageWidth - marginX, rowY + 4.2, { align: 'right' });
-                    });
-                    return y + (data.length * rowH) + 4;
-                };
 
-                const drawActivityBars = (items, y) => {
-                    y = addSectionTitle('Distribusi Aktivitas Peminjaman', y);
-                    const maxCount = Math.max(...items.map(item => item.count), 1);
-                    items.slice(0, 6).forEach((item, idx) => {
-                        const rowY = y + (idx * 9);
-                        const pct = totalFilteredTx === 0 ? 0 : Math.round((item.count / totalFilteredTx) * 100);
+                        if (value > 0) {
+                            doc.setFillColor(...(idx === 0 ? barColor : barColor.map(v => Math.min(255, v + 42))));
+                            doc.roundedRect(chartX, rowY + 1, Math.max(1, (value / maxVal) * chartW), 4, 1, 1, 'F');
+                        }
+
                         doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(7.5);
-                        doc.setTextColor(51, 65, 85);
-                        doc.text(item.name, marginX, rowY + 4);
-                        doc.setFillColor(241, 245, 249);
-                        doc.roundedRect(marginX + 48, rowY + 1, 105, 4, 1, 1, 'F');
-                        doc.setFillColor(5, 150, 105);
-                        doc.roundedRect(marginX + 48, rowY + 1, Math.max(1, (item.count / maxCount) * 105), 4, 1, 1, 'F');
-                        doc.setFont('helvetica', 'bold');
-                        doc.setTextColor(15, 23, 42);
-                        doc.text(`${item.count} kegiatan (${pct}%)`, pageWidth - marginX, rowY + 4.2, { align: 'right' });
+                        doc.setFontSize(7);
+                        doc.setTextColor(30, 41, 59);
+                        doc.text(`${value.toLocaleString('id-ID')}${suffix}`, pageWidth - marginX, rowY + 4.1, { align: 'right' });
                     });
-                    return y + (Math.min(items.length, 6) * 9) + 3;
+
+                    return y + data.length * 9 + 4;
                 };
 
                 const drawTrendChart = (items, y) => {
                     if (items.length < 2) return y;
-                    y = addSectionTitle('Tren Jumlah Peminjaman per Bulan', y);
+                    y = addSectionTitle('Tren Jumlah Transaksi per Bulan', y);
+
                     const x = marginX + 5;
                     const w = contentWidth - 10;
-                    const h = 42;
+                    const h = 40;
                     const bottom = y + h;
                     const maxV = Math.max(...items.map(item => item.count), 1);
+                    const pointGap = items.length === 1 ? 0 : w / (items.length - 1);
+
                     doc.setDrawColor(203, 213, 225);
                     doc.line(x, bottom, x + w, bottom);
                     doc.line(x, y, x, bottom);
-                    const pointGap = items.length === 1 ? 0 : w / (items.length - 1);
+
                     const pts = items.map((item, i) => ({
                         x: x + (i * pointGap),
                         y: bottom - ((item.count / maxV) * (h - 6)),
                         item
                     }));
+
                     doc.setDrawColor(79, 70, 229);
-                    doc.setLineWidth(0.8);
+                    doc.setLineWidth(0.7);
                     for (let i = 1; i < pts.length; i++) {
                         doc.line(pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y);
                     }
-                    pts.forEach((p, i) => {
+
+                    pts.forEach((point, index) => {
                         doc.setFillColor(79, 70, 229);
-                        doc.circle(p.x, p.y, 1.5, 'F');
-                        doc.setFontSize(6.5);
+                        doc.circle(point.x, point.y, 1.5, 'F');
+
                         doc.setFont('helvetica', 'bold');
+                        doc.setFontSize(6.3);
                         doc.setTextColor(30, 41, 59);
-                        doc.text(String(p.item.count), p.x, p.y - 3, { align: 'center' });
-                        if (i % Math.ceil(items.length / 6) === 0 || i === items.length - 1) {
-                            const shortLabel = p.item.label.replace(/^(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)/, m => m.substring(0, 3));
+                        doc.text(String(point.item.count), point.x, point.y - 3, { align: 'center' });
+
+                        if (index % Math.max(1, Math.ceil(items.length / 6)) === 0 || index === items.length - 1) {
+                            const shortLabel = point.item.label
+                                .replace(/^(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)/, m => m.substring(0, 3));
                             doc.setFont('helvetica', 'normal');
-                            doc.setFontSize(5.8);
+                            doc.setFontSize(5.7);
                             doc.setTextColor(100, 116, 139);
-                            doc.text(shortLabel, p.x, bottom + 4, { align: 'center' });
+                            doc.text(shortLabel, point.x, bottom + 4, { align: 'center' });
                         }
                     });
-                    return bottom + 10;
+
+                    return bottom + 9;
                 };
 
-                const executiveAnalysisParts = [];
-                if (topTool) {
-                    const share = totalToolUses === 0 ? 0 : Math.round((topTool.count / totalToolUses) * 100);
-                    executiveAnalysisParts.push(`Instrumen dengan frekuensi penggunaan tertinggi adalah ${topTool.name} (${topTool.code}) sebanyak ${topTool.count} unit-pemakaian atau sekitar ${share}% dari seluruh penggunaan alat pada periode laporan.`);
+                // Grafik lengkap alat utama, otomatis dipaginasi.
+                const drawAllMainToolChartPages = (items, options) => {
+                    const {
+                        pageTitle,
+                        chartTitle,
+                        valueKey,
+                        suffix,
+                        barColor,
+                        analysisText
+                    } = options;
+
+                    const rowsPerPage = 16;
+                    const data = items.length ? items : [];
+                    const chunks = [];
+                    for (let i = 0; i < data.length; i += rowsPerPage) {
+                        chunks.push(data.slice(i, i + rowsPerPage));
+                    }
+                    if (!chunks.length) chunks.push([]);
+
+                    const overallMax = Math.max(...data.map(item => safeNumber(item[valueKey])), 1);
+
+                    chunks.forEach((chunk, chunkIndex) => {
+                        doc.addPage('a4', 'portrait');
+                        const pageSubtitle = `${periodLabel}${chunks.length > 1 ? ` | Bagian ${chunkIndex + 1}/${chunks.length}` : ''}`;
+                        addHeader(pageTitle, pageSubtitle);
+
+                        let y = 42;
+                        y = addSectionTitle(chartTitle, y);
+
+                        if (!chunk.length) {
+                            doc.setFont('helvetica', 'normal');
+                            doc.setFontSize(8.2);
+                            doc.setTextColor(100, 116, 139);
+                            doc.text('Master inventaris belum memuat alat utama.', marginX + 2, y + 3);
+                            y += 12;
+                        } else {
+                            const labelW = 67;
+                            const chartX = marginX + labelW;
+                            const chartW = contentWidth - labelW - 29;
+                            const rowH = 8.6;
+
+                            chunk.forEach((item, idx) => {
+                                const absoluteIndex = chunkIndex * rowsPerPage + idx;
+                                const rowY = y + idx * rowH;
+                                const value = safeNumber(item[valueKey]);
+
+                                doc.setFont('helvetica', value > 0 ? 'bold' : 'normal');
+                                doc.setFontSize(6.8);
+                                doc.setTextColor(value > 0 ? 51 : 100, value > 0 ? 65 : 116, value > 0 ? 85 : 139);
+                                const label = `${absoluteIndex + 1}. [${item.code}] ${item.name}`;
+                                doc.text(doc.splitTextToSize(label, labelW - 4)[0], marginX, rowY + 4);
+
+                                doc.setFillColor(241, 245, 249);
+                                doc.roundedRect(chartX, rowY + 1, chartW, 4, 1, 1, 'F');
+
+                                if (value > 0) {
+                                    doc.setFillColor(...barColor);
+                                    doc.roundedRect(chartX, rowY + 1, Math.max(1, (value / overallMax) * chartW), 4, 1, 1, 'F');
+                                }
+
+                                doc.setFont('helvetica', 'bold');
+                                doc.setFontSize(6.7);
+                                doc.setTextColor(value > 0 ? 30 : 148, value > 0 ? 41 : 163, value > 0 ? 59 : 184);
+                                doc.text(`${value.toLocaleString('id-ID')}${suffix}`, doc.internal.pageSize.getWidth() - marginX, rowY + 4.1, { align: 'right' });
+                            });
+
+                            y += chunk.length * rowH + 4;
+                        }
+
+                        if (chunkIndex === chunks.length - 1) {
+                            y = addSectionTitle('Interpretasi Grafik', y + 3);
+                            doc.setFont('helvetica', 'normal');
+                            doc.setFontSize(8);
+                            doc.setTextColor(51, 65, 85);
+                            const lines = doc.splitTextToSize(analysisText, contentWidth - 5);
+                            doc.text(lines, marginX + 2, y);
+                        }
+                    });
+                };
+
+                // ==========================================================
+                // 4. NARASI ANALISIS
+                // ==========================================================
+                const executiveParts = [];
+                executiveParts.push(
+                    `Periode ${periodLabel} memuat ${reportTransactions.length} transaksi. Master inventaris yang dianalisis terdiri atas ${totalInventoryTypes} jenis/kode alat dengan total ${totalInventoryUnits.toLocaleString('id-ID')} unit tercatat.`
+                );
+                executiveParts.push(
+                    `${usedInventoryTypes} dari ${totalInventoryTypes} jenis alat (${inventoryCoverage}%) tercatat pernah dipinjam pada periode laporan, sedangkan ${unusedInventoryTypes} jenis alat tidak memiliki transaksi pemakaian pada filter ini.`
+                );
+                executiveParts.push(
+                    `Untuk kelompok alat utama, ${usedMainTypes} dari ${totalMainTypes} jenis/kode alat (${mainCoverage}%) digunakan, dengan akumulasi ${totalMainUses.toLocaleString('id-ID')} unit-pemakaian dan ${formatHours(totalMainHours)}.`
+                );
+                if (topMainTool) {
+                    const share = totalMainUses ? Math.round((topMainTool.count / totalMainUses) * 100) : 0;
+                    executiveParts.push(
+                        `Frekuensi alat utama tertinggi adalah ${topMainTool.name} (${topMainTool.code}) sebanyak ${topMainTool.count} unit-pemakaian atau ${share}% dari penggunaan alat utama.`
+                    );
                 }
                 if (topDurationTool) {
-                    executiveAnalysisParts.push(`Akumulasi waktu penggunaan tertinggi tercatat pada ${topDurationTool.name} sebesar ${topDurationTool.hours.toLocaleString('id-ID')} jam.`);
+                    executiveParts.push(
+                        `Akumulasi durasi tertinggi tercatat pada ${topDurationTool.name} (${topDurationTool.code}) sebesar ${formatHours(topDurationTool.hours)}.`
+                    );
                 }
-                if (dominant) {
-                    executiveAnalysisParts.push(`Aktivitas ${dominant.name} merupakan tujuan peminjaman paling dominan dengan ${dominant.count} kegiatan (${dominant.percent}%).`);
+                if (dominantPurpose) {
+                    const pct = reportTransactions.length ? Math.round((dominantPurpose.count / reportTransactions.length) * 100) : 0;
+                    executiveParts.push(
+                        `Tujuan peminjaman dominan adalah ${dominantPurpose.name} dengan ${dominantPurpose.count} transaksi (${pct}%).`
+                    );
                 }
-                executiveAnalysisParts.push(`Tiga instrumen teratas menyumbang ${top3Share}% dari total frekuensi pemakaian. Nilai ini dapat digunakan sebagai dasar prioritas pengecekan kondisi, kalibrasi, dan kesiapan operasional instrumen yang paling intensif digunakan.`);
-                const executiveAnalysis = executiveAnalysisParts.join(' ');
+                const executiveAnalysis = executiveParts.join(' ');
 
-                // ==============================
-                // HALAMAN 1 - RINGKASAN EKSEKUTIF
-                // ==============================
+                const frequencyAnalysis = totalMainTypes === 0
+                    ? 'Master inventaris tidak memuat kategori alat utama sehingga distribusi frekuensi belum dapat dianalisis.'
+                    : totalMainUses === 0
+                        ? `Seluruh ${totalMainTypes} alat utama ditampilkan pada grafik, namun tidak terdapat pemakaian alat utama pada periode ${periodLabel}. Nilai nol tetap dipertahankan agar laporan mencerminkan kondisi master inventaris secara lengkap.`
+                        : `Grafik memuat seluruh ${totalMainTypes} alat utama dari master inventaris, termasuk ${unusedMainTypes} alat yang tidak dipinjam pada periode ini. ${topMainTool ? `${topMainTool.name} (${topMainTool.code}) menempati frekuensi tertinggi dengan ${topMainTool.count} unit-pemakaian.` : ''} Tiga alat utama teratas menyumbang ${top3Share}% dari total frekuensi penggunaan alat utama.`;
+
+                const durationAnalysis = totalMainTypes === 0
+                    ? 'Master inventaris tidak memuat kategori alat utama sehingga durasi penggunaan belum dapat dianalisis.'
+                    : totalMainHours === 0
+                        ? `Seluruh alat utama tetap dicantumkan dengan durasi 0 jam karena tidak terdapat penggunaan alat utama pada periode ${periodLabel}.`
+                        : `Grafik durasi menggunakan basis seluruh alat utama pada master inventaris. ${topDurationTool ? `${topDurationTool.name} (${topDurationTool.code}) memiliki akumulasi durasi tertinggi sebesar ${formatHours(topDurationTool.hours)}.` : ''} Rata-rata durasi alat utama adalah ${round1(avgMainUsageHours).toLocaleString('id-ID')} jam per unit-pemakaian.`;
+
+                const utilizationRecommendations = [];
+                if (unusedMainTypes > 0) {
+                    utilizationRecommendations.push(
+                        `Tinjau ${unusedMainTypes} alat utama yang tidak memiliki pemakaian pada periode laporan untuk memastikan apakah kondisi tersebut disebabkan oleh kebutuhan kegiatan, jadwal praktikum, status kesiapan alat, atau kebutuhan redistribusi pemanfaatan.`
+                    );
+                }
+                if (topMainTool) {
+                    utilizationRecommendations.push(
+                        `Prioritaskan pemeriksaan kondisi, kelengkapan, dan pemeliharaan preventif ${topMainTool.name} (${topMainTool.code}) karena memiliki intensitas frekuensi tertinggi.`
+                    );
+                }
+                if (topDurationTool && (!topMainTool || topDurationTool.code !== topMainTool.code)) {
+                    utilizationRecommendations.push(
+                        `Gunakan akumulasi jam operasi ${topDurationTool.name} (${topDurationTool.code}) sebagai salah satu dasar penjadwalan inspeksi dan evaluasi pemeliharaan.`
+                    );
+                }
+                if (inventoryCoverage < 50 && totalInventoryTypes > 0) {
+                    utilizationRecommendations.push(
+                        `Cakupan pemanfaatan seluruh inventaris sebesar ${inventoryCoverage}% menunjukkan sebagian besar jenis alat belum digunakan pada filter ini; evaluasi kebutuhan, aksesibilitas, dan relevansi inventaris dapat dilakukan sebelum pengadaan berikutnya.`
+                    );
+                }
+                if (!utilizationRecommendations.length) {
+                    utilizationRecommendations.push(
+                        'Pemanfaatan inventaris pada periode ini relatif merata. Pertahankan pencatatan transaksi, inspeksi rutin, dan evaluasi berbasis frekuensi serta durasi penggunaan.'
+                    );
+                }
+
+                // ==========================================================
+                // 5. HALAMAN 1 - RINGKASAN EKSEKUTIF
+                // ==========================================================
                 addHeader('LAPORAN PENGGUNAAN ALAT LABORATORIUM', `Periode: ${periodLabel}`);
                 doc.setFont('helvetica', 'normal');
-                doc.setFontSize(8);
+                doc.setFontSize(7.6);
                 doc.setTextColor(100, 116, 139);
-                doc.text(`Tanggal cetak: ${generatedAt.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })} ${generatedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\./g, ':')} WIB`, marginX, 38);
+                doc.text(`Dicetak: ${formatDateTime(generatedAt)} | Basis inventaris: master Spreadsheet aktif`, marginX, 38);
 
-                const cardGap = 4;
+                const cardGap = 3.5;
                 const cardW = (contentWidth - (cardGap * 3)) / 4;
-                drawMetricCard(marginX, 44, cardW, 'Total Peminjaman', reportTransactions.length, 'Transaksi pada periode laporan');
-                drawMetricCard(marginX + cardW + cardGap, 44, cardW, 'Frekuensi Alat Utama', totalToolUses, 'Akumulasi unit-pemakaian alat utama');
-                drawMetricCard(marginX + ((cardW + cardGap) * 2), 44, cardW, 'Durasi Alat Utama', `${Math.round(totalUsageHours).toLocaleString('id-ID')} jam`, 'Akumulasi jam penggunaan alat utama');
-                drawMetricCard(marginX + ((cardW + cardGap) * 3), 44, cardW, 'Rata-rata Durasi', `${avgUsageHours.toFixed(1)} jam`, 'Per unit-pemakaian');
+                drawMetricCard(marginX, 44, cardW, 'Transaksi', reportTransactions.length, 'Transaksi sesuai filter laporan', [79, 70, 229]);
+                drawMetricCard(marginX + cardW + cardGap, 44, cardW, 'Cakupan Inventaris', formatPercent(inventoryCoverage), `${usedInventoryTypes}/${totalInventoryTypes} jenis alat digunakan`, [5, 150, 105]);
+                drawMetricCard(marginX + (cardW + cardGap) * 2, 44, cardW, 'Cakupan Alat Utama', formatPercent(mainCoverage), `${usedMainTypes}/${totalMainTypes} jenis alat utama digunakan`, [14, 116, 144]);
+                drawMetricCard(marginX + (cardW + cardGap) * 3, 44, cardW, 'Durasi Alat Utama', formatHours(totalMainHours), `${totalMainUses} unit-pemakaian`, [124, 58, 237]);
 
-                let y = addSectionTitle('Ringkasan Eksekutif', 78);
+                let y = addSectionTitle('Ringkasan Eksekutif', 80);
                 doc.setFont('helvetica', 'normal');
-                doc.setFontSize(8.7);
+                doc.setFontSize(8.3);
                 doc.setTextColor(51, 65, 85);
-                const executiveLines = doc.splitTextToSize(executiveAnalysis, contentWidth - 4);
+                const executiveLines = doc.splitTextToSize(executiveAnalysis, contentWidth - 5);
                 doc.text(executiveLines, marginX + 2, y);
-                y += (executiveLines.length * 4.4) + 6;
+                y += executiveLines.length * 4.2 + 5;
 
-                y = drawHorizontalBarChart(frequencyRanking, y, {
-                    title: 'Grafik Frekuensi Penggunaan Instrumen Utama',
+                y = drawStandardBars(purposeData, y, 'Distribusi Tujuan Peminjaman', 'count', ' trx', 5, [5, 150, 105]);
+
+                if (y < 212 && categoryData.length) {
+                    y = drawStandardBars(categoryData, y + 2, 'Kategori dengan Frekuensi Pemakaian Tertinggi', 'count', 'x', 6, [14, 116, 144]);
+                }
+
+                if (monthlyTrend.length >= 2 && y < 215) {
+                    y = drawTrendChart(monthlyTrend, y + 2);
+                }
+
+                // ==========================================================
+                // 6. GRAFIK SEMUA ALAT UTAMA
+                // ==========================================================
+                drawAllMainToolChartPages(mainToolsByFrequency, {
+                    pageTitle: 'GRAFIK FREKUENSI SELURUH ALAT UTAMA',
+                    chartTitle: 'Frekuensi Penggunaan Berdasarkan Master Inventaris',
                     valueKey: 'count',
-                    valueSuffix: 'x',
-                    maxItems: 8,
-                    height: 70
+                    suffix: 'x',
+                    barColor: [79, 70, 229],
+                    analysisText: frequencyAnalysis
                 });
 
-                if (y < 250) {
-                    y = drawActivityBars(sortedCategoriesList, y + 2);
-                }
-
-                // ==============================
-                // HALAMAN 2 - DURASI & TREN
-                // ==============================
-                doc.addPage();
-                addHeader('ANALISIS INTENSITAS PEMANFAATAN INSTRUMEN', `Periode: ${periodLabel}`);
-                y = 42;
-                y = drawHorizontalBarChart(durationRanking, y, {
-                    title: 'Grafik Akumulasi Durasi Instrumen Utama',
+                drawAllMainToolChartPages(mainToolsByDuration, {
+                    pageTitle: 'GRAFIK DURASI SELURUH ALAT UTAMA',
+                    chartTitle: 'Akumulasi Durasi Penggunaan Berdasarkan Master Inventaris',
                     valueKey: 'hours',
-                    valueSuffix: ' jam',
-                    maxItems: 8,
-                    height: 72
+                    suffix: ' jam',
+                    barColor: [124, 58, 237],
+                    analysisText: durationAnalysis
                 });
 
-                if (monthlyTrend.length >= 2 && y < 210) {
-                    y = drawTrendChart(monthlyTrend, y + 4);
-                }
+                // ==========================================================
+                // 7. TABEL SELURUH INVENTARIS
+                // ==========================================================
+                doc.addPage('a4', 'landscape');
 
-                y = addSectionTitle('Analisis dan Rekomendasi Pengelolaan', Math.min(y + 4, 220));
-                const recommendations = [];
-                if (topTool) recommendations.push(`1. Prioritaskan inspeksi, pemeliharaan preventif, dan verifikasi kesiapan ${topTool.name} (${topTool.code}) karena memiliki frekuensi penggunaan tertinggi (${topTool.count}x).`);
-                if (topDurationTool) recommendations.push(`2. Jadwalkan evaluasi kondisi berdasarkan jam operasi pada ${topDurationTool.name}; akumulasi durasinya mencapai ${topDurationTool.hours.toLocaleString('id-ID')} jam.`);
-                if (dominant) recommendations.push(`3. Kebutuhan ${dominant.name} mendominasi ${dominant.percent}% aktivitas. Ketersediaan instrumen yang paling terkait dengan aktivitas tersebut perlu menjadi prioritas sebelum periode praktikum/kegiatan berikutnya.`);
-                recommendations.push(`4. Konsentrasi Top 3 instrumen sebesar ${top3Share}% menunjukkan kebutuhan monitoring khusus pada instrumen dengan intensitas tinggi agar risiko ketidaktersediaan alat dapat ditekan.`);
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(8.5);
-                doc.setTextColor(51, 65, 85);
-                recommendations.forEach(rec => {
-                    const lines = doc.splitTextToSize(rec, contentWidth - 5);
-                    doc.text(lines, marginX + 2, y);
-                    y += (lines.length * 4.2) + 2.5;
-                });
-
-                // ==============================
-                // HALAMAN 3 - DATA RINCI
-                // ==============================
-                doc.addPage();
-                addHeader('DATA RINCI PENGGUNAAN ALAT UTAMA', `Periode: ${periodLabel}`);
-                doc.setFontSize(8);
-                doc.setTextColor(100, 116, 139);
-                doc.text('Seluruh alat utama ditampilkan; alat pendukung tidak dimasukkan dalam analisis strategis.', marginX, 39);
-
-                const toolRows = reportTools.map((item, idx) => [
+                const inventoryRows = allInventoryForTable.map((item, idx) => [
                     idx + 1,
                     item.code,
                     item.name,
                     item.category,
+                    item.inventoryQty,
                     item.count,
-                    `${item.hours.toLocaleString('id-ID')} jam`,
-                    `${item.avgHours.toLocaleString('id-ID')} jam`
+                    item.transactionCount,
+                    formatHours(item.hours),
+                    formatHours(item.avgHours),
+                    item.utilizationStatus
                 ]);
 
                 doc.autoTable({
-                    startY: 44,
-                    head: [['No', 'Kode', 'Instrumen', 'Kategori', 'Frekuensi', 'Durasi', 'Rata-rata']],
-                    body: toolRows,
+                    startY: 40,
+                    head: [[
+                        'No',
+                        'Kode',
+                        'Instrumen',
+                        'Kategori',
+                        'Qty Master',
+                        'Frekuensi Unit',
+                        'Transaksi',
+                        'Total Durasi',
+                        'Rata-rata/Unit',
+                        'Status Pemanfaatan'
+                    ]],
+                    body: inventoryRows,
                     theme: 'grid',
-                    margin: { left: marginX, right: marginX },
-                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', fontSize: 7.5 },
+                    margin: { left: 9, right: 9, top: 40, bottom: 16 },
+                    headStyles: {
+                        fillColor: [30, 41, 59],
+                        textColor: [255, 255, 255],
+                        font: 'helvetica',
+                        fontStyle: 'bold',
+                        fontSize: 6.8,
+                        halign: 'center',
+                        valign: 'middle'
+                    },
+                    styles: {
+                        font: 'helvetica',
+                        fontSize: 6.3,
+                        cellPadding: 1.6,
+                        textColor: [51, 65, 85],
+                        valign: 'middle',
+                        overflow: 'linebreak'
+                    },
                     alternateRowStyles: { fillColor: [248, 250, 252] },
-                    styles: { fontSize: 7.2, cellPadding: 2, textColor: [51, 65, 85], valign: 'middle' },
                     columnStyles: {
-                        0: { halign: 'center', cellWidth: 9 },
-                        1: { cellWidth: 20 },
-                        2: { cellWidth: 48 },
-                        3: { cellWidth: 31 },
-                        4: { halign: 'center', cellWidth: 20 },
-                        5: { halign: 'right', cellWidth: 25 },
-                        6: { halign: 'right', cellWidth: 25 }
+                        0: { cellWidth: 8, halign: 'center' },
+                        1: { cellWidth: 19 },
+                        2: { cellWidth: 52 },
+                        3: { cellWidth: 32 },
+                        4: { cellWidth: 18, halign: 'center' },
+                        5: { cellWidth: 20, halign: 'center' },
+                        6: { cellWidth: 18, halign: 'center' },
+                        7: { cellWidth: 24, halign: 'right' },
+                        8: { cellWidth: 24, halign: 'right' },
+                        9: { cellWidth: 34, halign: 'center' }
+                    },
+                    didParseCell: function(data) {
+                        if (data.section === 'body' && data.column.index === 9) {
+                            const value = String(data.cell.raw || '');
+                            if (value.startsWith('Dipinjam')) {
+                                data.cell.styles.fillColor = [209, 250, 229];
+                                data.cell.styles.textColor = [4, 120, 87];
+                                data.cell.styles.fontStyle = 'bold';
+                            } else {
+                                data.cell.styles.fillColor = [241, 245, 249];
+                                data.cell.styles.textColor = [100, 116, 139];
+                            }
+                        }
+                    },
+                    didDrawPage: function() {
+                        addHeader('REKAP PEMANFAATAN SELURUH INVENTARIS', `Periode: ${periodLabel}`);
                     }
                 });
 
-                let tableEndY = doc.lastAutoTable.finalY + 8;
-                if (tableEndY > 235) {
-                    doc.addPage();
-                    addHeader('CATATAN METODOLOGI LAPORAN', `Periode: ${periodLabel}`);
-                    tableEndY = 43;
-                } else {
-                    tableEndY = addSectionTitle('Catatan Metodologi', tableEndY);
+                // ==========================================================
+                // 8. ANALISIS TABEL & REKOMENDASI
+                // ==========================================================
+                doc.addPage('a4', 'portrait');
+                addHeader('ANALISIS CAKUPAN PEMANFAATAN INVENTARIS', `Periode: ${periodLabel}`);
+                y = 43;
+
+                y = addSectionTitle('Penjelasan Tabel Inventaris', y);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.1);
+                doc.setTextColor(51, 65, 85);
+                const tableExplanation = [
+                    `Tabel sebelumnya memuat seluruh ${totalInventoryTypes} jenis/kode instrumen yang terdapat pada master inventaris aktif, bukan hanya alat yang pernah dipinjam.`,
+                    `Kolom "Frekuensi Unit" menunjukkan akumulasi unit alat yang tercatat pada transaksi dalam periode laporan, sedangkan "Transaksi" menunjukkan jumlah transaksi yang melibatkan alat tersebut.`,
+                    `Instrumen berstatus "Tidak dipinjam pada periode" tetap ditampilkan dengan frekuensi dan durasi 0 agar laporan dapat digunakan sebagai dasar evaluasi pemanfaatan inventaris secara menyeluruh.`,
+                    `Durasi dihitung dari waktu peminjaman hingga pengembalian aktual untuk transaksi selesai; transaksi aktif menggunakan estimasi pengembalian atau waktu laporan bila tenggat telah terlewati.`
+                ];
+                tableExplanation.forEach((line, idx) => {
+                    const wrapped = doc.splitTextToSize(`${idx + 1}. ${line}`, contentWidth - 5);
+                    doc.text(wrapped, marginX + 2, y);
+                    y += wrapped.length * 4.15 + 2;
+                });
+
+                y = addSectionTitle('Ringkasan Cakupan per Kategori', y + 3);
+                const categoryRows = categoryData.map((item, idx) => [
+                    idx + 1,
+                    item.name,
+                    item.inventoryTypes,
+                    item.inventoryUnits,
+                    item.usedTypes,
+                    `${item.coverage}%`,
+                    item.count,
+                    formatHours(item.hours)
+                ]);
+
+                doc.autoTable({
+                    startY: y,
+                    head: [['No', 'Kategori', 'Jenis Alat', 'Unit Master', 'Jenis Digunakan', 'Cakupan', 'Frekuensi Unit', 'Durasi']],
+                    body: categoryRows,
+                    theme: 'grid',
+                    margin: { left: marginX, right: marginX, bottom: 16 },
+                    headStyles: {
+                        fillColor: [55, 48, 163],
+                        textColor: [255, 255, 255],
+                        font: 'helvetica',
+                        fontStyle: 'bold',
+                        fontSize: 7,
+                        halign: 'center'
+                    },
+                    styles: {
+                        font: 'helvetica',
+                        fontSize: 6.8,
+                        cellPadding: 1.8,
+                        textColor: [51, 65, 85],
+                        valign: 'middle'
+                    },
+                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    columnStyles: {
+                        0: { cellWidth: 9, halign: 'center' },
+                        1: { cellWidth: 42 },
+                        2: { cellWidth: 19, halign: 'center' },
+                        3: { cellWidth: 19, halign: 'center' },
+                        4: { cellWidth: 23, halign: 'center' },
+                        5: { cellWidth: 18, halign: 'center' },
+                        6: { cellWidth: 23, halign: 'center' },
+                        7: { cellWidth: 27, halign: 'right' }
+                    }
+                });
+
+                y = doc.lastAutoTable.finalY + 8;
+                if (y > 215) {
+                    doc.addPage('a4', 'portrait');
+                    addHeader('REKOMENDASI PENGELOLAAN INVENTARIS', `Periode: ${periodLabel}`);
+                    y = 43;
                 }
 
+                y = addSectionTitle('Analisis dan Rekomendasi', y);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.1);
+                doc.setTextColor(51, 65, 85);
+                utilizationRecommendations.forEach((rec, idx) => {
+                    const wrapped = doc.splitTextToSize(`${idx + 1}. ${rec}`, contentWidth - 5);
+                    doc.text(wrapped, marginX + 2, y);
+                    y += wrapped.length * 4.15 + 2.5;
+                });
+
+                if (unmatchedHistoricalRecords.length > 0) {
+                    const note = `Catatan kualitas data: terdapat ${unmatchedHistoricalRecords.length} kode/nama alat pada transaksi historis yang tidak dapat dipasangkan dengan master inventaris aktif. Data tersebut tidak dimasukkan ke denominator cakupan inventaris agar laporan tetap konsisten dengan master inventaris saat ini.`;
+                    const wrapped = doc.splitTextToSize(note, contentWidth - 5);
+                    y = addSectionTitle('Catatan Kualitas Data', y + 4);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(7.8);
+                    doc.setTextColor(100, 116, 139);
+                    doc.text(wrapped, marginX + 2, y);
+                    y += wrapped.length * 4 + 3;
+                }
+
+                // ==========================================================
+                // 9. METODOLOGI & PENGESAHAN
+                // ==========================================================
+                doc.addPage('a4', 'portrait');
+                addHeader('METODOLOGI & PENGESAHAN LAPORAN', `Periode: ${periodLabel}`);
+                y = 44;
+
+                y = addSectionTitle('Metodologi Perhitungan', y);
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8);
                 doc.setTextColor(71, 85, 105);
                 const methodology = [
-                    'Frekuensi penggunaan dihitung dari jumlah unit alat yang tercatat pada transaksi peminjaman dalam periode terpilih.',
-                    'Durasi transaksi selesai dihitung dari waktu peminjaman hingga waktu pengembalian aktual yang tercatat pada status transaksi.',
-                    'Untuk transaksi yang masih aktif, durasi mengikuti estimasi pengembalian; apabila estimasi telah terlewati, durasi dihitung hingga waktu laporan dibuat.',
-                    'Seluruh data laporan bersumber dari data transaksi dan inventaris yang telah disinkronkan dari Google Spreadsheet pada aplikasi.',
-                    'Grafik dan tabel analisis strategis hanya memuat alat utama; Safety dan Aksesoris tidak dimasukkan.'
+                    'Master inventaris aktif dari Google Spreadsheet digunakan sebagai basis daftar alat pada tabel laporan.',
+                    'Seluruh item inventaris tetap ditampilkan meskipun frekuensi penggunaan pada periode laporan bernilai 0.',
+                    'Grafik frekuensi dan durasi alat utama memuat seluruh alat utama pada master inventaris, termasuk alat dengan nilai 0; grafik dipaginasi bila jumlah alat melebihi kapasitas satu halaman.',
+                    'Frekuensi penggunaan dihitung dari jumlah unit alat yang tercatat pada transaksi peminjaman sesuai filter periode.',
+                    'Durasi transaksi selesai dihitung dari waktu pinjam hingga waktu kembali aktual. Untuk transaksi aktif, durasi menggunakan estimasi waktu kembali; bila estimasi telah terlewati, durasi dihitung hingga laporan dibuat.',
+                    'Persentase cakupan inventaris dihitung berdasarkan jumlah jenis/kode alat yang memiliki penggunaan dibandingkan seluruh jenis/kode alat pada master inventaris.'
                 ];
                 methodology.forEach((line, idx) => {
                     const wrapped = doc.splitTextToSize(`${idx + 1}. ${line}`, contentWidth - 5);
-                    doc.text(wrapped, marginX + 2, tableEndY);
-                    tableEndY += (wrapped.length * 4.1) + 2;
+                    doc.text(wrapped, marginX + 2, y);
+                    y += wrapped.length * 4.1 + 2;
                 });
 
-                // ==============================
-                // PENGESAHAN / TANDA TANGAN
-                // ==============================
-                if (tableEndY > 218) {
-                    doc.addPage();
+                y = addSectionTitle('Ringkasan Pengesahan', y + 4);
+                doc.autoTable({
+                    startY: y,
+                    body: [
+                        ['Periode Laporan', periodLabel],
+                        ['Jumlah Transaksi', String(reportTransactions.length)],
+                        ['Jenis/Kode Inventaris', String(totalInventoryTypes)],
+                        ['Total Unit Master', String(totalInventoryUnits)],
+                        ['Jenis Alat Digunakan', `${usedInventoryTypes} (${inventoryCoverage}%)`],
+                        ['Jenis Alat Tidak Digunakan', String(unusedInventoryTypes)],
+                        ['Alat Utama Digunakan', `${usedMainTypes}/${totalMainTypes} (${mainCoverage}%)`],
+                        ['Frekuensi Seluruh Inventaris', `${totalUnitUsesAll.toLocaleString('id-ID')} unit-pemakaian`],
+                        ['Durasi Seluruh Inventaris', formatHours(totalUsageHoursAll)]
+                    ],
+                    theme: 'plain',
+                    margin: { left: marginX, right: marginX },
+                    styles: { font: 'helvetica', fontSize: 8, cellPadding: 2.1, textColor: [51, 65, 85] },
+                    columnStyles: { 0: { cellWidth: 52, fontStyle: 'bold', textColor: [71, 85, 105] } }
+                });
+
+                y = doc.lastAutoTable.finalY + 10;
+                if (y > 213) {
+                    doc.addPage('a4', 'portrait');
                     addHeader('PENGESAHAN LAPORAN PENGGUNAAN ALAT', `Periode: ${periodLabel}`);
-                    tableEndY = 46;
-                } else {
-                    tableEndY += 5;
+                    y = 46;
                 }
 
-                tableEndY = addSectionTitle('Pengesahan Laporan', tableEndY);
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8);
                 doc.setTextColor(71, 85, 105);
-                doc.text(`Lampung Selatan, ${generatedAt.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, pageWidth - marginX, tableEndY, { align: 'right' });
+                doc.text(`Lampung Selatan, ${generatedAt.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, doc.internal.pageSize.getWidth() - marginX, y, { align: 'right' });
 
-                const signatureTop = tableEndY + 9;
-                const leftSigX = marginX + (contentWidth * 0.25);
-                const rightSigX = marginX + (contentWidth * 0.75);
+                const signatureTop = y + 11;
+                const leftSigX = marginX + contentWidth * 0.25;
+                const rightSigX = marginX + contentWidth * 0.75;
 
                 doc.setTextColor(15, 23, 42);
                 doc.setFont('helvetica', 'normal');
@@ -2422,36 +2789,33 @@ function App() {
                 doc.text('Koordinator Laboratorium GT', leftSigX, signatureTop + 6, { align: 'center' });
                 doc.text('Laboran Geomatika', rightSigX, signatureTop + 6, { align: 'center' });
 
-                // Ruang tanda tangan manual/digital.
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8);
                 doc.setTextColor(100, 116, 139);
                 doc.text('(........................................................)', leftSigX, signatureTop + 34, { align: 'center' });
                 doc.text('(........................................................)', rightSigX, signatureTop + 34, { align: 'center' });
-                doc.setDrawColor(148, 163, 184);
-                doc.setLineWidth(0.25);
-                doc.line(leftSigX - 28, signatureTop + 36, leftSigX + 28, signatureTop + 36);
-                doc.line(rightSigX - 28, signatureTop + 36, rightSigX + 28, signatureTop + 36);
 
-                // Footer seluruh halaman.
+                // Footer konsisten untuk semua halaman (portrait/landscape).
                 const pageCount = doc.getNumberOfPages();
                 for (let p = 1; p <= pageCount; p++) {
                     doc.setPage(p);
+                    const pw = doc.internal.pageSize.getWidth();
+                    const ph = doc.internal.pageSize.getHeight();
                     doc.setDrawColor(226, 232, 240);
-                    doc.line(marginX, pageHeight - 13, pageWidth - marginX, pageHeight - 13);
+                    doc.line(10, ph - 12, pw - 10, ph - 12);
                     doc.setFont('helvetica', 'normal');
-                    doc.setFontSize(7);
+                    doc.setFontSize(6.7);
                     doc.setTextColor(100, 116, 139);
-                    doc.text('Sistem Informasi Pusat Laboratorium Geomatika - ITERA', marginX, pageHeight - 8);
-                    doc.text(`Halaman ${p} dari ${pageCount}`, pageWidth - marginX, pageHeight - 8, { align: 'right' });
+                    doc.text('Sistem Informasi Pusat Laboratorium Geomatika - ITERA', 10, ph - 7);
+                    doc.text(`Periode ${periodLabel} | Halaman ${p} dari ${pageCount}`, pw - 10, ph - 7, { align: 'right' });
                 }
 
                 const filePeriod = analysisMonth === 'Semua' ? 'Keseluruhan_Waktu' : safeName(analysisMonth);
                 doc.save(`Laporan_Penggunaan_Alat_Lab_Geomatika_${filePeriod}.pdf`);
-                showNotification('Laporan penggunaan alat berhasil dibuat dalam format PDF.', 'success');
+                showNotification(`Laporan penggunaan alat berhasil dibuat. ${totalInventoryTypes} jenis inventaris tercakup.`, 'success');
             } catch (error) {
                 console.error('Gagal membuat laporan penggunaan alat:', error);
-                showNotification('Gagal membuat laporan PDF penggunaan alat.', 'error');
+                showNotification('Gagal membuat laporan PDF penggunaan alat. Periksa Console untuk detail.', 'error');
             }
         };
 
@@ -3279,14 +3643,15 @@ function App() {
             return `${monthLabel} ${yearLabel}`;
         })();
         const displayedTx = txLimit === 'Semua' ? filteredTx : filteredTx.slice(0, txLimit);
-        // --- LAPORAN PDF OPERASIONAL PEMINJAMAN & PENGGUNAAN ALAT ---
-        // Report ini hanya membaca data transaksi yang sudah tersedia pada aplikasi.
-        // txLimit hanya mengatur tampilan layar; laporan selalu memakai seluruh data yang sesuai Kriteria Filter.
+        // --- LAPORAN PDF ANALISIS PEMINJAM ---
+        // Report hanya menganalisis data peminjam berdasarkan Kriteria Filter aktif.
+        // Tidak memasukkan statistik, grafik, tabel, atau rincian penggunaan alat.
         const handleGenerateBorrowerUsageReport = () => {
             if (!isAdmin) {
-                showNotification('Laporan operasional hanya dapat diakses melalui Mode Admin.', 'error');
+                showNotification('Laporan peminjam hanya dapat diakses melalui Mode Admin.', 'error');
                 return;
             }
+
             try {
                 if (!window.jspdf || !window.jspdf.jsPDF) {
                     showNotification('Modul PDF belum siap. Silakan tunggu beberapa detik lalu coba kembali.', 'error');
@@ -3301,10 +3666,13 @@ function App() {
                 const doc = new jsPDF('p', 'mm', 'a4');
                 const generatedAt = new Date();
                 const marginX = 14;
-                const mainCategoriesReport = ['Total Station', 'GNSS', 'Laser Scanner', 'Hidrografi', 'Theodolite', 'Leveling', 'Fotogrametri'];
+                const portraitWidth = doc.internal.pageSize.getWidth();
+                const contentW = portraitWidth - marginX * 2;
 
-                const safeNumber = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
                 const cleanText = (v) => String(v == null || v === '' ? '-' : v);
+                const safeNumber = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
+                const round1 = (v) => Math.round(safeNumber(v) * 10) / 10;
+
                 const formatPdfDate = (date) => {
                     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '-';
                     return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -3334,6 +3702,7 @@ function App() {
                     if (/^Proyek/i.test(p)) return 'Proyek';
                     return 'Lainnya';
                 };
+
                 const getOperationalStatus = (trx) => {
                     const start = parseTargetDate(trx.borrowDate, trx.borrowTime);
                     const due = parseTargetDate(trx.returnDateEst, trx.returnTimeEst);
@@ -3372,6 +3741,9 @@ function App() {
                     return { start, due, returned, effectiveEnd, label, key, latenessMs, durationMs, timeNote };
                 };
 
+                // ==========================================================
+                // 1. AGREGASI DATA PEMINJAM
+                // ==========================================================
                 const statusMeta = {
                     active: { label: 'Sedang Dipinjam', color: [79, 70, 229] },
                     activeLate: { label: 'Aktif Terlambat', color: [220, 38, 38] },
@@ -3381,8 +3753,6 @@ function App() {
                 const statusCounts = { active: 0, activeLate: 0, completedOnTime: 0, completedLate: 0 };
                 const purposeMap = {};
                 const borrowerMap = {};
-                const itemMap = {};
-                let totalUnitUsage = 0;
                 let totalTransactionHours = 0;
                 let totalLateMinutes = 0;
 
@@ -3392,42 +3762,39 @@ function App() {
                     totalTransactionHours += status.durationMs / 3600000;
                     totalLateMinutes += status.latenessMs / 60000;
 
-                    const purpose = purposeGroup(trx.purpose);
-                    purposeMap[purpose] = (purposeMap[purpose] || 0) + 1;
+                    const groupedPurpose = purposeGroup(trx.purpose);
+                    purposeMap[groupedPurpose] = (purposeMap[groupedPurpose] || 0) + 1;
 
-                    const borrowerKey = String(trx.nim || '').trim() || String(trx.borrowerName || '').trim().toLowerCase() || `unknown-${index}`;
+                    const borrowerKey = String(trx.nim || '').trim()
+                        || String(trx.borrowerName || '').trim().toLowerCase()
+                        || `unknown-${index}`;
+
                     if (!borrowerMap[borrowerKey]) {
                         borrowerMap[borrowerKey] = {
                             name: cleanText(trx.borrowerName),
                             nim: cleanText(trx.nim),
                             transactions: 0,
-                            units: 0,
                             hours: 0,
-                            late: 0
+                            active: 0,
+                            activeLate: 0,
+                            completedOnTime: 0,
+                            completedLate: 0,
+                            late: 0,
+                            purposeCounts: {},
+                            firstBorrow: null,
+                            lastBorrow: null
                         };
                     }
-                    borrowerMap[borrowerKey].transactions += 1;
-                    borrowerMap[borrowerKey].hours += status.durationMs / 3600000;
-                    if (status.key === 'activeLate' || status.key === 'completedLate') borrowerMap[borrowerKey].late += 1;
 
-                    const itemLines = [];
-                    (Array.isArray(trx.items) ? trx.items : []).forEach(item => {
-                        const code = String(item.kode || item.id || '-').trim() || '-';
-                        const rawName = String(item.nama || item.name || 'Instrumen').replace(/^\[[^\]]+\]\s*/, '').trim();
-                        const qty = Math.max(1, parseInt(item.jumlah || item.quantity || 1) || 1);
-                        const invItem = inventory.find(inv => inv.id === code || inv.name === rawName);
-                        const category = invItem ? invItem.category : 'Lainnya';
-                        const itemKey = code !== '-' ? code : rawName.toLowerCase();
-                        totalUnitUsage += qty;
-                        borrowerMap[borrowerKey].units += qty;
+                    const borrower = borrowerMap[borrowerKey];
+                    borrower.transactions += 1;
+                    borrower.hours += status.durationMs / 3600000;
+                    borrower[status.key] += 1;
+                    if (status.key === 'activeLate' || status.key === 'completedLate') borrower.late += 1;
+                    borrower.purposeCounts[groupedPurpose] = (borrower.purposeCounts[groupedPurpose] || 0) + 1;
 
-                        if (!itemMap[itemKey]) {
-                            itemMap[itemKey] = { code, name: rawName, category, count: 0, hours: 0 };
-                        }
-                        itemMap[itemKey].count += qty;
-                        itemMap[itemKey].hours += (status.durationMs / 3600000) * qty;
-                        itemLines.push(`[${code}] ${rawName} (${qty} unit)`);
-                    });
+                    if (!borrower.firstBorrow || status.start.getTime() < borrower.firstBorrow.getTime()) borrower.firstBorrow = status.start;
+                    if (!borrower.lastBorrow || status.start.getTime() > borrower.lastBorrow.getTime()) borrower.lastBorrow = status.start;
 
                     return {
                         no: index + 1,
@@ -3435,376 +3802,601 @@ function App() {
                         borrower: cleanText(trx.borrowerName),
                         nim: cleanText(trx.nim),
                         purpose: cleanText(trx.purpose),
+                        groupedPurpose,
                         borrowText: formatDateTime(status.start),
                         dueText: formatDateTime(status.due),
                         returnText: status.returned ? formatDateTime(status.returned) : '-',
                         status: status.label,
                         statusKey: status.key,
                         timeNote: status.timeNote,
-                        duration: formatDurationCompact(status.durationMs),
-                        items: itemLines.length ? itemLines.join('\n') : '-'
+                        duration: formatDurationCompact(status.durationMs)
                     };
                 });
-
-                const uniqueBorrowers = Object.keys(borrowerMap).length;
-                const lateTotal = statusCounts.activeLate + statusCounts.completedLate;
-                const completedTotal = statusCounts.completedOnTime + statusCounts.completedLate;
-                const lateRate = filteredTx.length ? Math.round((lateTotal / filteredTx.length) * 100) : 0;
-                const onTimeCompletedRate = completedTotal ? Math.round((statusCounts.completedOnTime / completedTotal) * 100) : 0;
-                const lateCompletedRate = completedTotal ? 100 - onTimeCompletedRate : 0;
-                const activeTotal = statusCounts.active + statusCounts.activeLate;
-                const activeLateRate = activeTotal ? Math.round((statusCounts.activeLate / activeTotal) * 100) : 0;
-                const complianceLabel = completedTotal === 0 ? 'Belum Dinilai'
-                    : onTimeCompletedRate >= 90 ? 'Sangat Baik'
-                    : onTimeCompletedRate >= 80 ? 'Baik'
-                    : onTimeCompletedRate >= 70 ? 'Cukup'
-                    : 'Perlu Perbaikan';
-                const avgTransactionHours = filteredTx.length ? totalTransactionHours / filteredTx.length : 0;
 
                 const purposeData = Object.entries(purposeMap)
                     .map(([name, count]) => ({ name, count }))
                     .sort((a, b) => b.count - a.count);
-                const borrowerData = Object.values(borrowerMap)
-                    .map(item => ({ ...item, hours: Math.round(item.hours * 10) / 10 }))
-                    .sort((a, b) => b.transactions - a.transactions || b.hours - a.hours || b.units - a.units);
-                const borrowerDurationData = [...borrowerData].sort((a, b) => b.hours - a.hours || b.transactions - a.transactions);
-                const allTools = Object.values(itemMap)
-                    .map(item => ({ ...item, hours: Math.round(item.hours * 10) / 10, avgHours: item.count ? Math.round((item.hours / item.count) * 10) / 10 : 0 }))
-                    .sort((a, b) => b.count - a.count);
-                const mainTools = allTools.filter(item => mainCategoriesReport.includes(item.category));
-                const strategicTools = [...mainTools].sort((a, b) => b.count - a.count || b.hours - a.hours);
-                const mainToolsByDuration = [...mainTools].sort((a, b) => b.hours - a.hours || b.count - a.count);
 
-                const borrowDates = detailedRows.map(r => parseTargetDate(filteredTx[r.no - 1].borrowDate, filteredTx[r.no - 1].borrowTime)).filter(d => !Number.isNaN(d.getTime())).sort((a, b) => a - b);
+                const borrowerData = Object.values(borrowerMap)
+                    .map(item => {
+                        const completed = item.completedOnTime + item.completedLate;
+                        const dominantPurposeEntry = Object.entries(item.purposeCounts)
+                            .sort((a, b) => b[1] - a[1])[0];
+                        return {
+                            ...item,
+                            hours: round1(item.hours),
+                            avgHours: item.transactions ? round1(item.hours / item.transactions) : 0,
+                            completed,
+                            onTimeRate: completed ? Math.round((item.completedOnTime / completed) * 100) : null,
+                            dominantPurpose: dominantPurposeEntry ? dominantPurposeEntry[0] : '-',
+                            firstBorrowText: item.firstBorrow ? formatPdfDate(item.firstBorrow) : '-',
+                            lastBorrowText: item.lastBorrow ? formatPdfDate(item.lastBorrow) : '-'
+                        };
+                    })
+                    .sort((a, b) => b.transactions - a.transactions || b.hours - a.hours || a.name.localeCompare(b.name, 'id'));
+
+                const borrowerDurationData = [...borrowerData]
+                    .sort((a, b) => b.hours - a.hours || b.transactions - a.transactions || a.name.localeCompare(b.name, 'id'));
+
+                const uniqueBorrowers = borrowerData.length;
+                const repeatBorrowers = borrowerData.filter(item => item.transactions > 1).length;
+                const singleBorrowers = uniqueBorrowers - repeatBorrowers;
+                const repeatBorrowerRate = uniqueBorrowers ? Math.round((repeatBorrowers / uniqueBorrowers) * 100) : 0;
+                const borrowersWithLate = borrowerData.filter(item => item.late > 0).length;
+                const lateBorrowerRate = uniqueBorrowers ? Math.round((borrowersWithLate / uniqueBorrowers) * 100) : 0;
+                const avgTransactionsPerBorrower = uniqueBorrowers ? filteredTx.length / uniqueBorrowers : 0;
+                const avgTransactionHours = filteredTx.length ? totalTransactionHours / filteredTx.length : 0;
+
+                const completedTotal = statusCounts.completedOnTime + statusCounts.completedLate;
+                const activeTotal = statusCounts.active + statusCounts.activeLate;
+                const lateTotal = statusCounts.activeLate + statusCounts.completedLate;
+                const lateRate = filteredTx.length ? Math.round((lateTotal / filteredTx.length) * 100) : 0;
+                const onTimeCompletedRate = completedTotal ? Math.round((statusCounts.completedOnTime / completedTotal) * 100) : 0;
+                const lateCompletedRate = completedTotal ? 100 - onTimeCompletedRate : 0;
+                const activeLateRate = activeTotal ? Math.round((statusCounts.activeLate / activeTotal) * 100) : 0;
+                const complianceLabel = completedTotal === 0 ? 'Belum Dinilai'
+                    : onTimeCompletedRate >= 90 ? 'Sangat Baik'
+                        : onTimeCompletedRate >= 80 ? 'Baik'
+                            : onTimeCompletedRate >= 70 ? 'Cukup'
+                                : 'Perlu Perbaikan';
+
+                const topBorrower = borrowerData[0] || null;
+                const topDurationBorrower = borrowerDurationData[0] || null;
+                const dominantPurpose = purposeData[0] || null;
+
+                const borrowDates = detailedRows
+                    .map((r, idx) => parseTargetDate(filteredTx[idx].borrowDate, filteredTx[idx].borrowTime))
+                    .filter(d => d instanceof Date && !Number.isNaN(d.getTime()))
+                    .sort((a, b) => a - b);
+
                 const periodText = borrowDates.length
                     ? `${formatPdfDate(borrowDates[0])} s.d. ${formatPdfDate(borrowDates[borrowDates.length - 1])}`
                     : 'Tidak tersedia';
                 const filterLabel = txFilter === 'Semua' ? 'Semua Status' : txFilter;
                 const fullFilterLabel = `${filterLabel} | ${archivePeriodLabel}`;
-                const reportCode = `LGT-${generatedAt.getFullYear()}${String(generatedAt.getMonth() + 1).padStart(2, '0')}${String(generatedAt.getDate()).padStart(2, '0')}-${String(generatedAt.getHours()).padStart(2, '0')}${String(generatedAt.getMinutes()).padStart(2, '0')}`;
+                const reportCode = `LPM-${generatedAt.getFullYear()}${String(generatedAt.getMonth() + 1).padStart(2, '0')}${String(generatedAt.getDate()).padStart(2, '0')}-${String(generatedAt.getHours()).padStart(2, '0')}${String(generatedAt.getMinutes()).padStart(2, '0')}`;
 
+                // ==========================================================
+                // 2. KOMPONEN VISUAL PDF
+                // ==========================================================
                 const addHeader = (title, subtitle = '') => {
                     const pw = doc.internal.pageSize.getWidth();
                     doc.setFillColor(15, 23, 42);
                     doc.rect(0, 0, pw, 31, 'F');
-                    doc.setFillColor(79, 70, 229);
+                    doc.setFillColor(14, 116, 144);
                     doc.rect(0, 0, 5, 31, 'F');
+
                     doc.setTextColor(255, 255, 255);
                     doc.setFont('helvetica', 'bold');
                     doc.setFontSize(13);
                     doc.text('INSTITUT TEKNOLOGI SUMATERA', marginX, 10);
-                    doc.setFontSize(8.5);
+
                     doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8.4);
                     doc.text('PROGRAM STUDI TEKNIK GEOMATIKA | LABORATORIUM GEOMATIKA', marginX, 16);
-                    doc.setFontSize(11.5);
+
                     doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(11.5);
                     doc.text(title, marginX, 24);
+
                     if (subtitle) {
-                        doc.setFontSize(7.5);
                         doc.setFont('helvetica', 'normal');
+                        doc.setFontSize(7.4);
                         doc.text(subtitle, pw - marginX, 24, { align: 'right' });
                     }
                     doc.setTextColor(15, 23, 42);
                 };
-                const sectionTitle = (title, y, width = null) => {
+
+                const sectionTitle = (title, y, width = null, x = marginX) => {
                     const pw = doc.internal.pageSize.getWidth();
-                    const w = width || (pw - marginX * 2);
-                    doc.setFillColor(238, 242, 255);
-                    doc.roundedRect(marginX, y - 4, w, 9, 1.5, 1.5, 'F');
-                    doc.setTextColor(55, 48, 163);
+                    const w = width || (pw - x * 2);
+                    doc.setFillColor(236, 254, 255);
+                    doc.roundedRect(x, y - 4, w, 9, 1.5, 1.5, 'F');
+                    doc.setTextColor(14, 116, 144);
                     doc.setFont('helvetica', 'bold');
                     doc.setFontSize(9.5);
-                    doc.text(title, marginX + 4, y + 1.5);
+                    doc.text(title, x + 4, y + 1.5);
                     doc.setTextColor(15, 23, 42);
                     return y + 10;
                 };
-                const metricCard = (x, y, w, label, value, note, accent = [79, 70, 229]) => {
+
+                const metricCard = (x, y, w, label, value, note, accent = [14, 116, 144]) => {
                     doc.setFillColor(248, 250, 252);
                     doc.setDrawColor(226, 232, 240);
-                    doc.roundedRect(x, y, w, 26, 2, 2, 'FD');
+                    doc.roundedRect(x, y, w, 27, 2, 2, 'FD');
                     doc.setFillColor(...accent);
-                    doc.roundedRect(x, y, 2.5, 26, 1, 1, 'F');
+                    doc.roundedRect(x, y, 2.4, 27, 1, 1, 'F');
+
                     doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(6.8);
+                    doc.setFontSize(6.6);
                     doc.setTextColor(100, 116, 139);
                     doc.text(label.toUpperCase(), x + 5, y + 6);
+
                     doc.setFontSize(15);
                     doc.setTextColor(15, 23, 42);
                     doc.text(String(value), x + 5, y + 15);
+
                     doc.setFont('helvetica', 'normal');
-                    doc.setFontSize(6.5);
+                    doc.setFontSize(6.4);
                     doc.setTextColor(100, 116, 139);
-                    const lines = doc.splitTextToSize(note || '', w - 9);
-                    doc.text(lines.slice(0, 2), x + 5, y + 20);
+                    doc.text(doc.splitTextToSize(note || '', w - 9).slice(0, 2), x + 5, y + 20);
                 };
-                const barChart = (items, y, title, valueKey = 'count', suffix = '', maxItems = 6, barColor = [79, 70, 229]) => {
+
+                const barChart = (items, y, title, valueKey = 'count', suffix = '', maxItems = 8, barColor = [14, 116, 144]) => {
                     const pw = doc.internal.pageSize.getWidth();
-                    const contentW = pw - marginX * 2;
-                    y = sectionTitle(title, y, contentW);
+                    const localContentW = pw - marginX * 2;
+                    y = sectionTitle(title, y, localContentW);
+
                     const data = items.slice(0, maxItems);
                     if (!data.length) {
+                        doc.setFont('helvetica', 'normal');
                         doc.setFontSize(8);
                         doc.setTextColor(100, 116, 139);
                         doc.text('Belum ada data.', marginX + 2, y + 3);
                         return y + 10;
                     }
+
                     const maxVal = Math.max(...data.map(v => safeNumber(v[valueKey])), 1);
-                    const labelW = 58;
+                    const labelW = 61;
                     const chartX = marginX + labelW;
-                    const chartW = contentW - labelW - 27;
+                    const chartW = localContentW - labelW - 28;
+
                     data.forEach((item, idx) => {
                         const rowY = y + idx * 9;
                         const value = safeNumber(item[valueKey]);
+
                         doc.setFont('helvetica', idx === 0 ? 'bold' : 'normal');
-                        doc.setFontSize(7.2);
+                        doc.setFontSize(7);
                         doc.setTextColor(51, 65, 85);
                         const label = doc.splitTextToSize(`${idx + 1}. ${item.name || '-'}`, labelW - 4)[0];
                         doc.text(label, marginX, rowY + 4);
+
                         doc.setFillColor(241, 245, 249);
                         doc.roundedRect(chartX, rowY + 1, chartW, 4, 1, 1, 'F');
-                        doc.setFillColor(...(idx === 0 ? barColor : barColor.map(v => Math.min(255, v + 45))));
-                        doc.roundedRect(chartX, rowY + 1, Math.max(1, value / maxVal * chartW), 4, 1, 1, 'F');
+
+                        if (value > 0) {
+                            doc.setFillColor(...(idx === 0 ? barColor : barColor.map(v => Math.min(255, v + 40))));
+                            doc.roundedRect(chartX, rowY + 1, Math.max(1, (value / maxVal) * chartW), 4, 1, 1, 'F');
+                        }
+
                         doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(7);
+                        doc.setFontSize(6.8);
                         doc.setTextColor(30, 41, 59);
-                        doc.text(`${value.toLocaleString('id-ID')}${suffix}`, pw - marginX, rowY + 4.2, { align: 'right' });
+                        doc.text(`${value.toLocaleString('id-ID')}${suffix}`, pw - marginX, rowY + 4.1, { align: 'right' });
                     });
+
                     return y + data.length * 9 + 4;
                 };
+
                 const statusChart = (y) => {
                     const pw = doc.internal.pageSize.getWidth();
-                    const contentW = pw - marginX * 2;
-                    y = sectionTitle('Distribusi Status Transaksi', y, contentW);
+                    const localContentW = pw - marginX * 2;
+                    y = sectionTitle('Distribusi Status Peminjaman', y, localContentW);
+
                     const total = filteredTx.length || 1;
                     let x = marginX;
                     const barY = y + 2;
+
                     Object.keys(statusMeta).forEach(key => {
                         const count = statusCounts[key];
                         if (!count) return;
-                        const w = (count / total) * contentW;
+                        const w = (count / total) * localContentW;
                         doc.setFillColor(...statusMeta[key].color);
                         doc.rect(x, barY, w, 7, 'F');
                         x += w;
                     });
+
                     let legendY = barY + 13;
                     let legendX = marginX;
                     Object.keys(statusMeta).forEach(key => {
                         const meta = statusMeta[key];
                         const count = statusCounts[key];
                         const pct = Math.round((count / total) * 100);
+
                         doc.setFillColor(...meta.color);
                         doc.circle(legendX + 2, legendY - 1, 1.5, 'F');
+
                         doc.setFont('helvetica', 'normal');
                         doc.setFontSize(6.6);
                         doc.setTextColor(71, 85, 105);
-                        const label = `${meta.label}: ${count} (${pct}%)`;
-                        doc.text(label, legendX + 5, legendY);
+                        doc.text(`${meta.label}: ${count} (${pct}%)`, legendX + 5, legendY);
+
                         legendX += 45;
                         if (legendX > pw - 55) {
                             legendX = marginX;
                             legendY += 6;
                         }
                     });
+
                     return legendY + 7;
                 };
+
                 const complianceChart = (y) => {
                     const pw = doc.internal.pageSize.getWidth();
-                    const contentW = pw - marginX * 2;
-                    y = sectionTitle('Penilaian Kepatuhan Pengembalian', y, contentW);
+                    const localContentW = pw - marginX * 2;
+                    y = sectionTitle('Kepatuhan Pengembalian Peminjam', y, localContentW);
+
                     doc.setFont('helvetica', 'normal');
                     doc.setFontSize(7.2);
                     doc.setTextColor(71, 85, 105);
+
                     if (!completedTotal) {
-                        doc.text('Belum terdapat transaksi selesai pada periode/filter ini sehingga persentase ketepatan waktu belum dapat dinilai.', marginX + 2, y + 2);
+                        doc.text('Belum terdapat transaksi selesai pada filter ini sehingga persentase ketepatan waktu belum dapat dinilai.', marginX + 2, y + 2);
                         return y + 12;
                     }
+
                     const barY = y + 3;
-                    const greenW = contentW * (onTimeCompletedRate / 100);
+                    const greenW = localContentW * (onTimeCompletedRate / 100);
+
                     doc.setFillColor(5, 150, 105);
                     if (greenW > 0) doc.rect(marginX, barY, greenW, 8, 'F');
                     doc.setFillColor(234, 88, 12);
-                    if (greenW < contentW) doc.rect(marginX + greenW, barY, contentW - greenW, 8, 'F');
+                    if (greenW < localContentW) doc.rect(marginX + greenW, barY, localContentW - greenW, 8, 'F');
+
                     doc.setFont('helvetica', 'bold');
                     doc.setFontSize(8);
                     doc.setTextColor(5, 150, 105);
                     doc.text(`TEPAT WAKTU ${onTimeCompletedRate}% (${statusCounts.completedOnTime})`, marginX, barY + 14);
+
                     doc.setTextColor(194, 65, 12);
                     doc.text(`TERLAMBAT ${lateCompletedRate}% (${statusCounts.completedLate})`, pw - marginX, barY + 14, { align: 'right' });
-                    doc.setTextColor(51, 65, 85);
+
                     doc.setFont('helvetica', 'normal');
                     doc.setFontSize(7.2);
-                    doc.text(`Penilaian kepatuhan: ${complianceLabel} | Basis penilaian: ${completedTotal} transaksi yang sudah selesai.`, marginX, barY + 20);
+                    doc.setTextColor(51, 65, 85);
+                    doc.text(`Penilaian kepatuhan: ${complianceLabel} | Basis: ${completedTotal} transaksi selesai.`, marginX, barY + 20);
+
                     if (statusCounts.activeLate > 0) {
                         doc.setTextColor(185, 28, 28);
-                        doc.text(`Catatan operasional: ${statusCounts.activeLate} transaksi aktif masih melewati tenggat (${activeLateRate}% dari transaksi aktif).`, marginX, barY + 25);
+                        doc.text(`Catatan: ${statusCounts.activeLate} transaksi aktif melewati tenggat (${activeLateRate}% dari transaksi aktif).`, marginX, barY + 25);
                     }
+
                     return barY + 31;
                 };
 
-                const dominantPurpose = purposeData[0] || null;
-                const topBorrower = borrowerData[0] || null;
-                const topTool = strategicTools[0] || null;
-                const topDurationTool = mainToolsByDuration[0] || null;
-                const topBorrowerDuration = borrowerDurationData[0] || null;
+                // ==========================================================
+                // 3. ANALISIS NARATIF
+                // ==========================================================
                 const analysisParts = [];
-                analysisParts.push(`Pada periode ${periodText}, tercatat ${filteredTx.length} transaksi yang melibatkan ${uniqueBorrowers} peminjam dan ${totalUnitUsage} unit-pemakaian alat.`);
-                if (dominantPurpose) analysisParts.push(`Kebutuhan ${dominantPurpose.name} merupakan aktivitas paling dominan dengan ${dominantPurpose.count} transaksi.`);
-                if (topTool) analysisParts.push(`Instrumen utama dengan frekuensi pemakaian tertinggi adalah ${topTool.name} (${topTool.code}) sebanyak ${topTool.count} unit-pemakaian.`);
-                if (topDurationTool) analysisParts.push(`Durasi penggunaan alat utama tertinggi tercatat pada ${topDurationTool.name} (${topDurationTool.code}) sebesar ${topDurationTool.hours.toLocaleString('id-ID')} jam.`);
-                if (lateTotal > 0) analysisParts.push(`Terdapat ${lateTotal} transaksi berstatus terlambat (${lateRate}% dari seluruh transaksi pada filter ini), terdiri atas ${statusCounts.activeLate} transaksi yang masih aktif melewati tenggat dan ${statusCounts.completedLate} transaksi yang selesai setelah tenggat.`);
-                else analysisParts.push('Tidak terdapat transaksi terlambat pada data yang masuk dalam kriteria laporan.');
-                if (completedTotal > 0) analysisParts.push(`Dari ${completedTotal} transaksi yang sudah selesai, ${onTimeCompletedRate}% dikembalikan tepat waktu dan ${lateCompletedRate}% dikembalikan terlambat; penilaian kepatuhan: ${complianceLabel}.`);
-                if (topBorrower) analysisParts.push(`${topBorrower.name} tercatat sebagai peminjam dengan aktivitas tertinggi, yaitu ${topBorrower.transactions} transaksi dan ${topBorrower.units} unit alat.`);
-                if (topBorrowerDuration) analysisParts.push(`Akumulasi durasi peminjaman tertinggi tercatat pada ${topBorrowerDuration.name} sebesar ${topBorrowerDuration.hours.toLocaleString('id-ID')} jam.`);
+                analysisParts.push(
+                    `Pada periode ${periodText}, terdapat ${filteredTx.length} transaksi yang melibatkan ${uniqueBorrowers} peminjam unik. Rata-rata aktivitas adalah ${avgTransactionsPerBorrower.toFixed(1)} transaksi per peminjam.`
+                );
+                analysisParts.push(
+                    `${repeatBorrowers} peminjam (${repeatBorrowerRate}%) melakukan lebih dari satu transaksi, sedangkan ${singleBorrowers} peminjam hanya tercatat satu kali pada filter laporan.`
+                );
+                if (dominantPurpose) {
+                    const pct = Math.round((dominantPurpose.count / filteredTx.length) * 100);
+                    analysisParts.push(`Tujuan peminjaman dominan adalah ${dominantPurpose.name} dengan ${dominantPurpose.count} transaksi (${pct}%).`);
+                }
+                if (topBorrower) {
+                    analysisParts.push(`${topBorrower.name} (${topBorrower.nim}) memiliki frekuensi peminjaman tertinggi dengan ${topBorrower.transactions} transaksi.`);
+                }
+                if (topDurationBorrower) {
+                    analysisParts.push(`${topDurationBorrower.name} memiliki akumulasi durasi peminjaman tertinggi sebesar ${topDurationBorrower.hours.toLocaleString('id-ID')} jam.`);
+                }
+                if (completedTotal > 0) {
+                    analysisParts.push(`Dari ${completedTotal} transaksi selesai, ${onTimeCompletedRate}% dikembalikan tepat waktu dan ${lateCompletedRate}% terlambat; tingkat kepatuhan dikategorikan ${complianceLabel}.`);
+                } else {
+                    analysisParts.push('Belum terdapat transaksi selesai pada filter ini, sehingga indikator ketepatan waktu belum dapat dinilai.');
+                }
+                if (borrowersWithLate > 0) {
+                    analysisParts.push(`${borrowersWithLate} peminjam unik (${lateBorrowerRate}%) memiliki sedikitnya satu transaksi terlambat atau masih aktif melewati tenggat.`);
+                }
                 const analysisText = analysisParts.join(' ');
 
-                // HALAMAN 1 - RINGKASAN EKSEKUTIF
-                addHeader('LAPORAN OPERASIONAL PEMINJAMAN & PENGGUNAAN ALAT', `Dokumen: ${reportCode}`);
+                const borrowerChartAnalysisParts = [];
+                if (topBorrower) {
+                    borrowerChartAnalysisParts.push(
+                        `Frekuensi tertinggi terdapat pada ${topBorrower.name} dengan ${topBorrower.transactions} transaksi.`
+                    );
+                }
+                if (topDurationBorrower) {
+                    borrowerChartAnalysisParts.push(
+                        `Akumulasi durasi tertinggi terdapat pada ${topDurationBorrower.name} sebesar ${topDurationBorrower.hours.toLocaleString('id-ID')} jam.`
+                    );
+                }
+                borrowerChartAnalysisParts.push(
+                    `Peminjam berulang berjumlah ${repeatBorrowers} orang (${repeatBorrowerRate}% dari seluruh peminjam unik).`
+                );
+                borrowerChartAnalysisParts.push(
+                    `Rata-rata durasi setiap transaksi adalah ${avgTransactionHours.toFixed(1)} jam; total keterlambatan terakumulasi sebesar ${formatDurationCompact(totalLateMinutes * 60000)}.`
+                );
+                const borrowerChartAnalysis = borrowerChartAnalysisParts.join(' ');
+
+                const operationalNotes = [];
+                if (statusCounts.activeLate > 0) {
+                    operationalNotes.push(`Prioritaskan tindak lanjut kepada peminjam pada ${statusCounts.activeLate} transaksi aktif yang telah melewati tenggat.`);
+                }
+                if (borrowersWithLate > 0) {
+                    operationalNotes.push(`Lakukan pengingat dan evaluasi kepatuhan pada ${borrowersWithLate} peminjam yang memiliki riwayat keterlambatan dalam filter laporan.`);
+                }
+                if (lateRate >= 20) {
+                    operationalNotes.push(`Rasio transaksi terlambat sebesar ${lateRate}% memerlukan penguatan pengingat menjelang tenggat dan dokumentasi komunikasi pengembalian.`);
+                }
+                if (repeatBorrowerRate >= 50) {
+                    operationalNotes.push(`Proporsi peminjam berulang mencapai ${repeatBorrowerRate}%; data ini dapat dimanfaatkan untuk mengenali kelompok pengguna rutin dan kebutuhan layanan yang berulang.`);
+                }
+                if (!operationalNotes.length) {
+                    operationalNotes.push('Data peminjam pada filter ini menunjukkan kepatuhan yang terkendali; pertahankan pengingat tenggat dan dokumentasi serah terima.');
+                }
+
+                // ==========================================================
+                // 4. HALAMAN 1 - RINGKASAN PEMINJAM
+                // ==========================================================
+                addHeader('LAPORAN ANALISIS PEMINJAM LABORATORIUM', `Dokumen: ${reportCode}`);
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(7.5);
                 doc.setTextColor(100, 116, 139);
                 doc.text(`Periode data: ${periodText} | Filter: ${fullFilterLabel} | Dicetak: ${formatDateTime(generatedAt)}`, marginX, 38);
+
                 doc.setTextColor(220, 38, 38);
                 doc.setFont('helvetica', 'bold');
-                doc.text('DOKUMEN INTERNAL - MODE ADMIN', doc.internal.pageSize.getWidth() - marginX, 38, { align: 'right' });
+                doc.text('DOKUMEN INTERNAL - MODE ADMIN', portraitWidth - marginX, 38, { align: 'right' });
 
-                const contentW = doc.internal.pageSize.getWidth() - marginX * 2;
                 const gap = 3.5;
                 const cardW = (contentW - gap * 3) / 4;
-                metricCard(marginX, 44, cardW, 'Total Transaksi', filteredTx.length, `${uniqueBorrowers} peminjam unik`, [79, 70, 229]);
-                metricCard(marginX + cardW + gap, 44, cardW, 'Tepat Waktu', `${onTimeCompletedRate}%`, `${statusCounts.completedOnTime}/${completedTotal || 0} transaksi selesai`, [5, 150, 105]);
-                metricCard(marginX + (cardW + gap) * 2, 44, cardW, 'Terlambat Selesai', `${lateCompletedRate}%`, `${statusCounts.completedLate}/${completedTotal || 0} transaksi selesai`, [234, 88, 12]);
-                metricCard(marginX + (cardW + gap) * 3, 44, cardW, 'Aktif Terlambat', statusCounts.activeLate, `${activeLateRate}% dari transaksi aktif`, [220, 38, 38]);
+                metricCard(marginX, 44, cardW, 'Total Transaksi', filteredTx.length, `${uniqueBorrowers} peminjam unik`, [14, 116, 144]);
+                metricCard(marginX + cardW + gap, 44, cardW, 'Peminjam Berulang', repeatBorrowers, `${repeatBorrowerRate}% peminjam unik`, [79, 70, 229]);
+                metricCard(marginX + (cardW + gap) * 2, 44, cardW, 'Tepat Waktu', `${onTimeCompletedRate}%`, `${statusCounts.completedOnTime}/${completedTotal || 0} transaksi selesai`, [5, 150, 105]);
+                metricCard(marginX + (cardW + gap) * 3, 44, cardW, 'Peminjam Terlambat', borrowersWithLate, `${lateBorrowerRate}% peminjam unik`, [220, 38, 38]);
 
-                let y = statusChart(79);
+                let y = statusChart(80);
                 y = complianceChart(y + 1);
-                y = sectionTitle('Analisis Eksekutif', y + 2, contentW);
+                y = sectionTitle('Ringkasan Analisis Peminjam', y + 2, contentW);
+
                 doc.setFont('helvetica', 'normal');
-                doc.setFontSize(8.4);
+                doc.setFontSize(8.2);
                 doc.setTextColor(51, 65, 85);
-                const analysisLines = doc.splitTextToSize(analysisText, contentW - 4);
+                const analysisLines = doc.splitTextToSize(analysisText, contentW - 5);
                 doc.text(analysisLines, marginX + 2, y);
-                y += analysisLines.length * 4.3 + 6;
 
-                const operationalNotes = [];
-                if (statusCounts.activeLate > 0) operationalNotes.push(`Prioritas segera: tindak lanjuti ${statusCounts.activeLate} transaksi aktif yang telah melewati tenggat pengembalian.`);
-                if (lateRate >= 20) operationalNotes.push(`Rasio keterlambatan ${lateRate}% tergolong signifikan; pengingat otomatis menjelang tenggat dan evaluasi kepatuhan peminjam direkomendasikan.`);
-                if (topTool) operationalNotes.push(`Prioritaskan pemeriksaan kondisi dan kesiapan ${topTool.name} (${topTool.code}) karena memiliki intensitas pemakaian tertinggi.`);
-                if (!operationalNotes.length) operationalNotes.push('Kinerja pengembalian pada filter ini terkendali; pertahankan proses pengingat, inspeksi alat, dan dokumentasi serah terima.');
-
-                y = sectionTitle('Rekomendasi Operasional', y + 2, contentW);
-                doc.setFontSize(8.1);
-                operationalNotes.forEach((note, idx) => {
-                    const lines = doc.splitTextToSize(`${idx + 1}. ${note}`, contentW - 5);
-                    doc.text(lines, marginX + 2, y);
-                    y += lines.length * 4.1 + 2;
-                });
-
-                // HALAMAN 2 - GRAFIK ALAT UTAMA
+                // ==========================================================
+                // 5. HALAMAN 2 - GRAFIK PEMINJAM + INTERPRETASI
+                // ==========================================================
                 doc.addPage('a4', 'portrait');
-                addHeader('ANALISIS PEMANFAATAN ALAT UTAMA', `Filter: ${fullFilterLabel}`);
+                addHeader('ANALISIS GRAFIK PEMINJAM', `Filter: ${fullFilterLabel}`);
                 y = 42;
-                y = barChart(purposeData, y, 'Grafik Jenis Kegiatan Peminjaman', 'count', ' trx', 5, [5, 150, 105]);
-                y = barChart(strategicTools, y + 2, 'Grafik Frekuensi Alat Utama', 'count', 'x', 8, [79, 70, 229]);
-                y = barChart(mainToolsByDuration, y + 2, 'Grafik Durasi Penggunaan Alat Utama', 'hours', ' jam', 8, [124, 58, 237]);
 
-                // HALAMAN 3 - GRAFIK PEMINJAM (frekuensi + durasi)
-                doc.addPage('a4', 'portrait');
-                addHeader('ANALISIS PEMINJAM', `Filter: ${fullFilterLabel}`);
-                y = 42;
-                const borrowerChartData = borrowerData.slice(0, 8).map(b => ({ name: `${b.name} (${b.nim})`, count: b.transactions }));
-                const borrowerDurationChartData = borrowerDurationData.slice(0, 8).map(b => ({ name: `${b.name} (${b.nim})`, hours: b.hours }));
-                y = barChart(borrowerChartData, y, 'Grafik Frekuensi Peminjaman per Peminjam', 'count', ' trx', 8, [14, 116, 144]);
-                y = barChart(borrowerDurationChartData, y + 2, 'Grafik Akumulasi Durasi Peminjaman per Peminjam', 'hours', ' jam', 8, [2, 132, 199]);
-                if (y < 250) {
-                    y = sectionTitle('Indikator Penggunaan', y + 2, contentW);
-                    doc.setFont('helvetica', 'normal');
-                    doc.setFontSize(8);
-                    doc.setTextColor(71, 85, 105);
-                    const indicatorLines = [
-                        `Rata-rata durasi transaksi berjalan/selesai: ${avgTransactionHours.toFixed(1)} jam per transaksi.`,
-                        `Total keterlambatan terakumulasi: ${formatDurationCompact(totalLateMinutes * 60000)} pada seluruh transaksi terlambat.`,
-                        `Kepatuhan pengembalian selesai: tepat waktu ${onTimeCompletedRate}% vs terlambat ${lateCompletedRate}% (${complianceLabel}).`
-                    ];
-                    indicatorLines.forEach((line, idx) => doc.text(`${idx + 1}. ${line}`, marginX + 2, y + idx * 5));
+                const borrowerFrequencyChart = borrowerData.map(b => ({
+                    name: `${b.name} (${b.nim})`,
+                    count: b.transactions
+                }));
+                const borrowerDurationChart = borrowerDurationData.map(b => ({
+                    name: `${b.name} (${b.nim})`,
+                    hours: b.hours
+                }));
+
+                y = barChart(borrowerFrequencyChart, y, 'Frekuensi Peminjaman per Peminjam', 'count', ' trx', 8, [14, 116, 144]);
+                y = barChart(borrowerDurationChart, y + 2, 'Akumulasi Durasi Peminjaman per Peminjam', 'hours', ' jam', 8, [2, 132, 199]);
+
+                if (y > 217) {
+                    doc.addPage('a4', 'portrait');
+                    addHeader('INTERPRETASI GRAFIK PEMINJAM', `Filter: ${fullFilterLabel}`);
+                    y = 43;
                 }
 
-                // HALAMAN 4 - TABEL RINGKAS ALAT UTAMA & PEMINJAM DENGAN DURASI
+                y = sectionTitle('Interpretasi Grafik', y + 3, contentW);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.2);
+                doc.setTextColor(51, 65, 85);
+                const chartAnalysisLines = doc.splitTextToSize(borrowerChartAnalysis, contentW - 5);
+                doc.text(chartAnalysisLines, marginX + 2, y);
+                y += chartAnalysisLines.length * 4.2 + 5;
+
+                if (y < 215 && purposeData.length) {
+                    y = barChart(purposeData, y + 2, 'Distribusi Tujuan Peminjaman', 'count', ' trx', 5, [5, 150, 105]);
+                }
+
+                // ==========================================================
+                // 6. TABEL RINGKAS SELURUH PEMINJAM
+                // ==========================================================
                 doc.addPage('a4', 'landscape');
-                addHeader('RINGKASAN DURASI ALAT UTAMA & PEMINJAM', `Filter: ${fullFilterLabel}`);
-                const mainToolSummaryRows = mainToolsByDuration.map((item, idx) => [
-                    idx + 1, item.code, item.name, item.category, item.count,
-                    `${item.hours.toLocaleString('id-ID')} jam`, `${item.avgHours.toLocaleString('id-ID')} jam`
+                const borrowerSummaryRows = borrowerData.map((b, idx) => [
+                    idx + 1,
+                    b.name,
+                    b.nim,
+                    b.transactions,
+                    b.dominantPurpose,
+                    `${b.hours.toLocaleString('id-ID')} jam`,
+                    `${b.avgHours.toLocaleString('id-ID')} jam`,
+                    b.completedOnTime,
+                    b.late,
+                    b.onTimeRate == null ? 'Belum dinilai' : `${b.onTimeRate}%`,
+                    b.lastBorrowText
                 ]);
+
                 doc.autoTable({
-                    startY: 39,
-                    head: [['No', 'Kode', 'Alat Utama', 'Kategori', 'Frekuensi', 'Total Durasi', 'Rata-rata/Unit']],
-                    body: mainToolSummaryRows,
-                    theme: 'grid', margin: { left: 9, right: 9 },
-                    headStyles: { fillColor: [55, 48, 163], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
-                    styles: { fontSize: 6.7, cellPadding: 1.8, textColor: [51, 65, 85] },
-                    alternateRowStyles: { fillColor: [248, 250, 252] }
-                });
-                let summaryY = doc.lastAutoTable.finalY + 8;
-                if (summaryY > 135) {
-                    doc.addPage('a4', 'landscape');
-                    addHeader('RINGKASAN DURASI PEMINJAM', `Filter: ${fullFilterLabel}`);
-                    summaryY = 39;
-                } else {
-                    summaryY = sectionTitle('Ringkasan Peminjam', summaryY, doc.internal.pageSize.getWidth() - marginX * 2);
-                }
-                const borrowerSummaryRows = borrowerDurationData.map((b, idx) => [
-                    idx + 1, b.name, b.nim, b.transactions, b.units,
-                    `${b.hours.toLocaleString('id-ID')} jam`, b.late
-                ]);
-                doc.autoTable({
-                    startY: summaryY,
-                    head: [['No', 'Peminjam', 'Identitas', 'Transaksi', 'Unit', 'Total Durasi', 'Terlambat']],
+                    startY: 40,
+                    head: [[
+                        'No',
+                        'Peminjam',
+                        'Identitas',
+                        'Transaksi',
+                        'Tujuan Dominan',
+                        'Total Durasi',
+                        'Rata-rata',
+                        'Tepat Waktu',
+                        'Terlambat',
+                        'Kepatuhan',
+                        'Aktivitas Terakhir'
+                    ]],
                     body: borrowerSummaryRows,
-                    theme: 'grid', margin: { left: 9, right: 9, bottom: 16 },
-                    headStyles: { fillColor: [14, 116, 144], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7 },
-                    styles: { fontSize: 6.6, cellPadding: 1.7, textColor: [51, 65, 85] },
-                    alternateRowStyles: { fillColor: [248, 250, 252] }
+                    theme: 'grid',
+                    margin: { left: 8, right: 8, top: 40, bottom: 16 },
+                    headStyles: {
+                        fillColor: [14, 116, 144],
+                        textColor: [255, 255, 255],
+                        font: 'helvetica',
+                        fontStyle: 'bold',
+                        fontSize: 6.7,
+                        halign: 'center',
+                        valign: 'middle'
+                    },
+                    styles: {
+                        font: 'helvetica',
+                        fontSize: 6.2,
+                        cellPadding: 1.6,
+                        textColor: [51, 65, 85],
+                        valign: 'middle',
+                        overflow: 'linebreak'
+                    },
+                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    columnStyles: {
+                        0: { cellWidth: 8, halign: 'center' },
+                        1: { cellWidth: 42 },
+                        2: { cellWidth: 27 },
+                        3: { cellWidth: 18, halign: 'center' },
+                        4: { cellWidth: 29 },
+                        5: { cellWidth: 24, halign: 'right' },
+                        6: { cellWidth: 22, halign: 'right' },
+                        7: { cellWidth: 19, halign: 'center' },
+                        8: { cellWidth: 18, halign: 'center' },
+                        9: { cellWidth: 22, halign: 'center' },
+                        10: { cellWidth: 26, halign: 'center' }
+                    },
+                    didParseCell: function(data) {
+                        if (data.section === 'body' && data.column.index === 9) {
+                            const value = String(data.cell.raw || '');
+                            if (value === 'Belum dinilai') {
+                                data.cell.styles.fillColor = [241, 245, 249];
+                                data.cell.styles.textColor = [100, 116, 139];
+                                return;
+                            }
+                            const pct = parseInt(value, 10) || 0;
+                            if (pct >= 90) {
+                                data.cell.styles.fillColor = [209, 250, 229];
+                                data.cell.styles.textColor = [4, 120, 87];
+                            } else if (pct >= 70) {
+                                data.cell.styles.fillColor = [254, 243, 199];
+                                data.cell.styles.textColor = [161, 98, 7];
+                            } else {
+                                data.cell.styles.fillColor = [254, 226, 226];
+                                data.cell.styles.textColor = [185, 28, 28];
+                            }
+                            data.cell.styles.fontStyle = 'bold';
+                        }
+                    },
+                    didDrawPage: function() {
+                        addHeader('RINGKASAN DATA PEMINJAM', `Filter: ${fullFilterLabel}`);
+                    }
                 });
 
-                // HALAMAN 5+ - DATA RINCI TRANSAKSI DALAM LANDSCAPE
+                // Analisis tabel ditempatkan setelah tabel ringkasan.
+                doc.addPage('a4', 'portrait');
+                addHeader('ANALISIS DATA PEMINJAM', `Filter: ${fullFilterLabel}`);
+                y = 44;
+
+                y = sectionTitle('Penjelasan Tabel Peminjam', y, contentW);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.1);
+                doc.setTextColor(51, 65, 85);
+
+                const tableNotes = [
+                    `Tabel ringkasan memuat seluruh ${uniqueBorrowers} peminjam unik yang masuk dalam kriteria filter, bukan hanya peminjam dengan aktivitas tertinggi.`,
+                    'Kolom transaksi menunjukkan jumlah registrasi peminjaman per peminjam; durasi merupakan akumulasi waktu peminjaman pada seluruh transaksi yang masuk dalam filter.',
+                    'Kepatuhan dihitung hanya dari transaksi yang telah selesai. Transaksi aktif terlambat tetap dicatat pada kolom keterlambatan, tetapi tidak dimasukkan ke denominator persentase tepat waktu selesai.',
+                    `Sebanyak ${repeatBorrowers} peminjam tercatat berulang dan ${borrowersWithLate} peminjam memiliki sedikitnya satu kejadian keterlambatan.`
+                ];
+
+                tableNotes.forEach((note, idx) => {
+                    const wrapped = doc.splitTextToSize(`${idx + 1}. ${note}`, contentW - 5);
+                    doc.text(wrapped, marginX + 2, y);
+                    y += wrapped.length * 4.15 + 2;
+                });
+
+                y = sectionTitle('Rekomendasi Tindak Lanjut', y + 4, contentW);
+                operationalNotes.forEach((note, idx) => {
+                    const wrapped = doc.splitTextToSize(`${idx + 1}. ${note}`, contentW - 5);
+                    doc.text(wrapped, marginX + 2, y);
+                    y += wrapped.length * 4.15 + 2.5;
+                });
+
+                // ==========================================================
+                // 7. DATA RINCI TRANSAKSI - TANPA RINCIAN ALAT
+                // ==========================================================
                 doc.addPage('a4', 'landscape');
-                addHeader('DATA RINCI TRANSAKSI PEMINJAMAN', `${filteredTx.length} transaksi | ${fullFilterLabel}`);
                 const detailBody = detailedRows.map(r => [
                     r.no,
                     r.id,
-                    `${r.borrower}\nID: ${r.nim}`,
+                    r.borrower,
+                    r.nim,
                     r.purpose,
                     r.borrowText,
                     r.dueText,
                     r.returnText,
                     r.status,
-                    `${r.timeNote}\nDurasi: ${r.duration}`,
-                    r.items
+                    `${r.timeNote}\nDurasi: ${r.duration}`
                 ]);
+
                 doc.autoTable({
-                    startY: 39,
-                    head: [['No', 'ID Transaksi', 'Peminjam', 'Keperluan', 'Waktu Pinjam', 'Tenggat', 'Kembali Aktual', 'Status', 'Keterangan Waktu', 'Rincian Alat']],
+                    startY: 40,
+                    head: [[
+                        'No',
+                        'ID Transaksi',
+                        'Peminjam',
+                        'Identitas',
+                        'Keperluan',
+                        'Waktu Pinjam',
+                        'Tenggat',
+                        'Kembali Aktual',
+                        'Status',
+                        'Keterangan Waktu'
+                    ]],
                     body: detailBody,
                     theme: 'grid',
-                    margin: { left: 8, right: 8, bottom: 16 },
-                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 6.4, halign: 'center', valign: 'middle' },
+                    margin: { left: 8, right: 8, top: 40, bottom: 16 },
+                    headStyles: {
+                        fillColor: [30, 41, 59],
+                        textColor: [255, 255, 255],
+                        font: 'helvetica',
+                        fontStyle: 'bold',
+                        fontSize: 6.5,
+                        halign: 'center',
+                        valign: 'middle'
+                    },
                     alternateRowStyles: { fillColor: [248, 250, 252] },
-                    styles: { fontSize: 6.1, cellPadding: 1.6, textColor: [51, 65, 85], valign: 'top', overflow: 'linebreak' },
+                    styles: {
+                        font: 'helvetica',
+                        fontSize: 6.1,
+                        cellPadding: 1.6,
+                        textColor: [51, 65, 85],
+                        valign: 'top',
+                        overflow: 'linebreak'
+                    },
                     columnStyles: {
-                        0: { cellWidth: 7, halign: 'center' },
-                        1: { cellWidth: 26 },
-                        2: { cellWidth: 30 },
-                        3: { cellWidth: 35 },
-                        4: { cellWidth: 25 },
-                        5: { cellWidth: 25 },
-                        6: { cellWidth: 25 },
-                        7: { cellWidth: 23, halign: 'center' },
-                        8: { cellWidth: 25 },
-                        9: { cellWidth: 55 }
+                        0: { cellWidth: 8, halign: 'center' },
+                        1: { cellWidth: 28 },
+                        2: { cellWidth: 35 },
+                        3: { cellWidth: 26 },
+                        4: { cellWidth: 40 },
+                        5: { cellWidth: 27 },
+                        6: { cellWidth: 27 },
+                        7: { cellWidth: 27 },
+                        8: { cellWidth: 27, halign: 'center' },
+                        9: { cellWidth: 42 }
                     },
                     didParseCell: function(data) {
-                        if (data.section === 'body' && data.column.index === 7) {
+                        if (data.section === 'body' && data.column.index === 8) {
                             const value = String(data.cell.raw || '');
                             if (value === 'Aktif Terlambat') {
                                 data.cell.styles.fillColor = [254, 226, 226];
@@ -3824,63 +4416,93 @@ function App() {
                                 data.cell.styles.fontStyle = 'bold';
                             }
                         }
+                    },
+                    didDrawPage: function() {
+                        addHeader('DATA RINCI TRANSAKSI PEMINJAM', `${filteredTx.length} transaksi | ${fullFilterLabel}`);
                     }
                 });
 
-                // HALAMAN PENGESAHAN
+                // ==========================================================
+                // 8. METODOLOGI & PENGESAHAN
+                // ==========================================================
                 doc.addPage('a4', 'portrait');
-                addHeader('PENGESAHAN LAPORAN OPERASIONAL', `Dokumen: ${reportCode}`);
-                let sy = 46;
-                sy = sectionTitle('Pernyataan Laporan', sy, contentW);
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(8.7);
-                doc.setTextColor(51, 65, 85);
-                const declaration = `Laporan ini merupakan rekap operasional peminjaman dan penggunaan alat Laboratorium Geomatika berdasarkan ${filteredTx.length} transaksi pada ${archivePeriodLabel}. Status keterlambatan ditentukan dengan membandingkan tenggat pengembalian terhadap waktu pengembalian aktual atau waktu pencetakan laporan untuk transaksi yang masih aktif. Penilaian persentase tepat waktu dan terlambat menggunakan transaksi yang telah selesai sebagai basis kepatuhan pengembalian.`;
-                const declarationLines = doc.splitTextToSize(declaration, contentW - 5);
-                doc.text(declarationLines, marginX + 2, sy);
-                sy += declarationLines.length * 4.5 + 9;
+                addHeader('METODOLOGI & PENGESAHAN LAPORAN PEMINJAM', `Dokumen: ${reportCode}`);
+                y = 45;
 
-                sy = sectionTitle('Ringkasan Pengesahan', sy, contentW);
+                y = sectionTitle('Metodologi Analisis', y, contentW);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(71, 85, 105);
+
+                const methodology = [
+                    'Laporan menggunakan seluruh transaksi yang sesuai dengan filter status, bulan, dan tahun pada halaman arsip.',
+                    'Peminjam unik dikelompokkan berdasarkan NIM/identitas; bila identitas tidak tersedia, nama peminjam digunakan sebagai pengenal.',
+                    'Frekuensi peminjam dihitung dari jumlah transaksi, tanpa memasukkan jumlah atau jenis alat yang dipinjam.',
+                    'Durasi peminjaman dihitung dari waktu pinjam hingga waktu kembali aktual untuk transaksi selesai; transaksi aktif menggunakan waktu berjalan hingga saat laporan dibuat.',
+                    'Kepatuhan tepat waktu dihitung dari transaksi yang sudah selesai, sedangkan transaksi aktif terlambat dilaporkan sebagai risiko operasional terpisah.',
+                    'Tidak ada statistik penggunaan alat, frekuensi alat, durasi alat, atau rincian muatan alat pada laporan peminjam ini.'
+                ];
+
+                methodology.forEach((line, idx) => {
+                    const wrapped = doc.splitTextToSize(`${idx + 1}. ${line}`, contentW - 5);
+                    doc.text(wrapped, marginX + 2, y);
+                    y += wrapped.length * 4.1 + 2;
+                });
+
+                y = sectionTitle('Ringkasan Pengesahan', y + 4, contentW);
                 doc.autoTable({
-                    startY: sy,
+                    startY: y,
                     body: [
                         ['Periode Data', `${archivePeriodLabel} | ${periodText}`],
                         ['Kriteria Status', filterLabel],
                         ['Jumlah Transaksi', String(filteredTx.length)],
                         ['Peminjam Unik', String(uniqueBorrowers)],
+                        ['Peminjam Berulang', `${repeatBorrowers} (${repeatBorrowerRate}%)`],
+                        ['Peminjam dengan Keterlambatan', `${borrowersWithLate} (${lateBorrowerRate}%)`],
                         ['Ketepatan Waktu (selesai)', `${onTimeCompletedRate}% (${statusCounts.completedOnTime} dari ${completedTotal})`],
-                        ['Terlambat (selesai)', `${lateCompletedRate}% (${statusCounts.completedLate} dari ${completedTotal})`],
                         ['Aktif Melewati Tenggat', `${statusCounts.activeLate} (${activeLateRate}% dari transaksi aktif)`],
                         ['Penilaian Kepatuhan', complianceLabel],
                         ['Kode Laporan', reportCode]
                     ],
                     theme: 'plain',
                     margin: { left: marginX, right: marginX },
-                    styles: { fontSize: 8, cellPadding: 2.2, textColor: [51, 65, 85] },
-                    columnStyles: { 0: { cellWidth: 45, fontStyle: 'bold', textColor: [71, 85, 105] } }
+                    styles: { font: 'helvetica', fontSize: 8, cellPadding: 2.1, textColor: [51, 65, 85] },
+                    columnStyles: { 0: { cellWidth: 55, fontStyle: 'bold', textColor: [71, 85, 105] } }
                 });
-                sy = doc.lastAutoTable.finalY + 12;
+
+                y = doc.lastAutoTable.finalY + 10;
+                if (y > 212) {
+                    doc.addPage('a4', 'portrait');
+                    addHeader('PENGESAHAN LAPORAN PEMINJAM', `Dokumen: ${reportCode}`);
+                    y = 46;
+                }
+
+                doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8);
                 doc.setTextColor(71, 85, 105);
-                doc.text(`Lampung Selatan, ${generatedAt.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, doc.internal.pageSize.getWidth() - marginX, sy, { align: 'right' });
-                const sigY = sy + 12;
+                doc.text(`Lampung Selatan, ${generatedAt.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, doc.internal.pageSize.getWidth() - marginX, y, { align: 'right' });
+
+                const sigY = y + 12;
                 const leftX = marginX + contentW * 0.25;
                 const rightX = marginX + contentW * 0.75;
+
                 doc.setTextColor(15, 23, 42);
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8.5);
                 doc.text('Mengetahui,', leftX, sigY, { align: 'center' });
                 doc.text('Diverifikasi oleh,', rightX, sigY, { align: 'center' });
+
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(9);
                 doc.text('Koordinator Laboratorium GT', leftX, sigY + 6, { align: 'center' });
                 doc.text('Laboran Geomatika', rightX, sigY + 6, { align: 'center' });
+
                 doc.setFont('helvetica', 'normal');
                 doc.setTextColor(100, 116, 139);
                 doc.text('(........................................................)', leftX, sigY + 35, { align: 'center' });
                 doc.text('(........................................................)', rightX, sigY + 35, { align: 'center' });
 
-                // FOOTER SETIAP HALAMAN - mendukung portrait dan landscape.
+                // Footer seluruh halaman, portrait maupun landscape.
                 const pageCount = doc.getNumberOfPages();
                 for (let p = 1; p <= pageCount; p++) {
                     doc.setPage(p);
@@ -3896,13 +4518,14 @@ function App() {
                 }
 
                 const fileFilter = String(`${filterLabel}_${archivePeriodLabel}`).replace(/[^a-zA-Z0-9_-]+/g, '_');
-                doc.save(`Laporan_Operasional_Peminjaman_Lab_Geomatika_${fileFilter}_${reportCode}.pdf`);
-                showNotification(`Laporan PDF berhasil dibuat (${filteredTx.length} transaksi).`, 'success');
+                doc.save(`Laporan_Analisis_Peminjam_Lab_Geomatika_${fileFilter}_${reportCode}.pdf`);
+                showNotification(`Laporan peminjam berhasil dibuat (${uniqueBorrowers} peminjam, ${filteredTx.length} transaksi).`, 'success');
             } catch (error) {
-                console.error('Gagal membuat laporan operasional peminjaman:', error);
-                showNotification('Gagal membuat laporan PDF operasional. Periksa Console untuk detail.', 'error');
+                console.error('Gagal membuat laporan analisis peminjam:', error);
+                showNotification('Gagal membuat laporan PDF peminjam. Periksa Console untuk detail.', 'error');
             }
         };
+
         return (React.createElement("div", { className: "space-y-6 animate-fade-in" },
             React.createElement("h2", { className: "text-2xl font-bold text-slate-800 border-b border-slate-300 pb-3" }, "Log Transaksi & Pengembalian Dokumen"),
             React.createElement("div", { className: "flex flex-col md:flex-row justify-between gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200 shadow-sm" },
@@ -3942,7 +4565,7 @@ function App() {
                         type: "button",
                         onClick: handleGenerateBorrowerUsageReport,
                         className: "lab-report-btn inline-flex items-center gap-2 px-4 py-2 text-white text-xs font-bold rounded-xl shadow-sm transition-all border whitespace-nowrap",
-                        title: "Export laporan operasional peminjaman, penggunaan alat, peminjam, dan status"
+                        title: "Export laporan analisis peminjam berdasarkan filter status dan periode"
                     },
                         React.createElement("span", { className: "lab-report-icon" },
                             React.createElement("i", { className: "fas fa-file-pdf" })),
