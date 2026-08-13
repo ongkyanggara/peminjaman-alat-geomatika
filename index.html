@@ -960,156 +960,64 @@ function App() {
         }
     };
     // ============================================================
-    // SINKRONISASI DATABASE SPREADSHEET - HTML ONLY STABILITY LAYER
-    // Apps Script TIDAK perlu diubah.
-    // Strategi:
-    // 1) satu request pada satu waktu (dedupe),
-    // 2) timeout lebih toleran untuk cold-start Apps Script,
-    // 3) retry eksponensial + jitter saat layanan lambat,
-    // 4) interval background lebih jarang,
-    // 5) snapshot sessionStorage hanya sebagai tampilan sementara,
-    //    bukan sumber kebenaran dan tidak pernah dipakai untuk write,
-    // 6) BroadcastChannel membagi data fresh antar-tab browser bila tersedia.
+    // SINKRONISASI DATABASE SPREADSHEET - 3 APPS SCRIPT (ISOLATED)
+    // PERBAIKAN KHUSUS:
+    // - Log transaksi SELALU dibaca dari GOOGLE_SCRIPT_URL.
+    // - Inventaris + Jadwal SELALU dibaca dari MASTER_DATA_URL.
+    // - Kotak Saran tetap memakai GOOGLE_SCRIPT_INV_FEEDBACK_URL.
+    // - Tidak ada sessionStorage/BroadcastChannel yang dapat menimpa
+    //   data transaksi dari tab/versi website lain.
+    // - Jika salah satu endpoint lambat/gagal, data endpoint lain tetap tampil.
     // ============================================================
-    const DB_SESSION_KEY = 'lab_geom_master_snapshot_v1';
-    const DB_SESSION_MAX_AGE = 5 * 60 * 1000;       // 5 menit, hanya fallback visual
-    const DB_REQUEST_TIMEOUT = 20000;               // 20 detik untuk cold-start Google Apps Script
-    const DB_BACKGROUND_INTERVAL = 120000;          // 2 menit
-    const DB_VISIBILITY_MIN_AGE = 60000;             // jangan request lagi jika data < 1 menit
-    const DB_MIN_REQUEST_GAP = 12000;                // cegah burst request
+    const normalizeTransactionPayload = (payload) => {
+        if (Array.isArray(payload)) return payload;
+        if (payload && Array.isArray(payload.transactions)) return payload.transactions;
+        // Compatibility untuk variasi response Apps Script lama.
+        if (payload && Array.isArray(payload.data)) return payload.data;
+        if (payload && Array.isArray(payload.records)) return payload.records;
+        return [];
+    };
 
-    const applyMasterPayload = (masterData, rawText = '', markFresh = false) => {
-        if (!masterData || typeof masterData !== 'object')
-            throw new Error('Format Master Database tidak valid.');
-        if (masterData.error)
-            throw new Error(masterData.error);
-        if (masterData.ok === false)
-            throw new Error(masterData.error || 'Master Database menolak permintaan.');
-
-        const txData = Array.isArray(masterData.transactions) ? masterData.transactions : [];
-        const finalInventoryMaster = Array.isArray(masterData.inventory)
-            ? masterData.inventory.map(item => {
-                const total = Number(item.total) || 0;
-                return {
-                    id: String(item.id || '').trim(),
-                    category: String(item.category || '').trim(),
-                    name: String(item.name || '').trim(),
-                    total,
-                    available: total
-                };
-            }).filter(item => item.id)
-            : [];
-        const finalSchedule = Array.isArray(masterData.schedule)
-            ? masterData.schedule.map(item => ({
+    const normalizeMasterInventory = (masterData) => Array.isArray(masterData?.inventory)
+        ? masterData.inventory.map(item => {
+            const total = Number(item.total) || 0;
+            return {
                 id: String(item.id || '').trim(),
-                lab: String(item.lab || 'GT').trim().toUpperCase(),
-                room: String(item.room || '').trim(),
-                day: Number(item.day),
-                course: String(item.course || '').trim(),
-                class: String(item.class || '').trim(),
-                start: String(item.start || '').substring(0, 5),
-                end: String(item.end || '').substring(0, 5)
-            })).filter(item =>
-                item.id && item.course &&
-                Number.isFinite(item.day) &&
-                item.start && item.end
-            )
-            : [];
-        const formattedTx = txData.map(trx => ({
-            ...trx,
-            borrowDateFormatted: trx.borrowDate
-                ? parseRealDate(trx.borrowDate).toLocaleDateString('id-ID')
-                : '-'
-        }));
-        const calculatedInventory = calculateInventory(formattedTx, finalInventoryMaster);
+                category: String(item.category || '').trim(),
+                name: String(item.name || '').trim(),
+                total,
+                available: total
+            };
+        }).filter(item => item.id)
+        : [];
 
-        setTransactions(formattedTx);
-        setBaseInventory(finalInventoryMaster);
-        setInventory(calculatedInventory);
-        setScheduleData(finalSchedule);
-        latestMasterDataRef.current = masterData;
-        if (rawText)
-            lastServerPayloadRef.current = rawText;
-
-        if (markFresh) {
-            setIsDatabaseReady(true);
-            lastSuccessfulSyncRef.current = Date.now();
-            retryCountRef.current = 0;
-        }
-        return true;
-    };
-
-    const saveSessionSnapshot = (rawText) => {
-        try {
-            if (!rawText) return;
-            sessionStorage.setItem(DB_SESSION_KEY, JSON.stringify({
-                savedAt: Date.now(),
-                rawText
-            }));
-        } catch (e) {
-            // Storage mungkin dibatasi browser/private mode. Abaikan tanpa mengganggu aplikasi.
-        }
-    };
-
-    const restoreSessionSnapshot = () => {
-        try {
-            const saved = sessionStorage.getItem(DB_SESSION_KEY);
-            if (!saved) return false;
-            const parsed = JSON.parse(saved);
-            if (!parsed || !parsed.rawText || !parsed.savedAt) return false;
-            if (Date.now() - Number(parsed.savedAt) > DB_SESSION_MAX_AGE) {
-                sessionStorage.removeItem(DB_SESSION_KEY);
-                return false;
-            }
-            const masterData = JSON.parse(parsed.rawText);
-            // Snapshot hanya membuat data lama tetap terlihat. isDatabaseReady tetap false
-            // sampai server benar-benar berhasil dijangkau, sehingga proses write tidak
-            // menggunakan stok/data sesi lama sebagai otorisasi.
-            applyMasterPayload(masterData, parsed.rawText, false);
-            return true;
-        } catch (e) {
-            try { sessionStorage.removeItem(DB_SESSION_KEY); } catch (_) {}
-            return false;
-        }
-    };
-
-    const clearRetryTimer = () => {
-        if (retryTimerRef.current) {
-            clearTimeout(retryTimerRef.current);
-            retryTimerRef.current = null;
-        }
-    };
-
-    const scheduleDatabaseRetry = () => {
-        clearRetryTimer();
-        const steps = [5000, 12000, 25000, 45000, 70000, 120000];
-        const index = Math.min(retryCountRef.current, steps.length - 1);
-        const jitter = Math.floor(Math.random() * 1800);
-        const delay = steps[index] + jitter;
-        retryCountRef.current += 1;
-        retryTimerRef.current = setTimeout(() => {
-            retryTimerRef.current = null;
-            if (document.visibilityState === 'visible' && navigator.onLine !== false) {
-                fetchDatabase({ silent: true, force: true });
-            }
-        }, delay);
-    };
+    const normalizeMasterSchedule = (masterData) => Array.isArray(masterData?.schedule)
+        ? masterData.schedule.map(item => ({
+            id: String(item.id || '').trim(),
+            lab: String(item.lab || 'GT').trim().toUpperCase(),
+            room: String(item.room || '').trim(),
+            day: Number(item.day),
+            course: String(item.course || '').trim(),
+            class: String(item.class || '').trim(),
+            start: String(item.start || '').substring(0, 5),
+            end: String(item.end || '').substring(0, 5)
+        })).filter(item =>
+            item.id && item.course &&
+            Number.isFinite(item.day) &&
+            item.start && item.end
+        )
+        : [];
 
     const fetchDatabase = async ({ silent = false, force = false } = {}) => {
         const now = Date.now();
-        if (!force && now - lastSyncAttemptRef.current < DB_MIN_REQUEST_GAP)
+        if (!force && now - lastSyncAttemptRef.current < 5000)
             return false;
         if (syncInProgressRef.current)
             return false;
+
         if (!GOOGLE_SCRIPT_URL || !MASTER_DATA_URL || MASTER_DATA_URL.includes('PASTE_MASTER_DATA_WEB_APP_URL_HERE')) {
             if (!silent)
                 showNotification('Konfigurasi database belum lengkap. Periksa URL transaksi dan MASTER_DATA_URL.', 'error');
-            return false;
-        }
-        if (navigator.onLine === false) {
-            if (!silent && !latestMasterDataRef.current)
-                showNotification('Perangkat sedang offline. Data akan disinkronkan saat koneksi kembali.', 'error');
-            scheduleDatabaseRetry();
             return false;
         }
 
@@ -1117,100 +1025,115 @@ function App() {
         syncInProgressRef.current = true;
         if (!silent)
             setIsSyncing(true);
-        clearRetryTimer();
 
         const controller = new AbortController();
         syncAbortRef.current = controller;
-        const timeoutId = setTimeout(() => controller.abort(), DB_REQUEST_TIMEOUT);
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
         try {
-            // TIGA Apps Script tetap dipertahankan. Untuk proses load hanya dua sumber data yang dibutuhkan:
-            // - Transaksi berasal dari GOOGLE_SCRIPT_URL lama (supaya Log Transaksi tetap tampil).
-            // - Inventaris + Jadwal berasal dari MASTER_DATA_URL.
-            const [txResponse, masterResponse] = await Promise.all([
-                fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'GET',
-                    cache: 'no-store',
-                    signal: controller.signal
-                }),
-                fetch(`${MASTER_DATA_URL}?resource=master`, {
-                    method: 'GET',
-                    cache: 'no-store',
-                    signal: controller.signal
-                })
-            ]);
+            // Kedua endpoint dijalankan paralel, tetapi hasilnya diproses TERPISAH.
+            // Dengan demikian kegagalan Master Data tidak mengosongkan Log Transaksi,
+            // dan kegagalan endpoint transaksi tidak menghapus Inventaris/Jadwal.
+            const txPromise = fetch(GOOGLE_SCRIPT_URL, {
+                method: 'GET',
+                cache: 'no-store',
+                signal: controller.signal
+            }).then(async response => {
+                if (!response.ok) throw new Error(`HTTP Transaksi ${response.status}`);
+                const rawText = await response.text();
+                if (!rawText) throw new Error('Respons transaksi kosong');
+                const payload = JSON.parse(rawText);
+                if (payload && payload.error) throw new Error(payload.error);
+                return { rawText, payload };
+            });
 
-            if (!txResponse.ok)
-                throw new Error(`HTTP Transaksi ${txResponse.status}`);
-            if (!masterResponse.ok)
-                throw new Error(`HTTP Master Data ${masterResponse.status}`);
+            const masterPromise = fetch(`${MASTER_DATA_URL}?resource=master`, {
+                method: 'GET',
+                cache: 'no-store',
+                signal: controller.signal
+            }).then(async response => {
+                if (!response.ok) throw new Error(`HTTP Master Data ${response.status}`);
+                const rawText = await response.text();
+                if (!rawText) throw new Error('Respons master data kosong');
+                const payload = JSON.parse(rawText);
+                if (payload && payload.error) throw new Error(payload.error);
+                if (payload && payload.ok === false)
+                    throw new Error(payload.error || 'Master Data menolak permintaan.');
+                return { rawText, payload };
+            });
 
-            const [txRawText, masterRawText] = await Promise.all([
-                txResponse.text(),
-                masterResponse.text()
-            ]);
-            if (!txRawText)
-                throw new Error('Respons transaksi kosong');
-            if (!masterRawText)
-                throw new Error('Respons master data kosong');
+            const [txResult, masterResult] = await Promise.allSettled([txPromise, masterPromise]);
 
-            const txRawData = JSON.parse(txRawText);
-            const masterData = JSON.parse(masterRawText);
-            if (txRawData && txRawData.error)
-                throw new Error(txRawData.error);
-            if (masterData && masterData.error)
-                throw new Error(masterData.error);
-            if (masterData && masterData.ok === false)
-                throw new Error(masterData.error || 'Master Data menolak permintaan.');
+            let txSuccess = false;
+            let masterSuccess = false;
+            let formattedTxForInventory = transactions;
+            let finalInventoryMaster = baseInventory;
 
-            const txData = Array.isArray(txRawData)
-                ? txRawData
-                : (Array.isArray(txRawData?.transactions) ? txRawData.transactions : []);
+            // 1. TRANSAKSI: sumber tunggal GOOGLE_SCRIPT_URL
+            if (txResult.status === 'fulfilled') {
+                const txData = normalizeTransactionPayload(txResult.value.payload);
+                const formattedTx = txData.map(trx => ({
+                    ...trx,
+                    borrowDateFormatted: trx.borrowDate
+                        ? parseRealDate(trx.borrowDate).toLocaleDateString('id-ID')
+                        : '-'
+                }));
 
-            // Bentuk payload gabungan hanya di sisi browser. Tidak mengubah Apps Script mana pun.
-            const combinedData = {
-                ok: true,
-                transactions: txData,
-                inventory: Array.isArray(masterData?.inventory) ? masterData.inventory : [],
-                schedule: Array.isArray(masterData?.schedule) ? masterData.schedule : []
-            };
-            const combinedRawText = JSON.stringify(combinedData);
+                formattedTxForInventory = formattedTx;
+                setTransactions(formattedTx);
+                txSuccess = true;
+            } else {
+                console.error('Endpoint transaksi gagal:', txResult.reason);
+                // PENTING: jangan setTransactions([]). Data yang sudah tampil dipertahankan.
+            }
 
-            // Jika isi data sama, hindari render ulang seluruh dashboard.
-            if (lastServerPayloadRef.current === combinedRawText) {
-                setIsDatabaseReady(true);
-                lastSuccessfulSyncRef.current = Date.now();
-                retryCountRef.current = 0;
-                saveSessionSnapshot(combinedRawText);
+            // 2. MASTER DATA: hanya Inventaris + Jadwal
+            if (masterResult.status === 'fulfilled') {
+                const masterData = masterResult.value.payload;
+                finalInventoryMaster = normalizeMasterInventory(masterData);
+                const finalSchedule = normalizeMasterSchedule(masterData);
+
+                setBaseInventory(finalInventoryMaster);
+                setScheduleData(finalSchedule);
+                masterSuccess = true;
+            } else {
+                console.error('Endpoint master data gagal:', masterResult.reason);
+                // PENTING: jangan kosongkan Inventaris/Jadwal yang sudah tampil.
+            }
+
+            // Hitung stok menggunakan kombinasi data terbaru yang berhasil didapat.
+            if (txSuccess || masterSuccess) {
+                setInventory(calculateInventory(formattedTxForInventory, finalInventoryMaster));
+            }
+
+            // Registrasi baru hanya diizinkan jika transaksi + master data sama-sama fresh.
+            setIsDatabaseReady(txSuccess && masterSuccess);
+
+            if (txSuccess && masterSuccess) {
+                lastServerPayloadRef.current = `${txResult.value.rawText}|||${masterResult.value.rawText}`;
                 return true;
             }
 
-            applyMasterPayload(combinedData, combinedRawText, true);
-            saveSessionSnapshot(combinedRawText);
-
-            // Bagikan payload gabungan ke tab lain agar tidak menambah request Apps Script.
-            if (dbChannelRef.current) {
-                try {
-                    dbChannelRef.current.postMessage({
-                        type: 'master-data',
-                        sentAt: Date.now(),
-                        rawText: combinedRawText
-                    });
-                } catch (_) {}
+            // Jika salah satu sumber berhasil, UI tetap menampilkan data yang tersedia.
+            if (!silent) {
+                if (!txSuccess && masterSuccess) {
+                    showNotification('Inventaris dan jadwal tersinkron, tetapi Log Transaksi belum berhasil dimuat. Sistem akan mencoba kembali.', 'error');
+                } else if (txSuccess && !masterSuccess) {
+                    showNotification('Log Transaksi berhasil dimuat, tetapi Master Inventaris/Jadwal belum tersinkron.', 'error');
+                }
             }
-            return true;
+            return txSuccess || masterSuccess;
         }
         catch (error) {
             if (error.name === 'AbortError')
-                console.warn(`Sinkronisasi Spreadsheet timeout setelah ${DB_REQUEST_TIMEOUT / 1000} detik.`);
+                console.warn('Sinkronisasi database timeout setelah 15 detik.');
             else
-                console.error('Gagal sinkronisasi Spreadsheet:', error);
+                console.error('Gagal sinkronisasi database:', error);
 
-            // Data yang telah tampil tidak dihapus; retry tetap berjalan terkontrol di background.
-            scheduleDatabaseRetry();
-            if (!silent && !latestMasterDataRef.current) {
+            if (!silent) {
                 showNotification(error.name === 'AbortError'
-                    ? 'Database sedang lambat. Sistem tetap aktif dan akan mencoba sinkronisasi kembali otomatis.'
-                    : 'Koneksi database belum berhasil. Sistem akan mencoba kembali otomatis.', 'error');
+                    ? 'Database sedang lambat. Data yang sudah tampil tetap dipertahankan dan sinkronisasi akan dicoba kembali.'
+                    : 'Gagal terhubung ke database. Data yang sudah tampil tidak dihapus.', 'error');
             }
             return false;
         }
@@ -1224,7 +1147,6 @@ function App() {
     };
 
     // Refresh ulang sesudah operasi POST agar UI kembali mengikuti Spreadsheet.
-    // Tetap force karena sesudah write kita memang membutuhkan data resmi terbaru.
     const refreshDatabaseAfterWrite = (delay = 900) => {
         setTimeout(() => {
             fetchDatabase({ silent: true, force: true });
@@ -1233,98 +1155,37 @@ function App() {
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-        const restoredSnapshot = restoreSessionSnapshot();
 
-        // Sinkronisasi antar-tab bersifat ephemeral; tidak menyimpan database permanen di browser.
-        if ('BroadcastChannel' in window) {
-            try {
-                const channel = new BroadcastChannel('lab-geom-master-data-v1');
-                dbChannelRef.current = channel;
-                channel.onmessage = (event) => {
-                    const message = event && event.data ? event.data : null;
-                    if (!message) return;
-
-                    if (message.type === 'request-master-data') {
-                        const age = Date.now() - lastSuccessfulSyncRef.current;
-                        if (latestMasterDataRef.current && lastServerPayloadRef.current && age >= 0 && age < DB_VISIBILITY_MIN_AGE) {
-                            channel.postMessage({
-                                type: 'master-data',
-                                sentAt: Date.now(),
-                                rawText: lastServerPayloadRef.current
-                            });
-                        }
-                        return;
-                    }
-
-                    if (message.type === 'master-data' && message.rawText) {
-                        try {
-                            const age = Date.now() - Number(message.sentAt || 0);
-                            if (age > DB_VISIBILITY_MIN_AGE) return;
-                            if (message.rawText === lastServerPayloadRef.current && isDatabaseReady) return;
-                            const masterData = JSON.parse(message.rawText);
-                            applyMasterPayload(masterData, message.rawText, true);
-                            saveSessionSnapshot(message.rawText);
-                            clearRetryTimer();
-                        } catch (_) {}
-                    }
-                };
-                channel.postMessage({ type: 'request-master-data' });
-            } catch (_) {
-                dbChannelRef.current = null;
-            }
-        }
-
-        // Beri tab lain kesempatan singkat mengirim data fresh sebelum request jaringan pertama.
+        // Sinkronisasi pertama setelah UI dirender.
         const initialSyncTimer = setTimeout(() => {
-            const freshFromAnotherTab = lastSuccessfulSyncRef.current &&
-                (Date.now() - lastSuccessfulSyncRef.current < DB_VISIBILITY_MIN_AGE);
-            if (!freshFromAnotherTab) {
-                fetchDatabase({ silent: restoredSnapshot, force: true });
-            }
-        }, dbChannelRef.current ? 350 : 0);
+            fetchDatabase({ silent: false, force: true });
+        }, 0);
 
-        // Background sync dikurangi agar banyak pengguna tidak menembak Apps Script tiap 30 detik.
+        // Struktur lama dipertahankan: sinkronisasi background saat tab aktif.
         const backgroundSyncTimer = setInterval(() => {
-            if (document.visibilityState !== 'visible' || navigator.onLine === false)
-                return;
-            const age = Date.now() - lastSuccessfulSyncRef.current;
-            if (!lastSuccessfulSyncRef.current || age >= DB_BACKGROUND_INTERVAL) {
+            if (document.visibilityState === 'visible') {
                 fetchDatabase({ silent: true });
             }
-        }, DB_BACKGROUND_INTERVAL);
+        }, 30000);
 
-        // Saat kembali ke tab, hanya sync jika data cukup lama; tidak langsung request setiap focus.
         const handleVisibilityChange = () => {
-            if (document.visibilityState !== 'visible' || navigator.onLine === false)
-                return;
-            const age = Date.now() - lastSuccessfulSyncRef.current;
-            if (!lastSuccessfulSyncRef.current || age >= DB_VISIBILITY_MIN_AGE) {
+            if (document.visibilityState === 'visible') {
                 fetchDatabase({ silent: true });
             }
-        };
-
-        const handleOnline = () => {
-            retryCountRef.current = 0;
-            fetchDatabase({ silent: true, force: true });
         };
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
-        window.addEventListener('online', handleOnline);
+
         return () => {
             clearInterval(timer);
             clearTimeout(initialSyncTimer);
             clearInterval(backgroundSyncTimer);
-            clearRetryTimer();
             document.removeEventListener('visibilitychange', handleVisibilityChange);
-            window.removeEventListener('online', handleOnline);
             if (syncAbortRef.current)
                 syncAbortRef.current.abort();
-            if (dbChannelRef.current) {
-                try { dbChannelRef.current.close(); } catch (_) {}
-                dbChannelRef.current = null;
-            }
         };
     }, []);
+
     const handleShareLink = () => {
         const url = window.location.href;
         navigator.clipboard.writeText(url).then(() => {
