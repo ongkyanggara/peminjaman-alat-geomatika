@@ -635,7 +635,14 @@ function App() {
     const [txLimit, setTxLimit] = useState(10);
     const [txMonth, setTxMonth] = useState('Semua');
     const [txYear, setTxYear] = useState('Semua');
-    const [analysisMonth, setAnalysisMonth] = useState('Semua');
+    // Filter periode khusus analisis/export PDF dan kartu Top 5.
+    // Mode hanya dua: semester akademik atau keseluruhan waktu.
+    const [usageReportPeriodMode, setUsageReportPeriodMode] = useState('semester');
+    const [usageReportSemester, setUsageReportSemester] = useState('');
+    const [topToolsPeriodMode, setTopToolsPeriodMode] = useState('semester');
+    const [topToolsSemester, setTopToolsSemester] = useState('');
+    const [borrowerReportPeriodMode, setBorrowerReportPeriodMode] = useState('semester');
+    const [borrowerReportSemester, setBorrowerReportSemester] = useState('');
     const fileInputRef = useRef(null);
     const feedbackFileInputRef = useRef(null);
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -785,6 +792,54 @@ function App() {
         const [y, m] = yyyymm.split('-');
         const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
         return `${monthNames[parseInt(m) - 1]} ${y}`;
+    };
+    // Semester akademik: Ganjil 1 Juli-31 Desember; Genap 1 Januari-30 Juni.
+    const getAcademicSemesterInfo = (dateValue) => {
+        if (!dateValue) return null;
+        const d = dateValue instanceof Date ? new Date(dateValue.getTime()) : parseRealDate(dateValue);
+        if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
+        const year = d.getFullYear();
+        const month = d.getMonth() + 1;
+        if (month >= 7) {
+            return {
+                key: `ganjil-${year}`,
+                type: 'Ganjil',
+                startYear: year,
+                endYear: year + 1,
+                startTime: new Date(year, 6, 1, 0, 0, 0, 0).getTime(),
+                endTime: new Date(year, 11, 31, 23, 59, 59, 999).getTime(),
+                label: `Semester Ganjil ${year}/${year + 1}`
+            };
+        }
+        return {
+            key: `genap-${year}`,
+            type: 'Genap',
+            startYear: year - 1,
+            endYear: year,
+            startTime: new Date(year, 0, 1, 0, 0, 0, 0).getTime(),
+            endTime: new Date(year, 5, 30, 23, 59, 59, 999).getTime(),
+            label: `Semester Genap ${year - 1}/${year}`
+        };
+    };
+    const buildAcademicSemesterOptions = (txData = []) => {
+        const map = new Map();
+        (Array.isArray(txData) ? txData : []).forEach(trx => {
+            const info = getAcademicSemesterInfo(trx && trx.borrowDate);
+            if (info && !map.has(info.key)) map.set(info.key, info);
+        });
+        return Array.from(map.values()).sort((a, b) => b.startTime - a.startTime);
+    };
+    const transactionMatchesAcademicPeriod = (trx, mode, semesterKey) => {
+        if (mode === 'all') return true;
+        const info = getAcademicSemesterInfo(trx && trx.borrowDate);
+        return !!info && info.key === semesterKey;
+    };
+    const getPreviousAcademicSemesterKey = (semesterKey) => {
+        const match = /^(ganjil|genap)-(\d{4})$/i.exec(String(semesterKey || ''));
+        if (!match) return '';
+        const type = match[1].toLowerCase();
+        const year = parseInt(match[2], 10);
+        return type === 'ganjil' ? `genap-${year}` : `ganjil-${year - 1}`;
     };
     const normalizeWhatsAppNumber = (value) => {
         let digits = String(value || '').replace(/\D/g, '');
@@ -1804,8 +1859,19 @@ function App() {
             return gradientStr;
         }).join(', ');
         const pieStyle = { background: `conic-gradient(${pieGradients})` };
+        const academicSemesterOptions = buildAcademicSemesterOptions(transactions);
+        const latestAcademicSemesterKey = academicSemesterOptions.length ? academicSemesterOptions[0].key : '';
+        const selectedTopToolsSemester = topToolsSemester || latestAcademicSemesterKey;
+        const selectedTopToolsInfo = academicSemesterOptions.find(item => item.key === selectedTopToolsSemester) || null;
+        const topToolsPeriodLabel = topToolsPeriodMode === 'all'
+            ? 'Keseluruhan Waktu'
+            : (selectedTopToolsInfo ? selectedTopToolsInfo.label : 'Semester belum tersedia');
+        const topToolsTransactions = transactions.filter(trx =>
+            transactionMatchesAcademicPeriod(trx, topToolsPeriodMode, selectedTopToolsSemester)
+        );
+
         const itemFrequency = {};
-        transactions.forEach(trx => {
+        topToolsTransactions.forEach(trx => {
             if (!trx.items)
                 return;
             let durationMs = 0;
@@ -1855,21 +1921,20 @@ function App() {
             .slice(0, 5);
         const maxTopItemCount = topItems.length > 0 ? Math.max(...topItems.map(item => item.count)) : 1;
         const maxTopItemHours = topItems.length > 0 ? Math.max(...topItems.map(item => item.hours)) : 1;
-        const availableMonths = [...new Set(transactions.map(t => getMonthYear(t.borrowDate)))].sort().reverse();
-        const currentPeriod = analysisMonth === 'Semua' ? '' : analysisMonth;
-        let prevPeriod = '';
-        if (currentPeriod) {
-            const [y, m] = currentPeriod.split('-');
-            let prevM = parseInt(m) - 1;
-            let prevY = parseInt(y);
-            if (prevM === 0) {
-                prevM = 12;
-                prevY -= 1;
-            }
-            prevPeriod = `${prevY}-${String(prevM).padStart(2, '0')}`;
-        }
-        const filteredAnalysisTx = transactions.filter(t => currentPeriod === '' || getMonthYear(t.borrowDate) === currentPeriod);
-        const prevAnalysisTx = transactions.filter(t => prevPeriod !== '' && getMonthYear(t.borrowDate) === prevPeriod);
+        const selectedUsageSemester = usageReportSemester || latestAcademicSemesterKey;
+        const selectedUsageSemesterInfo = academicSemesterOptions.find(item => item.key === selectedUsageSemester) || null;
+        const analysisPeriodLabel = usageReportPeriodMode === 'all'
+            ? 'Keseluruhan Waktu'
+            : (selectedUsageSemesterInfo ? selectedUsageSemesterInfo.label : 'Semester belum tersedia');
+        const previousUsageSemesterKey = usageReportPeriodMode === 'semester'
+            ? getPreviousAcademicSemesterKey(selectedUsageSemester)
+            : '';
+        const filteredAnalysisTx = transactions.filter(trx =>
+            transactionMatchesAcademicPeriod(trx, usageReportPeriodMode, selectedUsageSemester)
+        );
+        const prevAnalysisTx = transactions.filter(trx =>
+            previousUsageSemesterKey && transactionMatchesAcademicPeriod(trx, 'semester', previousUsageSemesterKey)
+        );
         const categoryData = {};
         let totalFilteredTx = filteredAnalysisTx.length;
         filteredAnalysisTx.forEach(trx => {
@@ -1963,7 +2028,7 @@ function App() {
                 const pageWidth = doc.internal.pageSize.getWidth();
                 const contentWidth = pageWidth - (marginX * 2);
                 const reportTransactions = Array.isArray(filteredAnalysisTx) ? filteredAnalysisTx : [];
-                const periodLabel = analysisMonth === 'Semua' ? 'Keseluruhan Waktu' : formatMonthYearText(analysisMonth);
+                const periodLabel = analysisPeriodLabel;
 
                 const pdfText = (value) => String(value == null || value === '' ? '-' : value);
                 const safeName = (value) => pdfText(value).replace(/[^a-zA-Z0-9_-]+/g, '_');
@@ -1976,6 +2041,28 @@ function App() {
                     const dateText = date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
                     const timeText = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\./g, ':');
                     return `${dateText} ${timeText} WIB`;
+                };
+                const writeJustifiedParagraph = (value, x, y, width, lineHeight = 4.2) => {
+                    const content = String(value == null ? '' : value).trim();
+                    if (!content) return y;
+                    const lines = doc.splitTextToSize(content, width);
+                    lines.forEach((line, index) => {
+                        const lineY = y + (index * lineHeight);
+                        const isLastLine = index === lines.length - 1;
+                        const words = String(line).trim().split(/\s+/).filter(Boolean);
+                        if (isLastLine || words.length <= 1) {
+                            doc.text(String(line), x, lineY);
+                            return;
+                        }
+                        const wordsWidth = words.reduce((sum, word) => sum + doc.getTextWidth(word), 0);
+                        const gap = Math.max(doc.getTextWidth(' '), (width - wordsWidth) / (words.length - 1));
+                        let cursorX = x;
+                        words.forEach((word, wordIndex) => {
+                            doc.text(word, cursorX, lineY);
+                            cursorX += doc.getTextWidth(word) + (wordIndex < words.length - 1 ? gap : 0);
+                        });
+                    });
+                    return y + (lines.length * lineHeight);
                 };
 
                 const getTransactionDurationHours = (trx) => {
@@ -2405,8 +2492,7 @@ function App() {
                             doc.setFont('helvetica', 'normal');
                             doc.setFontSize(8);
                             doc.setTextColor(51, 65, 85);
-                            const lines = doc.splitTextToSize(analysisText, contentWidth - 5);
-                            doc.text(lines, marginX + 2, y);
+                            y = writeJustifiedParagraph(analysisText, marginX + 2, y, contentWidth - 5, 4.1);
                         }
                     });
                 };
@@ -2502,9 +2588,7 @@ function App() {
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8.3);
                 doc.setTextColor(51, 65, 85);
-                const executiveLines = doc.splitTextToSize(executiveAnalysis, contentWidth - 5);
-                doc.text(executiveLines, marginX + 2, y);
-                y += executiveLines.length * 4.2 + 5;
+                y = writeJustifiedParagraph(executiveAnalysis, marginX + 2, y, contentWidth - 5, 4.2) + 5;
 
                 y = drawStandardBars(purposeData, y, 'Distribusi Tujuan Peminjaman', 'count', ' trx', 5, [5, 150, 105]);
 
@@ -2701,20 +2785,16 @@ function App() {
                 doc.setFontSize(8.1);
                 doc.setTextColor(51, 65, 85);
                 utilizationRecommendations.forEach((rec, idx) => {
-                    const wrapped = doc.splitTextToSize(`${idx + 1}. ${rec}`, contentWidth - 5);
-                    doc.text(wrapped, marginX + 2, y);
-                    y += wrapped.length * 4.15 + 2.5;
+                    y = writeJustifiedParagraph(`${idx + 1}. ${rec}`, marginX + 2, y, contentWidth - 5, 4.15) + 2.5;
                 });
 
                 if (unmatchedHistoricalRecords.length > 0) {
                     const note = `Catatan kualitas data: terdapat ${unmatchedHistoricalRecords.length} kode/nama alat pada transaksi historis yang tidak dapat dipasangkan dengan master inventaris aktif. Data tersebut tidak dimasukkan ke denominator cakupan inventaris agar laporan tetap konsisten dengan master inventaris saat ini.`;
-                    const wrapped = doc.splitTextToSize(note, contentWidth - 5);
                     y = addSectionTitle('Catatan Kualitas Data', y + 4);
                     doc.setFont('helvetica', 'normal');
                     doc.setFontSize(7.8);
                     doc.setTextColor(100, 116, 139);
-                    doc.text(wrapped, marginX + 2, y);
-                    y += wrapped.length * 4 + 3;
+                    y = writeJustifiedParagraph(note, marginX + 2, y, contentWidth - 5, 4.0) + 3;
                 }
 
                 // ==========================================================
@@ -2737,9 +2817,7 @@ function App() {
                     'Persentase cakupan inventaris dihitung berdasarkan jumlah jenis/kode alat yang memiliki penggunaan dibandingkan seluruh jenis/kode alat pada master inventaris.'
                 ];
                 methodology.forEach((line, idx) => {
-                    const wrapped = doc.splitTextToSize(`${idx + 1}. ${line}`, contentWidth - 5);
-                    doc.text(wrapped, marginX + 2, y);
-                    y += wrapped.length * 4.1 + 2;
+                    y = writeJustifiedParagraph(`${idx + 1}. ${line}`, marginX + 2, y, contentWidth - 5, 4.1) + 2;
                 });
 
                 y = addSectionTitle('Ringkasan Pengesahan', y + 4);
@@ -2810,7 +2888,7 @@ function App() {
                     doc.text(`Periode ${periodLabel} | Halaman ${p} dari ${pageCount}`, pw - 10, ph - 7, { align: 'right' });
                 }
 
-                const filePeriod = analysisMonth === 'Semua' ? 'Keseluruhan_Waktu' : safeName(analysisMonth);
+                const filePeriod = safeName(periodLabel);
                 doc.save(`Laporan_Penggunaan_Alat_Lab_Geomatika_${filePeriod}.pdf`);
                 showNotification(`Laporan penggunaan alat berhasil dibuat. ${totalInventoryTypes} jenis inventaris tercakup.`, 'success');
             } catch (error) {
@@ -3193,13 +3271,30 @@ function App() {
                             React.createElement("div", { className: "lab-mini-track" },
                                 React.createElement("div", { className: "lab-mini-fill", style: { width: `${totalAlat === 0 ? 0 : Math.round((stat.total / totalAlat) * 100)}%`, backgroundColor: chartColors[i % chartColors.length] } })))))))),
                 React.createElement("div", { className: "lab-surface lab-modern-chart bg-white p-6 rounded-xl border border-slate-200 shadow-sm" },
-                    React.createElement("div", { className: "flex items-start justify-between mb-5 gap-3" },
+                    React.createElement("div", { className: "flex flex-col lg:flex-row lg:items-start justify-between mb-5 gap-3" },
                         React.createElement("div", null,
                             React.createElement("h3", { className: "text-lg font-bold text-slate-800 flex items-center" },
                                 React.createElement("i", { className: "lab-section-icon fas fa-ranking-star text-indigo-600 mr-2" }),
                                 "Alat Utama Paling Sering Dipinjam"),
-                            React.createElement("p", { className: "text-[11px] text-slate-500 mt-1" }, "Instrumen utama survei; alat pendukung tidak dimasukkan")),
-                        React.createElement("span", { className: "lab-chart-live lab-chart-live-blue" }, React.createElement("i", { className: "fas fa-wave-square" }), " TOP 5")),
+                            React.createElement("p", { className: "text-[11px] text-slate-500 mt-1" }, `Instrumen utama survei • Periode: ${topToolsPeriodLabel}`)),
+                        React.createElement("div", { className: "flex flex-wrap items-center justify-end gap-2" },
+                            React.createElement("span", { className: "lab-chart-live lab-chart-live-blue" }, React.createElement("i", { className: "fas fa-wave-square" }), " TOP 5"),
+                            React.createElement("select", {
+                                className: "lab-filter p-2 border border-indigo-200 rounded text-[11px] bg-white font-bold text-slate-700 cursor-pointer",
+                                value: topToolsPeriodMode,
+                                onChange: e => setTopToolsPeriodMode(e.target.value),
+                                title: "Periode ranking alat utama"
+                            },
+                                React.createElement("option", { value: "semester" }, "Semester"),
+                                React.createElement("option", { value: "all" }, "Seluruh Waktu")),
+                            topToolsPeriodMode === 'semester' && React.createElement("select", {
+                                className: "lab-filter p-2 border border-indigo-200 rounded text-[11px] bg-white font-bold text-slate-700 cursor-pointer",
+                                value: selectedTopToolsSemester,
+                                onChange: e => setTopToolsSemester(e.target.value),
+                                title: "Pilih semester akademik"
+                            }, academicSemesterOptions.length
+                                ? academicSemesterOptions.map(item => React.createElement("option", { key: item.key, value: item.key }, item.label))
+                                : React.createElement("option", { value: "" }, "Semester belum tersedia")))),
                     topItems.length === 0 ? (React.createElement("p", { className: "text-slate-400 text-sm italic py-6 text-center" }, "Belum ada data peminjaman alat utama.")) : (React.createElement("ul", { className: "space-y-3" }, topItems.map((item, idx) => (React.createElement("li", { key: item.id || idx, className: "lab-tool-rank-card", title: `${item.name} • ${item.count} kali • ${item.hours} jam` },
                         React.createElement("div", { className: "flex items-start gap-3" },
                             React.createElement("div", { className: `lab-rank-badge ${idx === 0 ? 'lab-rank-1' : idx === 1 ? 'lab-rank-2' : idx === 2 ? 'lab-rank-3' : ''}` }, idx + 1),
@@ -3222,11 +3317,23 @@ function App() {
                         React.createElement("i", { className: "lab-section-icon fas fa-chart-line text-indigo-600 mr-2" }),
                         " Analisis Cerdas Jenis Peminjaman"),
                     React.createElement("div", { className: "flex flex-wrap gap-3 items-center" },
-                        React.createElement("div", { className: "flex gap-2 items-center" },
-                            React.createElement("span", { className: "text-sm font-bold text-slate-600" }, "Filter Periode:"),
-                            React.createElement("select", { className: "lab-filter p-2 border border-slate-300 rounded text-sm bg-slate-50 focus:ring-2 focus:ring-indigo-600 font-medium cursor-pointer", value: analysisMonth, onChange: e => setAnalysisMonth(e.target.value) },
-                                React.createElement("option", { value: "Semua" }, "Keseluruhan Waktu"),
-                                availableMonths.map(m => (React.createElement("option", { key: m, value: m }, formatMonthYearText(m)))))),
+                        React.createElement("div", { className: "flex flex-wrap gap-2 items-center" },
+                            React.createElement("span", { className: "text-sm font-bold text-slate-600" }, "Periode Laporan:"),
+                            React.createElement("select", {
+                                className: "lab-filter p-2 border border-slate-300 rounded text-sm bg-slate-50 focus:ring-2 focus:ring-indigo-600 font-medium cursor-pointer",
+                                value: usageReportPeriodMode,
+                                onChange: e => setUsageReportPeriodMode(e.target.value)
+                            },
+                                React.createElement("option", { value: "semester" }, "Semester"),
+                                React.createElement("option", { value: "all" }, "Seluruh Waktu")),
+                            usageReportPeriodMode === 'semester' && React.createElement("select", {
+                                className: "lab-filter p-2 border border-slate-300 rounded text-sm bg-white focus:ring-2 focus:ring-indigo-600 font-medium cursor-pointer",
+                                value: selectedUsageSemester,
+                                onChange: e => setUsageReportSemester(e.target.value),
+                                title: "Pilih semester akademik"
+                            }, academicSemesterOptions.length
+                                ? academicSemesterOptions.map(item => React.createElement("option", { key: item.key, value: item.key }, item.label))
+                                : React.createElement("option", { value: "" }, "Semester belum tersedia"))),
                         isAdmin && React.createElement("button", {
                             type: "button",
                             onClick: handleGenerateUsageReport,
@@ -3244,10 +3351,10 @@ function App() {
                         React.createElement("p", { className: "text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1" }, "Total Peminjaman"),
                         React.createElement("div", { className: "flex items-end gap-2" },
                             React.createElement("span", { className: "text-3xl font-black text-slate-800" }, totalFilteredTx),
-                            analysisMonth !== 'Semua' && (React.createElement("span", { className: `text-[10px] font-bold px-1.5 py-0.5 rounded border mb-1.5 ${trendPercent >= 0 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-red-50 text-red-800 border-red-200'}` },
+                            usageReportPeriodMode === 'semester' && (React.createElement("span", { className: `text-[10px] font-bold px-1.5 py-0.5 rounded border mb-1.5 ${trendPercent >= 0 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-red-50 text-red-800 border-red-200'}` },
                                 trendPercent > 0 ? '+' : '',
                                 trendPercent,
-                                "% vs bulan lalu")))),
+                                "% vs semester sebelumnya")))),
                     React.createElement("div", { className: "lab-analysis-stat lab-analysis-primary bg-indigo-50 border border-indigo-200 p-4 rounded-xl md:col-span-2 flex flex-col justify-center" },
                         React.createElement("p", { className: "text-[10px] text-indigo-700 font-bold uppercase tracking-wider mb-1" }, "Aktivitas Paling Dominan"),
                         React.createElement("p", { className: "text-lg font-bold text-indigo-900 leading-tight" }, dominant ? dominant.name : '-'),
@@ -3642,6 +3749,14 @@ function App() {
             if (txYear === 'Semua') return `${monthLabel} - Semua Tahun`;
             return `${monthLabel} ${yearLabel}`;
         })();
+        // Periode export PDF dipisahkan dari filter tampilan arsip.
+        const borrowerSemesterOptions = buildAcademicSemesterOptions(sortedTx);
+        const latestBorrowerSemesterKey = borrowerSemesterOptions.length ? borrowerSemesterOptions[0].key : '';
+        const selectedBorrowerReportSemester = borrowerReportSemester || latestBorrowerSemesterKey;
+        const selectedBorrowerSemesterInfo = borrowerSemesterOptions.find(item => item.key === selectedBorrowerReportSemester) || null;
+        const borrowerReportPeriodLabel = borrowerReportPeriodMode === 'all'
+            ? 'Keseluruhan Waktu'
+            : (selectedBorrowerSemesterInfo ? selectedBorrowerSemesterInfo.label : 'Semester belum tersedia');
         const displayedTx = txLimit === 'Semua' ? filteredTx : filteredTx.slice(0, txLimit);
         // --- LAPORAN PDF ANALISIS PEMINJAM ---
         // Report hanya menganalisis data peminjam berdasarkan Kriteria Filter aktif.
@@ -3657,8 +3772,14 @@ function App() {
                     showNotification('Modul PDF belum siap. Silakan tunggu beberapa detik lalu coba kembali.', 'error');
                     return;
                 }
+                const filteredTx = sortedTx.filter(trx => {
+                    if (txFilter !== 'Semua' && getTxCategory(trx) !== txFilter) return false;
+                    return transactionMatchesAcademicPeriod(trx, borrowerReportPeriodMode, selectedBorrowerReportSemester);
+                });
+                const archivePeriodLabel = borrowerReportPeriodLabel;
+
                 if (!filteredTx.length) {
-                    showNotification('Tidak ada transaksi sesuai kriteria filter untuk dibuatkan laporan.', 'error');
+                    showNotification('Tidak ada transaksi pada status dan periode laporan yang dipilih.', 'error');
                     return;
                 }
 
@@ -3682,6 +3803,28 @@ function App() {
                     return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\./g, ':') + ' WIB';
                 };
                 const formatDateTime = (date) => `${formatPdfDate(date)} ${formatPdfTime(date)}`;
+                const writeJustifiedParagraph = (value, x, y, width, lineHeight = 4.15) => {
+                    const content = String(value == null ? '' : value).trim();
+                    if (!content) return y;
+                    const lines = doc.splitTextToSize(content, width);
+                    lines.forEach((line, index) => {
+                        const lineY = y + (index * lineHeight);
+                        const isLastLine = index === lines.length - 1;
+                        const words = String(line).trim().split(/\s+/).filter(Boolean);
+                        if (isLastLine || words.length <= 1) {
+                            doc.text(String(line), x, lineY);
+                            return;
+                        }
+                        const wordsWidth = words.reduce((sum, word) => sum + doc.getTextWidth(word), 0);
+                        const gap = Math.max(doc.getTextWidth(' '), (width - wordsWidth) / (words.length - 1));
+                        let cursorX = x;
+                        words.forEach((word, wordIndex) => {
+                            doc.text(word, cursorX, lineY);
+                            cursorX += doc.getTextWidth(word) + (wordIndex < words.length - 1 ? gap : 0);
+                        });
+                    });
+                    return y + (lines.length * lineHeight);
+                };
                 const formatDurationCompact = (ms) => {
                     if (!Number.isFinite(ms) || ms <= 0) return '0 menit';
                     const totalMinutes = Math.floor(ms / 60000);
@@ -4079,7 +4222,7 @@ function App() {
                 // ==========================================================
                 const analysisParts = [];
                 analysisParts.push(
-                    `Pada periode ${periodText}, terdapat ${filteredTx.length} transaksi yang melibatkan ${uniqueBorrowers} peminjam unik. Rata-rata aktivitas adalah ${avgTransactionsPerBorrower.toFixed(1)} transaksi per peminjam.`
+                    `Pada periode ${periodText}, terdapat ${filteredTx.length} transaksi yang melibatkan ${uniqueBorrowers} peminjam. Rata-rata aktivitas adalah ${avgTransactionsPerBorrower.toFixed(1)} transaksi per peminjam.`
                 );
                 analysisParts.push(
                     `${repeatBorrowers} peminjam (${repeatBorrowerRate}%) melakukan lebih dari satu transaksi, sedangkan ${singleBorrowers} peminjam hanya tercatat satu kali pada filter laporan.`
@@ -4100,7 +4243,7 @@ function App() {
                     analysisParts.push('Belum terdapat transaksi selesai pada filter ini, sehingga indikator ketepatan waktu belum dapat dinilai.');
                 }
                 if (borrowersWithLate > 0) {
-                    analysisParts.push(`${borrowersWithLate} peminjam unik (${lateBorrowerRate}%) memiliki sedikitnya satu transaksi terlambat atau masih aktif melewati tenggat.`);
+                    analysisParts.push(`${borrowersWithLate} peminjam (${lateBorrowerRate}%) memiliki sedikitnya satu transaksi terlambat atau masih aktif melewati tenggat.`);
                 }
                 const analysisText = analysisParts.join(' ');
 
@@ -4116,7 +4259,7 @@ function App() {
                     );
                 }
                 borrowerChartAnalysisParts.push(
-                    `Peminjam berulang berjumlah ${repeatBorrowers} orang (${repeatBorrowerRate}% dari seluruh peminjam unik).`
+                    `Peminjam berulang berjumlah ${repeatBorrowers} orang (${repeatBorrowerRate}% dari seluruh peminjam).`
                 );
                 borrowerChartAnalysisParts.push(
                     `Rata-rata durasi setiap transaksi adalah ${avgTransactionHours.toFixed(1)} jam; total keterlambatan terakumulasi sebesar ${formatDurationCompact(totalLateMinutes * 60000)}.`
@@ -4145,30 +4288,32 @@ function App() {
                 // ==========================================================
                 addHeader('LAPORAN ANALISIS PEMINJAM LABORATORIUM', `Dokumen: ${reportCode}`);
                 doc.setFont('helvetica', 'normal');
-                doc.setFontSize(7.5);
+                doc.setFontSize(7.4);
                 doc.setTextColor(100, 116, 139);
-                doc.text(`Periode data: ${periodText} | Filter: ${fullFilterLabel} | Dicetak: ${formatDateTime(generatedAt)}`, marginX, 38);
+                doc.text(`Periode data: ${periodText}`, marginX, 38);
+                doc.text(`Filter: ${fullFilterLabel}`, marginX, 42);
+                doc.text(`Dicetak: ${formatDateTime(generatedAt)}`, marginX, 46);
 
                 doc.setTextColor(220, 38, 38);
                 doc.setFont('helvetica', 'bold');
-                doc.text('DOKUMEN INTERNAL - MODE ADMIN', portraitWidth - marginX, 38, { align: 'right' });
+                doc.setFontSize(7.2);
+                doc.text('DOKUMEN INTERNAL - MODE ADMIN', portraitWidth - marginX, 46, { align: 'right' });
 
                 const gap = 3.5;
                 const cardW = (contentW - gap * 3) / 4;
-                metricCard(marginX, 44, cardW, 'Total Transaksi', filteredTx.length, `${uniqueBorrowers} peminjam unik`, [14, 116, 144]);
-                metricCard(marginX + cardW + gap, 44, cardW, 'Peminjam Berulang', repeatBorrowers, `${repeatBorrowerRate}% peminjam unik`, [79, 70, 229]);
-                metricCard(marginX + (cardW + gap) * 2, 44, cardW, 'Tepat Waktu', `${onTimeCompletedRate}%`, `${statusCounts.completedOnTime}/${completedTotal || 0} transaksi selesai`, [5, 150, 105]);
-                metricCard(marginX + (cardW + gap) * 3, 44, cardW, 'Peminjam Terlambat', borrowersWithLate, `${lateBorrowerRate}% peminjam unik`, [220, 38, 38]);
+                metricCard(marginX, 51, cardW, 'Total Transaksi', filteredTx.length, `${uniqueBorrowers} peminjam`, [14, 116, 144]);
+                metricCard(marginX + cardW + gap, 51, cardW, 'Peminjam Berulang', repeatBorrowers, `${repeatBorrowerRate}% peminjam`, [79, 70, 229]);
+                metricCard(marginX + (cardW + gap) * 2, 51, cardW, 'Tepat Waktu', `${onTimeCompletedRate}%`, `${statusCounts.completedOnTime}/${completedTotal || 0} transaksi selesai`, [5, 150, 105]);
+                metricCard(marginX + (cardW + gap) * 3, 51, cardW, 'Peminjam Terlambat', borrowersWithLate, `${lateBorrowerRate}% peminjam`, [220, 38, 38]);
 
-                let y = statusChart(80);
+                let y = statusChart(87);
                 y = complianceChart(y + 1);
                 y = sectionTitle('Ringkasan Analisis Peminjam', y + 2, contentW);
 
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8.2);
                 doc.setTextColor(51, 65, 85);
-                const analysisLines = doc.splitTextToSize(analysisText, contentW - 5);
-                doc.text(analysisLines, marginX + 2, y);
+                y = writeJustifiedParagraph(analysisText, marginX + 2, y, contentW - 5, 4.15);
 
                 // ==========================================================
                 // 5. HALAMAN 2 - GRAFIK PEMINJAM + INTERPRETASI
@@ -4199,9 +4344,7 @@ function App() {
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8.2);
                 doc.setTextColor(51, 65, 85);
-                const chartAnalysisLines = doc.splitTextToSize(borrowerChartAnalysis, contentW - 5);
-                doc.text(chartAnalysisLines, marginX + 2, y);
-                y += chartAnalysisLines.length * 4.2 + 5;
+                y = writeJustifiedParagraph(borrowerChartAnalysis, marginX + 2, y, contentW - 5, 4.15) + 5;
 
                 if (y < 215 && purposeData.length) {
                     y = barChart(purposeData, y + 2, 'Distribusi Tujuan Peminjaman', 'count', ' trx', 5, [5, 150, 105]);
@@ -4312,23 +4455,19 @@ function App() {
                 doc.setTextColor(51, 65, 85);
 
                 const tableNotes = [
-                    `Tabel ringkasan memuat seluruh ${uniqueBorrowers} peminjam unik yang masuk dalam kriteria filter, bukan hanya peminjam dengan aktivitas tertinggi.`,
+                    `Tabel ringkasan memuat seluruh ${uniqueBorrowers} peminjam yang masuk dalam kriteria filter, bukan hanya peminjam dengan aktivitas tertinggi.`,
                     'Kolom transaksi menunjukkan jumlah registrasi peminjaman per peminjam; durasi merupakan akumulasi waktu peminjaman pada seluruh transaksi yang masuk dalam filter.',
                     'Kepatuhan dihitung hanya dari transaksi yang telah selesai. Transaksi aktif terlambat tetap dicatat pada kolom keterlambatan, tetapi tidak dimasukkan ke denominator persentase tepat waktu selesai.',
                     `Sebanyak ${repeatBorrowers} peminjam tercatat berulang dan ${borrowersWithLate} peminjam memiliki sedikitnya satu kejadian keterlambatan.`
                 ];
 
                 tableNotes.forEach((note, idx) => {
-                    const wrapped = doc.splitTextToSize(`${idx + 1}. ${note}`, contentW - 5);
-                    doc.text(wrapped, marginX + 2, y);
-                    y += wrapped.length * 4.15 + 2;
+                    y = writeJustifiedParagraph(`${idx + 1}. ${note}`, marginX + 2, y, contentW - 5, 4.15) + 2;
                 });
 
                 y = sectionTitle('Rekomendasi Tindak Lanjut', y + 4, contentW);
                 operationalNotes.forEach((note, idx) => {
-                    const wrapped = doc.splitTextToSize(`${idx + 1}. ${note}`, contentW - 5);
-                    doc.text(wrapped, marginX + 2, y);
-                    y += wrapped.length * 4.15 + 2.5;
+                    y = writeJustifiedParagraph(`${idx + 1}. ${note}`, marginX + 2, y, contentW - 5, 4.15) + 2.5;
                 });
 
                 // ==========================================================
@@ -4435,8 +4574,8 @@ function App() {
                 doc.setTextColor(71, 85, 105);
 
                 const methodology = [
-                    'Laporan menggunakan seluruh transaksi yang sesuai dengan filter status, bulan, dan tahun pada halaman arsip.',
-                    'Peminjam unik dikelompokkan berdasarkan NIM/identitas; bila identitas tidak tersedia, nama peminjam digunakan sebagai pengenal.',
+                    'Laporan menggunakan seluruh transaksi yang sesuai dengan filter status dan periode export yang dipilih: semester akademik atau keseluruhan waktu.',
+                    'Peminjam dikelompokkan berdasarkan NIM/identitas; bila identitas tidak tersedia, nama peminjam digunakan sebagai pengenal.',
                     'Frekuensi peminjam dihitung dari jumlah transaksi, tanpa memasukkan jumlah atau jenis alat yang dipinjam.',
                     'Durasi peminjaman dihitung dari waktu pinjam hingga waktu kembali aktual untuk transaksi selesai; transaksi aktif menggunakan waktu berjalan hingga saat laporan dibuat.',
                     'Kepatuhan tepat waktu dihitung dari transaksi yang sudah selesai, sedangkan transaksi aktif terlambat dilaporkan sebagai risiko operasional terpisah.',
@@ -4444,9 +4583,7 @@ function App() {
                 ];
 
                 methodology.forEach((line, idx) => {
-                    const wrapped = doc.splitTextToSize(`${idx + 1}. ${line}`, contentW - 5);
-                    doc.text(wrapped, marginX + 2, y);
-                    y += wrapped.length * 4.1 + 2;
+                    y = writeJustifiedParagraph(`${idx + 1}. ${line}`, marginX + 2, y, contentW - 5, 4.1) + 2;
                 });
 
                 y = sectionTitle('Ringkasan Pengesahan', y + 4, contentW);
@@ -4456,7 +4593,7 @@ function App() {
                         ['Periode Data', `${archivePeriodLabel} | ${periodText}`],
                         ['Kriteria Status', filterLabel],
                         ['Jumlah Transaksi', String(filteredTx.length)],
-                        ['Peminjam Unik', String(uniqueBorrowers)],
+                        ['Jumlah Peminjam', String(uniqueBorrowers)],
                         ['Peminjam Berulang', `${repeatBorrowers} (${repeatBorrowerRate}%)`],
                         ['Peminjam dengan Keterlambatan', `${borrowersWithLate} (${lateBorrowerRate}%)`],
                         ['Ketepatan Waktu (selesai)', `${onTimeCompletedRate}% (${statusCounts.completedOnTime} dari ${completedTotal})`],
@@ -4552,7 +4689,7 @@ function App() {
                             className: "px-2 py-1.5 rounded text-[10px] font-bold text-indigo-700 bg-white border border-indigo-200 hover:bg-indigo-100 transition-colors",
                             title: "Reset periode arsip"
                         }, React.createElement("i", { className: "fas fa-undo-alt" })))),
-                React.createElement("div", { className: "flex items-center gap-3" },
+                React.createElement("div", { className: "flex flex-wrap items-center gap-3" },
                     React.createElement("label", { className: "text-sm font-bold text-slate-700 w-24 md:w-auto" },
                         React.createElement("i", { className: "fas fa-list-ol mr-1 text-indigo-600" }),
                         " Pembatasan Entri:"),
@@ -4561,11 +4698,29 @@ function App() {
                         React.createElement("option", { value: 25 }, "Batasi 25 Arsip Teratas"),
                         React.createElement("option", { value: 50 }, "Batasi 50 Arsip Teratas"),
                         React.createElement("option", { value: "Semua" }, "Akses Seluruh Arsip")),
+                    isAdmin && React.createElement("div", { className: "flex flex-wrap items-center gap-2 bg-white border border-indigo-100 rounded-lg px-2 py-1.5" },
+                        React.createElement("span", { className: "text-[10px] font-black uppercase tracking-wider text-slate-500" }, "Periode PDF"),
+                        React.createElement("select", {
+                            className: "p-1.5 border border-indigo-200 rounded text-xs bg-white font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500",
+                            value: borrowerReportPeriodMode,
+                            onChange: e => setBorrowerReportPeriodMode(e.target.value),
+                            title: "Pilih mode periode laporan PDF"
+                        },
+                            React.createElement("option", { value: "semester" }, "Semester"),
+                            React.createElement("option", { value: "all" }, "Seluruh Waktu")),
+                        borrowerReportPeriodMode === 'semester' && React.createElement("select", {
+                            className: "p-1.5 border border-indigo-200 rounded text-xs bg-white font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500",
+                            value: selectedBorrowerReportSemester,
+                            onChange: e => setBorrowerReportSemester(e.target.value),
+                            title: "Pilih semester akademik untuk laporan PDF"
+                        }, borrowerSemesterOptions.length
+                            ? borrowerSemesterOptions.map(item => React.createElement("option", { key: item.key, value: item.key }, item.label))
+                            : React.createElement("option", { value: "" }, "Semester belum tersedia"))),
                     isAdmin && React.createElement("button", {
                         type: "button",
                         onClick: handleGenerateBorrowerUsageReport,
                         className: "lab-report-btn inline-flex items-center gap-2 px-4 py-2 text-white text-xs font-bold rounded-xl shadow-sm transition-all border whitespace-nowrap",
-                        title: "Export laporan analisis peminjam berdasarkan filter status dan periode"
+                        title: `Export laporan peminjam • ${borrowerReportPeriodLabel}`
                     },
                         React.createElement("span", { className: "lab-report-icon" },
                             React.createElement("i", { className: "fas fa-file-pdf" })),
